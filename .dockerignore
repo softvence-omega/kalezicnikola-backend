@@ -1,0 +1,57 @@
+# Node dependencies
+node_modules
+npm-debug.log
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+dist
+build
+.cache
+.next
+out
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Logs
+logs
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+*.swp
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Test files
+coverage
+*.spec.ts
+*.test.ts
+jest.config.js
+__tests__/
+
+# Prisma
+prisma/dev.db
+prisma/migrations/
+*.db-journal
+
+# Misc
+tmp
+temp
+*.bak
+*.orig
+*.tmp
