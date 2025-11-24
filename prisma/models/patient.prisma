@@ -1,0 +1,53 @@
+model Patient {
+  id                     String    @id @default(uuid()) @db.Uuid
+  clinicId               String?   @map("clinic_id") @db.Uuid
+  firstNameCipher        String?   @map("first_name_cipher") @db.VarChar
+  lastNameCipher         String?   @map("last_name_cipher") @db.VarChar
+  phoneCipher            String?   @map("phone_cipher") @db.VarChar
+  emailCipher            String?   @map("email_cipher") @db.VarChar
+  insuranceIdCipher      String?   @map("insurance_id_cipher") @db.VarChar
+  addressCipher          String?   @map("address_cipher") @db.VarChar
+  emergencyContactCipher String?   @map("emergency_contact_cipher") @db.VarChar
+  dateOfBirth            DateTime? @map("date_of_birth") @db.Timestamp(6)
+  gender                 Gender?
+  bloodGroup             String?   @map("blood_group") @db.VarChar
+  conditionName          String?   @map("condition_name") @db.VarChar
+  diagnosedDate          DateTime? @map("diagnosed_date") @db.Date
+  severity               String?   @db.VarChar
+  status                 String?   @db.VarChar
+  retentionExpiresAt     DateTime? @map("retention_expires_at") @db.Timestamp(6)
+  createdAt              DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt              DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt              DateTime? @map("deleted_at") @db.Timestamp(6)
+  firstNameBlind         String?   @map("first_name_blind") @db.VarChar
+  lastNameBlind          String?   @map("last_name_blind") @db.VarChar
+  insuranceIdBlind       String?   @map("insurance_id_blind") @db.VarChar
+
+  // Relations
+  clinic            Clinic?            @relation(fields: [clinicId], references: [id])
+  appointments      Appointment[]
+  calls             Call[]
+  labs              Lab[]
+  prescriptions     Prescription[]
+  tasks             Task[]
+  dataRequests      DataRequest[]
+  emergencyContacts EmergencyContact[]
+  diagnoses         Diagnosis[]
+  consents          PatientConsent[]
+
+  @@map("patients")
+}
+
+model EmergencyContact {
+  id           String    @id @default(uuid()) @db.Uuid
+  patientId    String?   @map("patient_id") @db.Uuid
+  nameCipher   String?   @map("name_cipher") @db.VarChar
+  relationship String?   @db.VarChar
+  phoneCipher  String?   @map("phone_cipher") @db.VarChar
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt    DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  patient Patient? @relation(fields: [patientId], references: [id])
+
+  @@map("emergency_contacts")
+}

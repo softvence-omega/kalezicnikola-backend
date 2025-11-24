@@ -1,0 +1,71 @@
+// prisma/models/staff.prisma
+model StaffPersonalInfo {
+  id                           String    @id @default(uuid()) @db.Uuid
+  doctorId                     String?   @unique @map("doctor_id") @db.Uuid
+  dateOfBirth                  DateTime? @map("date_of_birth") @db.Date
+  phoneCipher                  String?   @map("phone_cipher") @db.VarChar
+  addressCipher                String?   @map("address_cipher") @db.VarChar
+  stateProvince                String?   @map("state_province") @db.VarChar
+  postalCode                   String?   @map("postal_code") @db.VarChar
+  country                      String?   @db.VarChar
+  emergencyContactName         String?   @map("emergency_contact_name") @db.VarChar
+  emergencyContactPhone        String?   @map("emergency_contact_phone") @db.VarChar
+  emergencyContactRelationship String?   @map("emergency_contact_relationship") @db.VarChar
+  createdAt                    DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt                    DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
+
+  @@map("staff_personal_info")
+}
+
+model StaffEmploymentInfo {
+  id               String          @id @default(uuid()) @db.Uuid
+  doctorId         String?         @unique @map("doctor_id") @db.Uuid
+  employeeId       String?         @unique @map("employee_id") @db.VarChar
+  department       Department?
+  position         String?         @db.VarChar
+  reportingToId    String?         @map("reporting_to") @db.Uuid
+  joinDate         DateTime?       @map("join_date") @db.Date
+  employmentType   EmploymentType? @map("employment_type")
+  workSchedule     String?         @map("work_schedule") @db.VarChar
+  weeklyHours      Int?            @map("weekly_hours")
+  salaryCipher     String?         @map("salary_cipher") @db.VarChar
+  employmentStatus String?         @map("employment_status") @db.VarChar
+  createdAt        DateTime?       @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime?       @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  doctor      Doctor? @relation(fields: [doctorId], references: [id])
+  reportingTo Doctor? @relation("ReportingManager", fields: [reportingToId], references: [id])
+
+  @@index([employeeId])
+  @@index([department])
+  @@index([employmentStatus])
+  @@map("staff_employment_info")
+}
+
+model Task {
+  id              String      @id @default(uuid()) @db.Uuid
+  clinicId        String?     @map("clinic_id") @db.Uuid
+  title           String?     @db.VarChar
+  description     String?     @db.Text
+  status          TaskStatus?
+  priority        Priority?
+  dueDate         DateTime?   @map("due_date") @db.Date
+  
+  // Task can be assigned to either
+  assigneeDoctorId String?    @map("assignee_doctor_id") @db.Uuid
+  assigneeAdminId  String?    @map("assignee_admin_id") @db.Uuid
+  
+  patientId       String?     @map("patient_id") @db.Uuid
+  createdAt       DateTime?   @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime?   @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt       DateTime?   @map("deleted_at") @db.Timestamp(6)
+
+  clinic          Clinic?  @relation(fields: [clinicId], references: [id])
+  assignedDoctor  Doctor?  @relation("DoctorTaskAssignee", fields: [assigneeDoctorId], references: [id])
+  assignedAdmin   Admin?   @relation("AdminTaskAssignee", fields: [assigneeAdminId], references: [id])
+  patient         Patient? @relation(fields: [patientId], references: [id])
+
+  @@map("tasks")
+}
