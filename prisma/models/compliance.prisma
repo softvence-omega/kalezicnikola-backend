@@ -1,0 +1,87 @@
+// prisma/models/compliance.prisma
+model ConsentVersion {
+  id            String       @id @default(uuid()) @db.Uuid
+  clinicId      String?      @map("clinic_id") @db.Uuid
+  type          ConsentType?
+  version       String?      @db.VarChar
+  title         String?      @db.VarChar
+  body          String?      @db.Text
+  effectiveDate DateTime?    @map("effective_date") @db.Date
+  createdAt     DateTime?    @default(now()) @map("created_at") @db.Timestamp(6)
+
+  clinic          Clinic?          @relation(fields: [clinicId], references: [id])
+  patientConsents PatientConsent[]
+
+  @@map("consent_versions")
+}
+
+model PatientConsent {
+  id               String       @id @default(uuid()) @db.Uuid
+  patientId        String?      @map("patient_id") @db.Uuid
+  consentVersionId String?      @map("consent_version_id") @db.Uuid
+  type             ConsentType?
+  given            Boolean?
+  givenAt          DateTime?    @map("given_at") @db.Timestamp(6)
+  withdrawnAt      DateTime?    @map("withdrawn_at") @db.Timestamp(6)
+  ip               String?      @db.Inet
+  userAgent        String?      @map("user_agent") @db.VarChar
+  createdAt        DateTime?    @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime?    @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  patient        Patient?        @relation(fields: [patientId], references: [id])
+  consentVersion ConsentVersion? @relation(fields: [consentVersionId], references: [id])
+
+  @@map("patient_consents")
+}
+
+model KeyManagement {
+  id        String    @id @default(uuid()) @db.Uuid
+  version   String?   @unique @db.VarChar
+  dekCipher Bytes?    @map("dek_cipher") @db.ByteA
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  rotatedAt DateTime? @map("rotated_at") @db.Timestamp(6)
+
+  @@map("key_managements")
+}
+
+model AuditLog {
+  id         String    @id @default(uuid()) @db.Uuid
+  table      String?   @db.VarChar
+  rowId      String?   @map("row_id") @db.Uuid
+  action     String?   @db.VarChar
+  oldValues  Json?     @map("old_values") @db.Json
+  newValues  Json?     @map("new_values") @db.Json
+  
+  // Can be triggered by Admin or Doctor
+  adminId    String?   @map("admin_id") @db.Uuid
+  doctorId   String?   @map("doctor_id") @db.Uuid
+  
+  clinicId   String?   @map("clinic_id") @db.Uuid
+  ip         String?   @db.Inet
+  userAgent  String?   @map("user_agent") @db.VarChar
+  occurredAt DateTime? @map("occurred_at") @db.Timestamptz(6)
+
+  clinic Clinic? @relation(fields: [clinicId], references: [id])
+  admin  Admin?  @relation(fields: [adminId], references: [id])
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model DataRequest {
+  id                String             @id @default(uuid()) @db.Uuid
+  clinicId          String?            @map("clinic_id") @db.Uuid
+  patientId         String?            @map("patient_id") @db.Uuid
+  type              DataRequestType?
+  status            DataRequestStatus?
+  requestReason     String?            @map("request_reason") @db.Text
+  requestedAt       DateTime?          @map("requested_at") @db.Timestamp(6)
+  completedAt       DateTime?          @map("completed_at") @db.Timestamp(6)
+  downloadUrl       String?            @map("download_url") @db.VarChar
+  downloadExpiresAt DateTime?          @map("download_expires_at") @db.Timestamp(6)
+
+  clinic  Clinic?  @relation(fields: [clinicId], references: [id])
+  patient Patient? @relation(fields: [patientId], references: [id])
+
+  @@map("data_requests")
+}

@@ -1,0 +1,26 @@
+model Clinic {
+  id                 String               @id @default(uuid()) @db.Uuid
+  name               String?              @db.VarChar
+  address            String?              @db.VarChar
+  vatId              String?              @unique @map("vat_id") @db.VarChar
+  createdAt          DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt          DateTime?            @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  // Relations
+  admins             Admin[]
+  doctors            Doctor[]
+  patients           Patient[]
+  appointments       Appointment[]
+  calls              Call[]
+  labs               Lab[]
+  prescriptions      Prescription[]
+  tasks              Task[]
+  subscription       Subscription?
+  invoices           Invoice[]
+  notificationQueues NotificationQueue[]
+  auditLogs          AuditLog[]
+  dataRequests       DataRequest[]
+  consentVersions    ConsentVersion[]
+
+  @@map("clinics")
+}
