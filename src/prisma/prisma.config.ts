@@ -1,8 +1,7 @@
-import { PrismaConfig } from '@prisma/client/runtime';
-
-const config: PrismaConfig = {
-  datasources: {
+const config = {
+  datasource: {
     db: {
+      provider: 'postgresql',
       url: process.env.DATABASE_URL,
     },
   },
