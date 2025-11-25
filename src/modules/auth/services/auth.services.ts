@@ -6,7 +6,6 @@ import { ConfigService } from '@nestjs/config';
 
 import { HttpStatus } from '@nestjs/common';
 import { AppError } from 'src/errors/AppError';
-import { UserStatus } from 'generated/prisma';
 import { TLoginUserDto } from '../dto/auth.dto';
 
 @Injectable()
@@ -17,50 +16,50 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
-  async loginUser(payload: TLoginUserDto) {
-    const { email, password } = payload;
+  // async loginUser(payload: TLoginUserDto) {
+  //   const { email, password } = payload;
 
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-    });
+  //   const user = await this.prisma.user.findUnique({
+  //     where: { email },
+  //   });
 
-    if (!user) {
-      throw new AppError(HttpStatus.NOT_FOUND, 'This user is not found!');
-    }
+  //   if (!user) {
+  //     throw new AppError(HttpStatus.NOT_FOUND, 'This user is not found!');
+  //   }
 
-    if (user.isDeleted) {
-      throw new AppError(HttpStatus.FORBIDDEN, 'This user is deleted!');
-    }
+  //   if (user.isDeleted) {
+  //     throw new AppError(HttpStatus.FORBIDDEN, 'This user is deleted!');
+  //   }
 
-    if (user.status ===  UserStatus.BANNED) {
-      throw new AppError(HttpStatus.FORBIDDEN, 'This user is blocked!');
-    }
+  //   if (user.status ===  UserStatus.BANNED) {
+  //     throw new AppError(HttpStatus.FORBIDDEN, 'This user is blocked!');
+  //   }
 
-    const isPasswordMatched = await bcrypt.compare(password, user.password);
+  //   const isPasswordMatched = await bcrypt.compare(password, user.password);
 
-    if (!isPasswordMatched) {
-      throw new AppError(HttpStatus.FORBIDDEN, 'Password does not match');
-    }
+  //   if (!isPasswordMatched) {
+  //     throw new AppError(HttpStatus.FORBIDDEN, 'Password does not match');
+  //   }
 
-    const jwtPayload = {
-      userId: user.id,
-      role: user.role,
-      email: user.email,
-    };
+  //   const jwtPayload = {
+  //     userId: user.id,
+  //     role: user.role,
+  //     email: user.email,
+  //   };
 
-    const accessToken = this.jwtService.sign(jwtPayload, {
-      secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-      expiresIn: this.configService.get<string>('JWT_ACCESS_EXPIRES_IN'),
-    });
+  //   const accessToken = this.jwtService.sign(jwtPayload, {
+  //     secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+  //     expiresIn: this.configService.get<string>('JWT_ACCESS_EXPIRES_IN'),
+  //   });
 
-    const refreshToken = this.jwtService.sign(jwtPayload, {
-      secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-      expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN'),
-    });
+  //   const refreshToken = this.jwtService.sign(jwtPayload, {
+  //     secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+  //     expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN'),
+  //   });
 
-    return {
-      accessToken,
-      refreshToken,
-    };
-  }
+  //   return {
+  //     accessToken,
+  //     refreshToken,
+  //   };
+  // }
 }

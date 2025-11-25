@@ -15,13 +15,13 @@ import { AuthService } from '../services/auth.services';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('login')
-  async login(@Body() loginDto: TLoginUserDto) {
-    const data = await  this.authService.loginUser(loginDto)
-    return   {
-      message: 'Login User successfully',
-      data
-    };
+  // @Post('login')
+  // async login(@Body() loginDto: TLoginUserDto) {
+  //   const data = await  this.authService.loginUser(loginDto)
+  //   return   {
+  //     message: 'Login User successfully',
+  //     data
+  //   };
     
-  }
+  // }
 }
