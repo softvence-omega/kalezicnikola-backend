@@ -1,0 +1,694 @@
+// prisma/models/billing.prisma
+model Subscription {
+  id                   String              @id @default(uuid()) @db.Uuid
+  clinicId             String?             @unique @map("clinic_id") @db.Uuid
+  stripeCustomerId     String?             @unique @map("stripe_customer_id") @db.VarChar
+  stripeSubscriptionId String?             @unique @map("stripe_subscription_id") @db.VarChar
+  plan                 Plan?
+  status               SubscriptionStatus?
+  currentPeriodStart   DateTime?           @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd     DateTime?           @map("current_period_end") @db.Timestamptz(6)
+  createdAt            DateTime?           @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt            DateTime?           @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  clinic Clinic? @relation(fields: [clinicId], references: [id])
+
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id              String    @id @default(uuid()) @db.Uuid
+  clinicId        String?   @map("clinic_id") @db.Uuid
+  stripeInvoiceId String?   @unique @map("stripe_invoice_id") @db.VarChar
+  invoiceNo       String?   @map("invoice_no") @db.VarChar
+  amountDue       Int?      @map("amount_due")
+  amountPaid      Int?      @map("amount_paid")
+  currency        String?   @db.VarChar
+  status          String?   @db.VarChar
+  invoicePdfUrl   String?   @map("invoice_pdf_url") @db.VarChar
+  createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+
+  clinic Clinic? @relation(fields: [clinicId], references: [id])
+
+  @@map("invoices")
+}
+
+model NotificationQueue {
+  id        String              @id @default(uuid()) @db.Uuid
+  clinicId  String?             @map("clinic_id") @db.Uuid
+  type      NotificationType?
+  recipient String?             @db.VarChar
+  payload   Json?               @db.Json
+  status    NotificationStatus?
+  sentAt    DateTime?           @map("sent_at") @db.Timestamp(6)
+  createdAt DateTime?           @default(now()) @map("created_at") @db.Timestamp(6)
+
+  clinic Clinic? @relation(fields: [clinicId], references: [id])
+
+  @@map("notification_queues")
+}
+
+model Clinic {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String?   @db.VarChar
+  address   String?   @db.VarChar
+  vatId     String?   @unique @map("vat_id") @db.VarChar
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  // Relations
+  admins             Admin[]
+  doctors            Doctor[]
+  patients           Patient[]
+  appointments       Appointment[]
+  calls              Call[]
+  labs               Lab[]
+  prescriptions      Prescription[]
+  tasks              Task[]
+  subscription       Subscription?
+  invoices           Invoice[]
+  notificationQueues NotificationQueue[]
+  auditLogs          AuditLog[]
+  dataRequests       DataRequest[]
+  consentVersions    ConsentVersion[]
+
+  @@map("clinics")
+}
+
+// prisma/models/compliance.prisma
+model ConsentVersion {
+  id            String       @id @default(uuid()) @db.Uuid
+  clinicId      String?      @map("clinic_id") @db.Uuid
+  type          ConsentType?
+  version       String?      @db.VarChar
+  title         String?      @db.VarChar
+  body          String?      @db.Text
+  effectiveDate DateTime?    @map("effective_date") @db.Date
+  createdAt     DateTime?    @default(now()) @map("created_at") @db.Timestamp(6)
+
+  clinic          Clinic?          @relation(fields: [clinicId], references: [id])
+  patientConsents PatientConsent[]
+
+  @@map("consent_versions")
+}
+
+model PatientConsent {
+  id               String       @id @default(uuid()) @db.Uuid
+  patientId        String?      @map("patient_id") @db.Uuid
+  consentVersionId String?      @map("consent_version_id") @db.Uuid
+  type             ConsentType?
+  given            Boolean?
+  givenAt          DateTime?    @map("given_at") @db.Timestamp(6)
+  withdrawnAt      DateTime?    @map("withdrawn_at") @db.Timestamp(6)
+  ip               String?      @db.Inet
+  userAgent        String?      @map("user_agent") @db.VarChar
+  createdAt        DateTime?    @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime?    @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  patient        Patient?        @relation(fields: [patientId], references: [id])
+  consentVersion ConsentVersion? @relation(fields: [consentVersionId], references: [id])
+
+  @@map("patient_consents")
+}
+
+model KeyManagement {
+  id        String    @id @default(uuid()) @db.Uuid
+  version   String?   @unique @db.VarChar
+  dekCipher Bytes?    @map("dek_cipher") @db.ByteA
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  rotatedAt DateTime? @map("rotated_at") @db.Timestamp(6)
+
+  @@map("key_managements")
+}
+
+model AuditLog {
+  id        String  @id @default(uuid()) @db.Uuid
+  table     String? @db.VarChar
+  rowId     String? @map("row_id") @db.Uuid
+  action    String? @db.VarChar
+  oldValues Json?   @map("old_values") @db.Json
+  newValues Json?   @map("new_values") @db.Json
+
+  // Can be triggered by Admin or Doctor
+  adminId  String? @map("admin_id") @db.Uuid
+  doctorId String? @map("doctor_id") @db.Uuid
+
+  clinicId   String?   @map("clinic_id") @db.Uuid
+  ip         String?   @db.Inet
+  userAgent  String?   @map("user_agent") @db.VarChar
+  occurredAt DateTime? @map("occurred_at") @db.Timestamptz(6)
+
+  clinic Clinic? @relation(fields: [clinicId], references: [id])
+  admin  Admin?  @relation(fields: [adminId], references: [id])
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model DataRequest {
+  id                String             @id @default(uuid()) @db.Uuid
+  clinicId          String?            @map("clinic_id") @db.Uuid
+  patientId         String?            @map("patient_id") @db.Uuid
+  type              DataRequestType?
+  status            DataRequestStatus?
+  requestReason     String?            @map("request_reason") @db.Text
+  requestedAt       DateTime?          @map("requested_at") @db.Timestamp(6)
+  completedAt       DateTime?          @map("completed_at") @db.Timestamp(6)
+  downloadUrl       String?            @map("download_url") @db.VarChar
+  downloadExpiresAt DateTime?          @map("download_expires_at") @db.Timestamp(6)
+
+  clinic  Clinic?  @relation(fields: [clinicId], references: [id])
+  patient Patient? @relation(fields: [patientId], references: [id])
+
+  @@map("data_requests")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHERS
+}
+
+enum AppointmentStatus {
+  NEW
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum CallStatus {
+  STARTED
+  ENDED
+  MISSED
+  FAILED
+}
+
+enum Sentiment {
+  POSITIVE
+  NEGATIVE
+  NEUTRAL
+}
+
+enum Flag {
+  LOW
+  HIGH
+  NORMAL
+}
+
+enum PrescriptionStatus {
+  ACTIVE
+  CANCELLED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum Plan {
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+enum NotificationType {
+  IN_APP
+  SMS
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum ConsentType {
+  MARKETING
+  CARE_ANALYTICS
+}
+
+enum DataRequestType {
+  EXPORT
+  ERASURE
+}
+
+enum DataRequestStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum Department {
+  CARDIOLOGY
+  NEUROLOGY
+  PEDIATRICS
+  ORTHOPEDICS
+  DERMATOLOGY
+  RADIOLOGY
+  PHARMACY
+  ADMINISTRATION
+  RECEPTION
+  NURSING
+  LABORATORY
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  TEMPORARY
+  INTERN
+}
+
+enum MetricType {
+  CPU
+  MEMORY
+  DISK
+  NETWORK
+  DATABASE_CONNECTIONS
+  REQUEST_RATE
+  ERROR_RATE
+}
+
+enum ServiceName {
+  API_GATEWAY
+  DATABASE_PRIMARY
+  DATABASE_REPLICA
+  VOICEBOT_SERVICE
+  AUTHENTICATION_SERVICE
+  PAYMENT_GATEWAY
+  NOTIFICATION_SERVICE
+  PRESCRIPTION_SERVICE
+  APPOINTMENT_SERVICE
+  PATIENT_SERVICE
+  LAB_SERVICE
+}
+
+enum ServiceStatus {
+  OPERATIONAL
+  DEGRADED
+  PARTIAL_OUTAGE
+  MAJOR_OUTAGE
+  MAINTENANCE
+}
+
+enum IncidentSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum IncidentStatus {
+  INVESTIGATING
+  IDENTIFIED
+  MONITORING
+  RESOLVED
+  POSTMORTEM
+}
+
+enum HealthCheckStatus {
+  HEALTHY
+  UNHEALTHY
+  TIMEOUT
+}
+
+// prisma/models/medical.prisma
+model Appointment {
+  id        String             @id @default(uuid()) @db.Uuid
+  clinicId  String?            @map("clinic_id") @db.Uuid
+  patientId String?            @map("patient_id") @db.Uuid
+  doctorId  String?            @map("doctor_id") @db.Uuid
+  startAt   DateTime?          @map("start_at") @db.Timestamptz(6)
+  endAt     DateTime?          @map("end_at") @db.Timestamptz(6)
+  status    AppointmentStatus?
+  note      String?            @db.Text
+  createdAt DateTime?          @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime?          @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt DateTime?          @map("deleted_at") @db.Timestamp(6)
+
+  clinic  Clinic?  @relation(fields: [clinicId], references: [id])
+  patient Patient? @relation(fields: [patientId], references: [id])
+  doctor  Doctor?  @relation("DoctorAppointments", fields: [doctorId], references: [id])
+
+  @@map("appointments")
+}
+
+model Call {
+  id                 String      @id @default(uuid()) @db.Uuid
+  clinicId           String?     @map("clinic_id") @db.Uuid
+  patientId          String?     @map("patient_id") @db.Uuid
+  doctorId           String?     @map("doctor_id") @db.Uuid
+  startAt            DateTime?   @map("start_at") @db.Timestamptz(6)
+  endAt              DateTime?   @map("end_at") @db.Timestamptz(6)
+  durationSeconds    Int?        @map("duration_seconds")
+  status             CallStatus?
+  recordingUrlCipher String?     @map("recording_url_cipher") @db.VarChar
+  transcript         String?     @db.Text
+  aiSummary          String?     @map("ai_summary") @db.Text
+  sentiment          Sentiment?
+  escalated          Boolean?
+  minutesUsed        Int?        @map("minutes_used")
+  createdAt          DateTime?   @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt          DateTime?   @updatedAt @map("updated_at") @db.Timestamp(6)
+  aiModelId          String?     @map("ai_model_id") @db.Uuid
+  aiDecision         String?     @map("ai_decision") @db.VarChar
+
+  clinic  Clinic?  @relation(fields: [clinicId], references: [id])
+  patient Patient? @relation(fields: [patientId], references: [id])
+  doctor  Doctor?  @relation("DoctorCalls", fields: [doctorId], references: [id])
+
+  @@map("calls")
+}
+
+model Diagnosis {
+  id            String    @id @default(uuid()) @db.Uuid
+  patientId     String?   @map("patient_id") @db.Uuid
+  doctorId      String?   @map("doctor_id") @db.Uuid
+  diagnosisCode String?   @map("diagnosis_code") @db.VarChar
+  diagnosisName String?   @map("diagnosis_name") @db.VarChar
+  description   String?   @db.Text
+  status        String?   @db.VarChar
+  diagnosedDate DateTime? @map("diagnosed_date") @db.Date
+  resolvedDate  DateTime? @map("resolved_date") @db.Date
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  patient Patient? @relation(fields: [patientId], references: [id])
+  doctor  Doctor?  @relation("DoctorDiagnoses", fields: [doctorId], references: [id])
+
+  @@map("diagnoses")
+}
+
+model Lab {
+  id           String    @id @default(uuid()) @db.Uuid
+  clinicId     String?   @map("clinic_id") @db.Uuid
+  patientId    String?   @map("patient_id") @db.Uuid
+  testDate     DateTime? @map("test_date") @db.Date
+  pdfKeyCipher String?   @map("pdf_key_cipher") @db.VarChar
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt    DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  clinic  Clinic?     @relation(fields: [clinicId], references: [id])
+  patient Patient?    @relation(fields: [patientId], references: [id])
+  results LabResult[]
+
+  @@map("labs")
+}
+
+model LabResult {
+  id        String  @id @default(uuid()) @db.Uuid
+  labId     String? @map("lab_id") @db.Uuid
+  testName  String? @map("test_name") @db.VarChar
+  result    String? @db.VarChar
+  unit      String? @db.VarChar
+  normalMin Float?  @map("normal_min")
+  normalMax Float?  @map("normal_max")
+  flag      Flag?
+
+  lab Lab? @relation(fields: [labId], references: [id])
+
+  @@map("lab_results")
+}
+
+model Prescription {
+  id             String              @id @default(uuid()) @db.Uuid
+  clinicId       String?             @map("clinic_id") @db.Uuid
+  patientId      String?             @map("patient_id") @db.Uuid
+  doctorId       String?             @map("doctor_id") @db.Uuid
+  prescriptionNo Int?                @map("prescription_no")
+  status         PrescriptionStatus?
+  createdAt      DateTime?           @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime?           @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt      DateTime?           @map("deleted_at") @db.Timestamp(6)
+
+  clinic    Clinic?                @relation(fields: [clinicId], references: [id])
+  patient   Patient?               @relation(fields: [patientId], references: [id])
+  doctor    Doctor?                @relation("DoctorPrescriptions", fields: [doctorId], references: [id])
+  medicines PrescriptionMedicine[]
+
+  @@map("prescriptions")
+}
+
+model PrescriptionMedicine {
+  id             String  @id @default(uuid()) @db.Uuid
+  prescriptionId String? @map("prescription_id") @db.Uuid
+  medicine       String? @db.VarChar
+  strength       String? @db.VarChar
+  dose           String? @db.VarChar
+  frequency      String? @db.VarChar
+  route          String? @db.VarChar
+  duration       String? @db.VarChar
+  refill         Int?
+
+  prescription Prescription? @relation(fields: [prescriptionId], references: [id])
+
+  @@map("prescription_medicines")
+}
+
+model Patient {
+  id                     String    @id @default(uuid()) @db.Uuid
+  clinicId               String?   @map("clinic_id") @db.Uuid
+  firstNameCipher        String?   @map("first_name_cipher") @db.VarChar
+  lastNameCipher         String?   @map("last_name_cipher") @db.VarChar
+  phoneCipher            String?   @map("phone_cipher") @db.VarChar
+  emailCipher            String?   @map("email_cipher") @db.VarChar
+  insuranceIdCipher      String?   @map("insurance_id_cipher") @db.VarChar
+  addressCipher          String?   @map("address_cipher") @db.VarChar
+  emergencyContactCipher String?   @map("emergency_contact_cipher") @db.VarChar
+  dateOfBirth            DateTime? @map("date_of_birth") @db.Timestamp(6)
+  gender                 Gender?
+  bloodGroup             String?   @map("blood_group") @db.VarChar
+  conditionName          String?   @map("condition_name") @db.VarChar
+  diagnosedDate          DateTime? @map("diagnosed_date") @db.Date
+  severity               String?   @db.VarChar
+  status                 String?   @db.VarChar
+  retentionExpiresAt     DateTime? @map("retention_expires_at") @db.Timestamp(6)
+  createdAt              DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt              DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt              DateTime? @map("deleted_at") @db.Timestamp(6)
+  firstNameBlind         String?   @map("first_name_blind") @db.VarChar
+  lastNameBlind          String?   @map("last_name_blind") @db.VarChar
+  insuranceIdBlind       String?   @map("insurance_id_blind") @db.VarChar
+
+  // Relations
+  clinic            Clinic?            @relation(fields: [clinicId], references: [id])
+  appointments      Appointment[]
+  calls             Call[]
+  labs              Lab[]
+  prescriptions     Prescription[]
+  tasks             Task[]
+  dataRequests      DataRequest[]
+  emergencyContacts EmergencyContact[]
+  diagnoses         Diagnosis[]
+  consents          PatientConsent[]
+
+  @@map("patients")
+}
+
+model EmergencyContact {
+  id           String    @id @default(uuid()) @db.Uuid
+  patientId    String?   @map("patient_id") @db.Uuid
+  nameCipher   String?   @map("name_cipher") @db.VarChar
+  relationship String?   @db.VarChar
+  phoneCipher  String?   @map("phone_cipher") @db.VarChar
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt    DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  patient Patient? @relation(fields: [patientId], references: [id])
+
+  @@map("emergency_contacts")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// prisma/models/staff.prisma
+model StaffPersonalInfo {
+  id                           String    @id @default(uuid()) @db.Uuid
+  doctorId                     String?   @unique @map("doctor_id") @db.Uuid
+  dateOfBirth                  DateTime? @map("date_of_birth") @db.Date
+  phoneCipher                  String?   @map("phone_cipher") @db.VarChar
+  addressCipher                String?   @map("address_cipher") @db.VarChar
+  stateProvince                String?   @map("state_province") @db.VarChar
+  postalCode                   String?   @map("postal_code") @db.VarChar
+  country                      String?   @db.VarChar
+  emergencyContactName         String?   @map("emergency_contact_name") @db.VarChar
+  emergencyContactPhone        String?   @map("emergency_contact_phone") @db.VarChar
+  emergencyContactRelationship String?   @map("emergency_contact_relationship") @db.VarChar
+  createdAt                    DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt                    DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
+
+  @@map("staff_personal_info")
+}
+
+model StaffEmploymentInfo {
+  id               String          @id @default(uuid()) @db.Uuid
+  doctorId         String?         @unique @map("doctor_id") @db.Uuid
+  employeeId       String?         @unique @map("employee_id") @db.VarChar
+  department       Department?
+  position         String?         @db.VarChar
+  reportingToId    String?         @map("reporting_to") @db.Uuid
+  joinDate         DateTime?       @map("join_date") @db.Date
+  employmentType   EmploymentType? @map("employment_type")
+  workSchedule     String?         @map("work_schedule") @db.VarChar
+  weeklyHours      Int?            @map("weekly_hours")
+  salaryCipher     String?         @map("salary_cipher") @db.VarChar
+  employmentStatus String?         @map("employment_status") @db.VarChar
+  createdAt        DateTime?       @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime?       @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  doctor      Doctor? @relation(fields: [doctorId], references: [id])
+  reportingTo Doctor? @relation("ReportingManager", fields: [reportingToId], references: [id])
+
+  @@index([employeeId])
+  @@index([department])
+  @@index([employmentStatus])
+  @@map("staff_employment_info")
+}
+
+model Task {
+  id          String      @id @default(uuid()) @db.Uuid
+  clinicId    String?     @map("clinic_id") @db.Uuid
+  title       String?     @db.VarChar
+  description String?     @db.Text
+  status      TaskStatus?
+  priority    Priority?
+  dueDate     DateTime?   @map("due_date") @db.Date
+
+  // Task can be assigned to either
+  assigneeDoctorId String? @map("assignee_doctor_id") @db.Uuid
+  assigneeAdminId  String? @map("assignee_admin_id") @db.Uuid
+
+  patientId String?   @map("patient_id") @db.Uuid
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  clinic         Clinic?  @relation(fields: [clinicId], references: [id])
+  assignedDoctor Doctor?  @relation("DoctorTaskAssignee", fields: [assigneeDoctorId], references: [id])
+  assignedAdmin  Admin?   @relation("AdminTaskAssignee", fields: [assigneeAdminId], references: [id])
+  patient        Patient? @relation(fields: [patientId], references: [id])
+
+  @@map("tasks")
+}
+
+// prisma/models/system.prisma
+model SystemMetric {
+  id          String       @id @default(uuid()) @db.Uuid
+  serviceName ServiceName? @map("service_name")
+  metricType  MetricType?  @map("metric_type")
+  value       Float?
+  unit        String?      @db.VarChar
+  recordedAt  DateTime?    @map("recorded_at") @db.Timestamptz(6)
+  createdAt   DateTime?    @default(now()) @map("created_at") @db.Timestamp(6)
+
+  @@index([serviceName, metricType, recordedAt])
+  @@map("system_metrics")
+}
+
+model Admin {
+  id           String  @id @default(uuid()) @db.Uuid
+  clinicId     String? @map("clinic_id") @db.Uuid
+  email        String? @unique @db.VarChar
+  passwordHash String? @map("password_hash") @db.VarChar
+  firstName    String? @map("first_name") @db.VarChar
+  lastName     String? @map("last_name") @db.VarChar
+  otp          String?
+
+  emailVerifiedAt  DateTime? @map("email_verified_at") @db.Timestamp(6)
+  twoFactorSecret  String?   @map("two_factor_secret") @db.VarChar
+  twoFactorEnabled Boolean?  @map("two_factor_enabled")
+  lastLoginAt      DateTime? @map("last_login_at") @db.Timestamp(6)
+  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  // Relations
+  clinic        Clinic?    @relation(fields: [clinicId], references: [id])
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  assignedTasks Task[]     @relation("AdminTaskAssignee")
+
+  @@map("admins")
+}
+
+model Doctor {
+  id           String  @id @default(uuid()) @db.Uuid
+  clinicId     String? @map("clinic_id") @db.Uuid
+  email        String? @unique @db.VarChar
+  passwordHash String? @map("password_hash") @db.VarChar
+  firstName    String? @map("first_name") @db.VarChar
+  lastName     String? @map("last_name") @db.VarChar
+  otp          String?
+
+  // Doctor Specific Fields
+  licenceNo    String?  @map("licence_no") @db.VarChar
+  specialities String[] @db.VarChar
+
+  emailVerifiedAt  DateTime? @map("email_verified_at") @db.Timestamp(6)
+  twoFactorSecret  String?   @map("two_factor_secret") @db.VarChar
+  twoFactorEnabled Boolean?  @map("two_factor_enabled")
+  lastLoginAt      DateTime? @map("last_login_at") @db.Timestamp(6)
+  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  // Relations
+  clinic        Clinic?        @relation(fields: [clinicId], references: [id])
+  sessions      Session[]
+  appointments  Appointment[]  @relation("DoctorAppointments")
+  calls         Call[]         @relation("DoctorCalls")
+  prescriptions Prescription[] @relation("DoctorPrescriptions")
+  diagnoses     Diagnosis[]    @relation("DoctorDiagnoses")
+  assignedTasks Task[]         @relation("DoctorTaskAssignee")
+  auditLogs     AuditLog[]
+
+  // HR Relations
+  staffPersonalInfo   StaffPersonalInfo?
+  staffEmploymentInfo StaffEmploymentInfo?
+
+  // Self-relation for reporting hierarchy
+  subordinates StaffEmploymentInfo[] @relation("ReportingManager")
+
+  @@map("doctors")
+}
+
+model Session {
+  id        String    @id @default(uuid()) @db.Uuid
+  adminId   String?   @map("admin_id") @db.Uuid
+  doctorId  String?   @map("doctor_id") @db.Uuid
+  ip        String?   @db.Inet
+  userAgent String?   @map("user_agent") @db.VarChar
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+
+  admin  Admin?  @relation(fields: [adminId], references: [id])
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
+
+  @@map("sessions")
+}

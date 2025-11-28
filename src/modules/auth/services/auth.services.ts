@@ -3,7 +3,6 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
-
 import { HttpStatus } from '@nestjs/common';
 import { AppError } from 'src/errors/AppError';
 import { TLoginUserDto } from '../dto/auth.dto';
