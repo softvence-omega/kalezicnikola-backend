@@ -1,19 +1,20 @@
 model Admin {
-  id           String  @id @default(uuid()) @db.Uuid
-  clinicId     String? @map("clinic_id") @db.Uuid
-  email        String? @unique @db.VarChar
-  passwordHash String? @map("password_hash") @db.VarChar
-  firstName    String? @map("first_name") @db.VarChar
-  lastName     String? @map("last_name") @db.VarChar
+  id           String  @id @default(uuid()) 
+  clinicId     String?  
+  email        String @unique 
+  passwordHash String? 
+  firstName    String? 
+  lastName     String?  
+  photo        String? 
   otp          String?
 
-  emailVerifiedAt  DateTime? @map("email_verified_at") @db.Timestamp(6)
-  twoFactorSecret  String?   @map("two_factor_secret") @db.VarChar
-  twoFactorEnabled Boolean?  @map("two_factor_enabled")
-  lastLoginAt      DateTime? @map("last_login_at") @db.Timestamp(6)
-  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt        DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
-  deletedAt        DateTime? @map("deleted_at") @db.Timestamp(6)
+  emailVerifiedAt  DateTime?  
+  twoFactorSecret  String?   
+  twoFactorEnabled Boolean?  
+  lastLoginAt      DateTime? 
+  createdAt        DateTime? @default(now()) 
+  updatedAt        DateTime? @updatedAt 
+  deletedAt        DateTime?  
 
   // Relations
   clinic        Clinic?    @relation(fields: [clinicId], references: [id])
@@ -25,25 +26,25 @@ model Admin {
 }
 
 model Doctor {
-  id           String  @id @default(uuid()) @db.Uuid
-  clinicId     String? @map("clinic_id") @db.Uuid
-  email        String? @unique @db.VarChar
-  passwordHash String? @map("password_hash") @db.VarChar
-  firstName    String? @map("first_name") @db.VarChar
-  lastName     String? @map("last_name") @db.VarChar
+  id           String  @id @default(uuid()) 
+  clinicId     String? 
+  email        String? @unique 
+  passwordHash String? 
+  firstName    String? 
+  lastName     String? 
   otp          String?
 
   // Doctor Specific Fields
-  licenceNo    String?  @map("licence_no") @db.VarChar
-  specialities String[] @db.VarChar
+  licenceNo    String?  
+  specialities String[] 
 
-  emailVerifiedAt  DateTime? @map("email_verified_at") @db.Timestamp(6)
-  twoFactorSecret  String?   @map("two_factor_secret") @db.VarChar
-  twoFactorEnabled Boolean?  @map("two_factor_enabled")
-  lastLoginAt      DateTime? @map("last_login_at") @db.Timestamp(6)
-  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt        DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
-  deletedAt        DateTime? @map("deleted_at") @db.Timestamp(6)
+  emailVerifiedAt  DateTime? 
+  twoFactorSecret  String?   
+  twoFactorEnabled Boolean?  
+  lastLoginAt      DateTime? 
+  createdAt        DateTime? @default(now()) 
+  updatedAt        DateTime? @updatedAt 
+  deletedAt        DateTime?  
 
   // Relations
   clinic        Clinic?        @relation(fields: [clinicId], references: [id])
@@ -66,12 +67,22 @@ model Doctor {
 }
 
 model Session {
-  id        String    @id @default(uuid()) @db.Uuid
-  adminId   String?   @map("admin_id") @db.Uuid
-  doctorId  String?   @map("doctor_id") @db.Uuid
-  ip        String?   @db.Inet
-  userAgent String?   @map("user_agent") @db.VarChar
-  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  id       String  @id @default(uuid()) 
+  adminId  String? 
+  doctorId String?  
+
+  accessToken  String @unique
+  refreshToken String @unique
+
+  isActive  Boolean   @default(true)
+  isRevoked Boolean   @default(false)
+  revokedAt DateTime?
+
+  lastActivity          DateTime @default(now())
+  refreshTokenExpiresAt DateTime
+
+  createdAt DateTime? @default(now()) 
+  updatedAt DateTime  @updatedAt
 
   admin  Admin?  @relation(fields: [adminId], references: [id])
   doctor Doctor? @relation(fields: [doctorId], references: [id])
