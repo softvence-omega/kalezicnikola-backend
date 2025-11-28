@@ -2,7 +2,6 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { setupSwagger } from './swagger/swagger.setup';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
@@ -34,16 +33,12 @@ async function bootstrap() {
     }),
   );
 
-  //here add global prefix for api
   app.setGlobalPrefix('/api/v1');
-
 
   const config = app.get(ConfigService);
   const port = config.get('port') || 3000;
   const node_env = config.get('node_env') || 'development';
-  if (node_env !== 'production') {
-    setupSwagger(app);
-  }
+
 
   await app.listen(port);
   console.log(`🚀 Application is running successfully! port number ${port}`);
