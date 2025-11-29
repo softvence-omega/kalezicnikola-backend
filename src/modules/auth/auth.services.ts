@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AdminRegistrationDto } from './dto/auth-admin.dto';
 import { DoctorRegistrationDto } from './dto/auth-doctor.dto';
@@ -7,6 +11,10 @@ import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { TokenUtil } from 'src/utils/token.util';
+import { EmailService } from '../email/email.service';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -16,6 +24,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
+    private emailService: EmailService,
   ) {
     this.tokenUtil = new TokenUtil(jwt, config);
   }
@@ -23,12 +32,15 @@ export class AuthService {
   // ----------------- ADMIN REGISTER -------------------
   async registerAdmin(dto: AdminRegistrationDto) {
     const existing =
-      await this.prisma.admin.findUnique({ where: { email: dto.email } }) ||
-      await this.prisma.doctor.findUnique({ where: { email: dto.email } });
+      (await this.prisma.admin.findUnique({ where: { email: dto.email } })) ||
+      (await this.prisma.doctor.findUnique({ where: { email: dto.email } }));
 
     if (existing) throw new BadRequestException('Email already in use');
 
-    const saltRounds = parseInt(this.config.get<string>('bcrypt_salt_rounds') || '10', 10);
+    const saltRounds = parseInt(
+      this.config.get<string>('bcrypt_salt_rounds') || '10',
+      10,
+    );
     const passwordHash = await bcrypt.hash(dto.password, saltRounds);
 
     const admin = await this.prisma.admin.create({
@@ -46,12 +58,15 @@ export class AuthService {
   // ----------------- DOCTOR REGISTER ------------------
   async registerDoctor(dto: DoctorRegistrationDto) {
     const existing =
-      await this.prisma.admin.findUnique({ where: { email: dto.email } }) ||
-      await this.prisma.doctor.findUnique({ where: { email: dto.email } });
+      (await this.prisma.admin.findUnique({ where: { email: dto.email } })) ||
+      (await this.prisma.doctor.findUnique({ where: { email: dto.email } }));
 
     if (existing) throw new BadRequestException('Email already in use');
 
-    const saltRounds = parseInt(this.config.get<string>('bcrypt_salt_rounds') || '10', 10);
+    const saltRounds = parseInt(
+      this.config.get<string>('bcrypt_salt_rounds') || '10',
+      10,
+    );
     const passwordHash = await bcrypt.hash(dto.password, saltRounds);
 
     const doctor = await this.prisma.doctor.create({
@@ -78,7 +93,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const isPasswordValid = await bcrypt.compare(dto.password, admin.passwordHash);
+    const isPasswordValid = await bcrypt.compare(
+      dto.password,
+      admin.passwordHash,
+    );
 
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
@@ -120,7 +138,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const isPasswordValid = await bcrypt.compare(dto.password, doctor.passwordHash);
+    const isPasswordValid = await bcrypt.compare(
+      dto.password,
+      doctor.passwordHash,
+    );
 
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
@@ -128,7 +149,10 @@ export class AuthService {
 
     // Generate tokens
     const accessToken = this.tokenUtil.generateAccessToken(doctor.id, 'doctor');
-    const refreshToken = this.tokenUtil.generateRefreshToken(doctor.id, 'doctor');
+    const refreshToken = this.tokenUtil.generateRefreshToken(
+      doctor.id,
+      'doctor',
+    );
 
     // Create session
     await this.createSession(doctor.id, 'doctor', accessToken, refreshToken);
@@ -222,7 +246,7 @@ export class AuthService {
   async validateSession(accessToken: string) {
     // CRITICAL: Verify token expiration first
     const payload = this.tokenUtil.verifyAccessToken(accessToken);
-    
+
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
       include: {
@@ -255,7 +279,8 @@ export class AuthService {
     accessToken: string,
     refreshToken: string,
   ) {
-    const refreshTokenExpiresAt = this.tokenUtil.getRefreshTokenExpirationDate();
+    const refreshTokenExpiresAt =
+      this.tokenUtil.getRefreshTokenExpirationDate();
 
     return await this.prisma.session.create({
       data: {
@@ -268,5 +293,149 @@ export class AuthService {
         ...(role === 'admin' ? { adminId: userId } : { doctorId: userId }),
       },
     });
+  }
+
+  // ----------------- INVALIDATE ALL SESSIONS -------------------
+  private async invalidateAllSessions(
+    userId: string,
+    userType: 'admin' | 'doctor',
+  ) {
+    const whereClause =
+      userType === 'admin' ? { adminId: userId } : { doctorId: userId };
+
+    await this.prisma.session.updateMany({
+      where: {
+        ...whereClause,
+        isActive: true,
+      },
+      data: {
+        isActive: false,
+        isRevoked: true,
+        revokedAt: new Date(),
+      },
+    });
+  }
+
+// ----------------- FORGOT PASSWORD -------------------
+async forgotPassword(dto: ForgotPasswordDto) {
+  // Check both admin and doctor tables
+  const [admin, doctor] = await Promise.all([
+    this.prisma.admin.findUnique({ where: { email: dto.email } }),
+    this.prisma.doctor.findUnique({ where: { email: dto.email } }),
+  ]);
+
+  if (!admin && !doctor) {
+    // Don't reveal if email exists for security
+    return { message: 'If the email exists, an OTP has been sent' };
+  }
+
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  // Store OTP in database with appropriate relation
+  const resetData: any = {
+    email: dto.email,
+    otp,
+    expiresAt,
+  };
+
+  let userName: string | undefined;
+
+  if (admin) {
+    resetData.adminId = admin.id;
+    userName = admin.firstName || undefined;
+  } else if (doctor) {
+    resetData.doctorId = doctor.id;
+    userName = doctor.firstName || undefined;
+  }
+
+  await this.prisma.passwordReset.create({
+    data: resetData,
+  });
+
+  // Send OTP via email
+  const emailSent = await this.emailService.sendOtpEmail(
+    dto.email,
+    otp,
+    userName, // This can be undefined, handle it in email service
+  );
+
+  if (!emailSent) {
+    throw new BadRequestException('Failed to send OTP email');
+  }
+
+  return { message: 'OTP sent to your email' };
+}
+
+  // ----------------- VERIFY OTP -------------------
+  async verifyOtp(dto: VerifyOtpDto) {
+    const resetRecord = await this.prisma.passwordReset.findFirst({
+      where: {
+        email: dto.email,
+        otp: dto.otp,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    if (!resetRecord) {
+      throw new UnauthorizedException('Invalid or expired OTP');
+    }
+
+    return { message: 'OTP verified successfully' };
+  }
+
+  // ----------------- RESET PASSWORD -------------------
+  async resetPassword(dto: ResetPasswordDto) {
+    // Verify OTP first
+    const resetRecord = await this.prisma.passwordReset.findFirst({
+      where: {
+        email: dto.email,
+        otp: dto.otp,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    if (!resetRecord) {
+      throw new UnauthorizedException('Invalid or expired OTP');
+    }
+
+    // Determine user type and update password
+    let user: any;
+    const saltRounds = parseInt(
+      this.config.get<string>('bcrypt_salt_rounds') || '10',
+      10,
+    );
+    const passwordHash = await bcrypt.hash(dto.newPassword, saltRounds);
+
+    if (resetRecord.adminId) {
+      user = await this.prisma.admin.update({
+        where: { id: resetRecord.adminId },
+        data: { passwordHash },
+      });
+    } else if (resetRecord.doctorId) {
+      user = await this.prisma.doctor.update({
+        where: { id: resetRecord.doctorId },
+        data: { passwordHash },
+      });
+    } else {
+      throw new BadRequestException('Invalid reset record');
+    }
+
+    // Mark OTP as used
+    await this.prisma.passwordReset.update({
+      where: { id: resetRecord.id },
+      data: { usedAt: new Date() },
+    });
+
+    // Invalidate all existing sessions
+    await this.invalidateAllSessions(
+      user.id,
+      resetRecord.adminId ? 'admin' : 'doctor',
+    );
+
+    return { message: 'Password reset successfully' };
   }
 }

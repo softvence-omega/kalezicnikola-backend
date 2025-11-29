@@ -4,6 +4,9 @@ import { DoctorRegistrationDto } from './dto/auth-doctor.dto';
 import { UserLoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { AuthService } from './auth.services';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -110,6 +113,40 @@ export class AuthController {
         user: result.user,
         role: result.role,
       },
+    };
+  }
+
+
+  // ----------------- FORGOT PASSWORD -------------------
+  @Post('forgot-password')
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    const result = await this.authService.forgotPassword(dto);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: result.message,
+    };
+  }
+
+  // ----------------- VERIFY OTP -------------------
+  @Post('verify-otp')
+  async verifyOtp(@Body() dto: VerifyOtpDto) {
+    const result = await this.authService.verifyOtp(dto);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: result.message,
+    };
+  }
+
+  // ----------------- RESET PASSWORD -------------------
+  @Post('reset-password')
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    const result = await this.authService.resetPassword(dto);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: result.message,
     };
   }
 }

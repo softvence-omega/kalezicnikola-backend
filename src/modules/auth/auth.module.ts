@@ -6,11 +6,12 @@ import { AuthController } from './auth.controller';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SessionCleanupService } from './session-cleanup.service';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   controllers: [AuthController],
   providers: [AuthService, SessionCleanupService],
   exports: [AuthService],
-  imports: [ConfigModule, JwtModule.register({}), PrismaModule, ScheduleModule.forRoot()],
+  imports: [ConfigModule, JwtModule.register({}), PrismaModule, ScheduleModule.forRoot(), EmailModule],
 })
 export class AuthModule {}
