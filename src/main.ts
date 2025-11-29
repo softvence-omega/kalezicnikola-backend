@@ -44,6 +44,6 @@ async function bootstrap() {
   console.log(`🚀 Application is running successfully! port number ${port}`);
 }
 bootstrap().catch((err) => {
-  console.error('❌ Error during bootstrap:', err);
+  // console.error('❌ Error during bootstrap:', err);
   process.exit(1);
 });

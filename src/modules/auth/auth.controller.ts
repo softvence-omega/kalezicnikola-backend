@@ -1,32 +1,36 @@
-import {
-  Body,
-  Controller,
-  Post,
-  Headers,
-  UseGuards,
-  Req,
-  Get,
-  HttpStatus,
-} from '@nestjs/common';
-import { UserRegistrationDto } from './dto/auth.dto';
+import { Controller, Post, Body, HttpStatus } from '@nestjs/common';
+import { AdminRegistrationDto } from './dto/auth-admin.dto';
+import { DoctorRegistrationDto } from './dto/auth-doctor.dto';
+import { UserLoginDto } from './dto/login.dto';
 import { AuthService } from './auth.services';
 
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  @Post('register')
-  async register(@Body() userRegistrationDto: UserRegistrationDto) {
-    try {
-      const result = await this.authService.register(userRegistrationDto);
+  // ----------------- ADMIN REGISTER -------------------
+  @Post('admin/register')
+  async registerAdmin(@Body() dto: AdminRegistrationDto) {
+    const result = await this.authService.registerAdmin(dto);
 
-      return {
-        statusCode: HttpStatus.CREATED,
-        message: result.message,
-        data: result.data,
-      };
-    } catch (error) {
-      throw error;
-    }
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: 'Admin registered successfully',
+      data: result,
+    };
   }
+
+  // ----------------- DOCTOR REGISTER ------------------
+  @Post('doctor/register')
+  async registerDoctor(@Body() dto: DoctorRegistrationDto) {
+    const result = await this.authService.registerDoctor(dto);
+
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: 'Doctor registered successfully',
+      data: result,
+    };
+  }
+
+  
 }
