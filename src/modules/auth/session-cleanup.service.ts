@@ -61,4 +61,46 @@ export class SessionCleanupService {
       this.logger.error('Error cleaning up revoked sessions:', error);
     }
   }
+
+  /**
+   * Clean up expired and used OTP records
+   * Runs every hour
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async cleanupExpiredOtps() {
+    this.logger.log('Starting OTP cleanup...');
+
+    try {
+      const now = new Date();
+      const oneDayAgo = new Date();
+      oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+
+      // Delete OTPs that are either:
+      // 1. Expired (expiresAt < now)
+      // 2. Used and older than 24 hours (for record keeping)
+      const result = await this.prisma.passwordReset.deleteMany({
+        where: {
+          OR: [
+            {
+              // Expired OTPs
+              expiresAt: {
+                lt: now,
+              },
+            },
+            {
+              // Used OTPs older than 24 hours
+              usedAt: {
+                not: null,
+                lt: oneDayAgo,
+              },
+            },
+          ],
+        },
+      });
+
+      this.logger.log(`Cleaned up ${result.count} expired/used OTP records`);
+    } catch (error) {
+      this.logger.error('Error cleaning up OTP records:', error);
+    }
+  }
 }
