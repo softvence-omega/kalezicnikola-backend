@@ -220,6 +220,9 @@ export class AuthService {
 
   // ----------------- VALIDATE SESSION -------------------
   async validateSession(accessToken: string) {
+    // CRITICAL: Verify token expiration first
+    const payload = this.tokenUtil.verifyAccessToken(accessToken);
+    
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
       include: {
