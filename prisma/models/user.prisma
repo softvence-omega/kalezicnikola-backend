@@ -6,9 +6,6 @@ model Admin {
   firstName    String? 
   lastName     String?  
   photo        String? 
-  otp          String?
-   otpExpiresAt DateTime? 
-
 
   emailVerifiedAt  DateTime?  
   twoFactorSecret  String?   
@@ -35,8 +32,6 @@ model Doctor {
   passwordHash String? 
   firstName    String? 
   lastName     String? 
-  otp          String?
-   otpExpiresAt DateTime? 
 
   // Doctor Specific Fields
   licenceNo    String?  
