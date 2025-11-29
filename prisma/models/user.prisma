@@ -96,13 +96,14 @@ model Session {
 }
 
 model PasswordReset {
-  id        String   @id @default(uuid())
-  email     String
-  otp       String
-  token     String?  @unique 
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime @default(now())
+  id         String    @id @default(uuid())
+  email      String
+  otp        String
+  token      String?   @unique 
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
   
   // Relation to track which user
   adminId  String?

@@ -201,7 +201,7 @@ export class EmailTemplatesUtil {
         
         <div class="footer">
             <p class="support">Need help? Contact our support team at support@docline.com</p>
-            <p class="copyright">&copy; 2024 Docline. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} Docline. All rights reserved.</p>
         </div>
     </div>
 </body>

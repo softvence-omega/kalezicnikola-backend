@@ -329,6 +329,17 @@ async forgotPassword(dto: ForgotPasswordDto) {
     return { message: 'If the email exists, an OTP has been sent' };
   }
 
+  // Clean up old unused OTPs for this email (older than 1 hour)
+  await this.prisma.passwordReset.deleteMany({
+    where: {
+      email: dto.email,
+      usedAt: null,
+      createdAt: {
+        lt: new Date(Date.now() - 60 * 60 * 1000), // 1 hour ago
+      },
+    },
+  });
+
   // Generate 6-digit OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
@@ -355,14 +366,20 @@ async forgotPassword(dto: ForgotPasswordDto) {
   });
 
   // Send OTP via email
-  const emailSent = await this.emailService.sendOtpEmail(
-    dto.email,
-    otp,
-    userName, // This can be undefined, handle it in email service
-  );
+  try {
+    const emailSent = await this.emailService.sendOtpEmail(
+      dto.email,
+      otp,
+      userName,
+    );
 
-  if (!emailSent) {
-    throw new BadRequestException('Failed to send OTP email');
+    if (!emailSent) {
+      throw new BadRequestException('Failed to send OTP email');
+    }
+  } catch (error) {
+    throw new BadRequestException(
+      'Failed to send OTP email. Please try again later.',
+    );
   }
 
   return { message: 'OTP sent to your email' };
@@ -380,15 +397,23 @@ async forgotPassword(dto: ForgotPasswordDto) {
     });
 
     if (!resetRecord) {
-      throw new UnauthorizedException('Invalid or expired OTP');
+      throw new BadRequestException(
+        'Invalid or expired OTP. Please request a new one.',
+      );
     }
 
-    return { message: 'OTP verified successfully' };
+    // Mark OTP as verified (but not used yet - that happens on password reset)
+    await this.prisma.passwordReset.update({
+      where: { id: resetRecord.id },
+      data: { verifiedAt: new Date() },
+    });
+
+    return { message: 'OTP verified successfully. You can now reset your password.' };
   }
 
   // ----------------- RESET PASSWORD -------------------
   async resetPassword(dto: ResetPasswordDto) {
-    // Verify OTP first
+    // Verify OTP (accepts both verified and unverified OTPs)
     const resetRecord = await this.prisma.passwordReset.findFirst({
       where: {
         email: dto.email,
@@ -399,11 +424,22 @@ async forgotPassword(dto: ForgotPasswordDto) {
     });
 
     if (!resetRecord) {
-      throw new UnauthorizedException('Invalid or expired OTP');
+      throw new BadRequestException(
+        'Invalid or expired OTP. Please request a new one.',
+      );
+    }
+
+    // Validate new password strength
+    if (dto.newPassword.length < 6) {
+      throw new BadRequestException(
+        'Password must be at least 6 characters long',
+      );
     }
 
     // Determine user type and update password
     let user: any;
+    let userType: 'admin' | 'doctor';
+    
     const saltRounds = parseInt(
       this.config.get<string>('bcrypt_salt_rounds') || '10',
       10,
@@ -415,27 +451,40 @@ async forgotPassword(dto: ForgotPasswordDto) {
         where: { id: resetRecord.adminId },
         data: { passwordHash },
       });
+      userType = 'admin';
     } else if (resetRecord.doctorId) {
       user = await this.prisma.doctor.update({
         where: { id: resetRecord.doctorId },
         data: { passwordHash },
       });
+      userType = 'doctor';
     } else {
-      throw new BadRequestException('Invalid reset record');
+      throw new BadRequestException(
+        'Invalid password reset request. Please try again.',
+      );
+    }
+
+    // Verify password was actually updated
+    if (!user.passwordHash) {
+      throw new BadRequestException(
+        'Failed to update password. Please try again.',
+      );
     }
 
     // Mark OTP as used
     await this.prisma.passwordReset.update({
       where: { id: resetRecord.id },
-      data: { usedAt: new Date() },
+      data: { 
+        usedAt: new Date(),
+        verifiedAt: resetRecord.verifiedAt || new Date(), // Set verifiedAt if not already set
+      },
     });
 
-    // Invalidate all existing sessions
-    await this.invalidateAllSessions(
-      user.id,
-      resetRecord.adminId ? 'admin' : 'doctor',
-    );
+    // Invalidate all existing sessions for security
+    await this.invalidateAllSessions(user.id, userType);
 
-    return { message: 'Password reset successfully' };
+    return { 
+      message: 'Password reset successfully. You can now login with your new password.' 
+    };
   }
 }

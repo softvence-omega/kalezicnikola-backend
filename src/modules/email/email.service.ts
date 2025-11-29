@@ -49,7 +49,7 @@ export class EmailService {
             <p><strong>Security Tip:</strong> Never share your OTP with anyone.</p>
           </div>
           <div class="footer">
-            <p>&copy; 2024 Docline. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} Docline. All rights reserved.</p>
           </div>
         </div>
       </body>
