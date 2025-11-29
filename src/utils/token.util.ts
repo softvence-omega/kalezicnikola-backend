@@ -16,9 +16,7 @@ export class TokenUtil {
     private configService: ConfigService,
   ) {}
 
-  /**
-   * Generate JWT access token
-   */
+
   generateAccessToken(userId: string, role: 'admin' | 'doctor'): string {
     const payload = { userId, role };
     const expiresIn = this.configService.get<string>('jwt_access_expires_in') || '15m';
@@ -41,9 +39,7 @@ export class TokenUtil {
     return token;
   }
 
-  /**
-   * Generate JWT refresh token
-   */
+
   generateRefreshToken(userId: string, role: 'admin' | 'doctor'): string {
     const payload = { userId, role };
     const expiresIn = this.configService.get<string>('jwt_refresh_expires_in') || '7d';
@@ -54,9 +50,7 @@ export class TokenUtil {
     });
   }
 
-  /**
-   * Verify and decode access token
-   */
+
   verifyAccessToken(token: string): TokenPayload {
     try {
       // First decode without verification to see the payload
@@ -92,9 +86,7 @@ export class TokenUtil {
     }
   }
 
-  /**
-   * Verify and decode refresh token
-   */
+
   verifyRefreshToken(token: string): TokenPayload {
     try {
       // First decode to check expiration
@@ -120,18 +112,18 @@ export class TokenUtil {
     }
   }
 
-  /**
-   * Calculate refresh token expiration date
-   */
+  
+   // Calculate refresh token expiration date
+   
   getRefreshTokenExpirationDate(): Date {
     const expiresIn = this.configService.get<string>('jwt_refresh_expires_in') || '7d';
     const milliseconds = this.parseExpirationToMilliseconds(expiresIn);
     return new Date(Date.now() + milliseconds);
   }
 
-  /**
-   * Parse expiration string (e.g., '7d', '15m') to milliseconds
-   */
+ 
+  // Parse expiration string (e.g., '7d', '15m') to milliseconds
+ 
   private parseExpirationToMilliseconds(expiration: string): number {
     const unit = expiration.slice(-1);
     const value = parseInt(expiration.slice(0, -1), 10);

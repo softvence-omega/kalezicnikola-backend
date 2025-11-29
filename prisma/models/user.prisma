@@ -7,6 +7,8 @@ model Admin {
   lastName     String?  
   photo        String? 
   otp          String?
+   otpExpiresAt DateTime? 
+
 
   emailVerifiedAt  DateTime?  
   twoFactorSecret  String?   
@@ -21,6 +23,7 @@ model Admin {
   sessions      Session[]
   auditLogs     AuditLog[]
   assignedTasks Task[]     @relation("AdminTaskAssignee")
+  passwordResets PasswordReset[]
 
   @@map("admins")
 }
@@ -33,6 +36,7 @@ model Doctor {
   firstName    String? 
   lastName     String? 
   otp          String?
+   otpExpiresAt DateTime? 
 
   // Doctor Specific Fields
   licenceNo    String?  
@@ -55,6 +59,7 @@ model Doctor {
   diagnoses     Diagnosis[]    @relation("DoctorDiagnoses")
   assignedTasks Task[]         @relation("DoctorTaskAssignee")
   auditLogs     AuditLog[]
+  passwordResets PasswordReset[]
 
   // HR Relations
   staffPersonalInfo   StaffPersonalInfo?
@@ -88,4 +93,23 @@ model Session {
   doctor Doctor? @relation(fields: [doctorId], references: [id])
 
   @@map("sessions")
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  email     String
+  otp       String
+  token     String?  @unique 
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  
+  // Relation to track which user
+  adminId  String?
+  doctorId String?
+  
+  admin  Admin?  @relation(fields: [adminId], references: [id])
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
+  
+  @@map("password_resets")
 }
