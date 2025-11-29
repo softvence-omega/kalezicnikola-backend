@@ -37,7 +37,7 @@ async function bootstrap() {
 
   const config = app.get(ConfigService);
   const port = config.get('port') || 3000;
-  const node_env = config.get('node_env') || 'development';
+  // const node_env = config.get('node_env') || 'development';
 
 
   await app.listen(port);
