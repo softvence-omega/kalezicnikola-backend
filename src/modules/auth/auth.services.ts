@@ -245,35 +245,85 @@ export class AuthService {
     };
   }
 
-  // ----------------- VALIDATE SESSION -------------------
-  // async validateSession(accessToken: string) {
-  //   // CRITICAL: Verify token expiration first
-  //   const payload = this.tokenUtil.verifyAccessToken(accessToken);
+  // ----------------- DECODE TOKEN -------------------
+  async decodeToken(accessToken: string) {
+    try {
+      // Verify and decode the token without checking database session
+      const decoded = this.jwt.verify(accessToken, {
+        secret: this.config.get<string>('JWT_ACCESS_SECRET'),
+      });
 
-  //   const session = await this.prisma.session.findUnique({
-  //     where: { accessToken },
-  //     include: {
-  //       admin: true,
-  //       doctor: true,
-  //     },
-  //   });
+      // Get additional user information from database based on role
+      let userInfo: any = null;
+      
+      if (decoded.role === 'admin') {
+        userInfo = await this.prisma.admin.findUnique({
+          where: { id: decoded.userId },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            photo: true,
+            createdAt: true,
+            lastLoginAt: true,
+          },
+        });
+      } else if (decoded.role === 'doctor') {
+        userInfo = await this.prisma.doctor.findUnique({
+          where: { id: decoded.userId },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            licenceNo: true,
+            specialities: true,
+            createdAt: true,
+            lastLoginAt: true,
+          },
+        });
+      }
 
-  //   if (!session || !session.isActive || session.isRevoked) {
-  //     throw new UnauthorizedException('Invalid or inactive session');
-  //   }
+      return {
+        tokenPayload: decoded,
+        user: userInfo,
+        sessionInfo: {
+          issuedAt: new Date(decoded.iat * 1000),
+          expiresAt: new Date(decoded.exp * 1000),
+          timeRemaining: `${Math.max(0, Math.floor((decoded.exp * 1000 - Date.now()) / 1000 / 60))} minutes`,
+        },
+      };
+    } catch (error) {
+      if (error.name === 'TokenExpiredError') {
+        throw new UnauthorizedException('Token has expired');
+      } else if (error.name === 'JsonWebTokenError') {
+        throw new UnauthorizedException('Invalid token');
+      } else {
+        throw new UnauthorizedException('Token verification failed');
+      }
+    }
+  }
 
-  //   // Update last activity
-  //   await this.prisma.session.update({
-  //     where: { id: session.id },
-  //     data: { lastActivity: new Date() },
-  //   });
+  // Alternative: Decode token without verification (less secure but faster)
+  async decodeTokenWithoutVerification(accessToken: string) {
+    try {
+      // Decode without verification (just base64 decoding)
+      const decoded = this.jwt.decode(accessToken);
 
-  //   return {
-  //     session,
-  //     user: session.admin || session.doctor,
-  //     role: session.adminId ? 'admin' : 'doctor',
-  //   };
-  // }
+      if (!decoded) {
+        throw new UnauthorizedException('Invalid token format');
+      }
+
+      return {
+        tokenPayload: decoded,
+        note: 'This is a decoded token without signature verification',
+      };
+    } catch (error) {
+      throw new UnauthorizedException('Failed to decode token');
+    }
+  }
+
 
   // ----------------- VALIDATE SESSION -------------------
   async validateSession(accessToken: string): Promise<{

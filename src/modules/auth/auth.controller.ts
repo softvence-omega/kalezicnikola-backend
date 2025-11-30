@@ -107,6 +107,28 @@ export class AuthController {
     };
   }
 
+    // ----------------- DECODE MY TOKEN -------------------
+  @Get('decode-token')
+  @UseGuards(AdminOrDoctorGuard)
+  async decodeToken(@Headers('authorization') authorization: string) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.authService.decodeToken(token);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Token decoded successfully',
+      data: result,
+    };
+  }
+
   // ----------------- VERIFY TOKEN -------------------
   @Get('verify')
   async verifyToken(@Headers('authorization') authorization: string) {
