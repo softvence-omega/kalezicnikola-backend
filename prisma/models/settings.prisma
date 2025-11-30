@@ -1,0 +1,67 @@
+model DoctorNotificationSettings {
+  id                   String   @id @default(uuid())
+  doctorId             String   @unique
+  doctor               Doctor   @relation(fields: [doctorId], references: [id])
+
+  appointmentReminders Boolean  @default(true)
+  patientUpdates       Boolean  @default(false)
+  callLogs             Boolean  @default(true)
+  taskDeadlines        Boolean  @default(false)
+  securityAlerts       Boolean  @default(true)
+  emailNotifications   Boolean  @default(true)
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("doctor_notification_settings")
+}
+
+
+
+model DoctorRegionalSettings {
+  id                          String             @id @default(uuid())
+  doctorId                    String             @unique
+  doctor                      Doctor             @relation(fields: [doctorId], references: [id])
+
+  timezone                    Timezone?
+  dateFormat                  DateFormat?
+  timeFormat                  TimeFormat?
+  language                    Language?
+
+  defaultCalendarView         CalendarView?
+  defaultAppointmentDuration  AppointmentDuration?
+
+  allowOnlineBooking          Boolean            @default(true)
+  requireApprovalForBooking   Boolean            @default(false)
+  sendAppointmentReminders    Boolean            @default(false)
+
+  reminderTime                ReminderTime?
+  bufferTimeBetween           BufferTime?
+
+  createdAt                   DateTime           @default(now())
+  updatedAt                   DateTime           @updatedAt
+
+  @@map("doctor_regional_settings")
+}
+
+
+
+
+model DoctorSecuritySettings {
+  id                    String   @id @default(uuid())
+  doctorId              String   @unique
+  doctor                Doctor   @relation(fields: [doctorId], references: [id])
+
+  enforceTwoFA          Boolean  @default(true)
+
+  sessionTimeoutMinutes Int?
+  maxLoginAttempts      Int?
+
+  encryptSensitiveData  Boolean  @default(true)
+  enableAuditLogs       Boolean  @default(true)
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("doctor_security_settings")
+}

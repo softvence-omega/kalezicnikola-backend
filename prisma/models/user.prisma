@@ -66,6 +66,12 @@ model Doctor {
   staffPersonalInfo   StaffPersonalInfo?
   staffEmploymentInfo StaffEmploymentInfo?
 
+    // Settings Relations
+  doctorNotificationSettings DoctorNotificationSettings?
+  doctorRegionalSettings     DoctorRegionalSettings?
+  doctorSecuritySettings     DoctorSecuritySettings?
+
+
   // Self-relation for reporting hierarchy
   subordinates StaffEmploymentInfo[] @relation("ReportingManager")
 
