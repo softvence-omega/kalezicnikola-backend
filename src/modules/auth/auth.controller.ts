@@ -1,4 +1,13 @@
-import { Controller, Post, Body, HttpStatus, Headers, Get, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpStatus,
+  Headers,
+  Get,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { AdminRegistrationDto } from './dto/auth-admin.dto';
 import { DoctorRegistrationDto } from './dto/auth-doctor.dto';
 import { UserLoginDto } from './dto/login.dto';
@@ -7,6 +16,10 @@ import { AuthService } from './auth.services';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { DoctorGuard } from 'src/common/guard/doctor.guard';
+import { AdminGuard } from 'src/common/guard/admin.guard';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { AdminOrDoctorGuard } from 'src/common/guard/admin-or-doctor.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -116,7 +129,6 @@ export class AuthController {
     };
   }
 
-
   // ----------------- FORGOT PASSWORD -------------------
   @Post('forgot-password')
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
@@ -143,6 +155,30 @@ export class AuthController {
   @Post('reset-password')
   async resetPassword(@Body() dto: ResetPasswordDto) {
     const result = await this.authService.resetPassword(dto);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: result.message,
+    };
+  }
+
+  // In AuthController
+  @Post('change-password')
+  @UseGuards(AdminOrDoctorGuard)
+  async changePassword(
+    @Headers('authorization') authorization: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.authService.changePassword(token, dto);
 
     return {
       statusCode: HttpStatus.OK,

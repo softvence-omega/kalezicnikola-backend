@@ -15,6 +15,7 @@ import { EmailService } from '../email/email.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -243,7 +244,41 @@ export class AuthService {
   }
 
   // ----------------- VALIDATE SESSION -------------------
-  async validateSession(accessToken: string) {
+  // async validateSession(accessToken: string) {
+  //   // CRITICAL: Verify token expiration first
+  //   const payload = this.tokenUtil.verifyAccessToken(accessToken);
+
+  //   const session = await this.prisma.session.findUnique({
+  //     where: { accessToken },
+  //     include: {
+  //       admin: true,
+  //       doctor: true,
+  //     },
+  //   });
+
+  //   if (!session || !session.isActive || session.isRevoked) {
+  //     throw new UnauthorizedException('Invalid or inactive session');
+  //   }
+
+  //   // Update last activity
+  //   await this.prisma.session.update({
+  //     where: { id: session.id },
+  //     data: { lastActivity: new Date() },
+  //   });
+
+  //   return {
+  //     session,
+  //     user: session.admin || session.doctor,
+  //     role: session.adminId ? 'admin' : 'doctor',
+  //   };
+  // }
+
+  // ----------------- VALIDATE SESSION -------------------
+  async validateSession(accessToken: string): Promise<{
+    session: any;
+    user: any;
+    role: 'admin' | 'doctor';
+  }> {
     // CRITICAL: Verify token expiration first
     const payload = this.tokenUtil.verifyAccessToken(accessToken);
 
@@ -265,10 +300,24 @@ export class AuthService {
       data: { lastActivity: new Date() },
     });
 
+    // Determine role explicitly
+    let role: 'admin' | 'doctor';
+    let user: any;
+
+    if (session.adminId && session.admin) {
+      role = 'admin';
+      user = session.admin;
+    } else if (session.doctorId && session.doctor) {
+      role = 'doctor';
+      user = session.doctor;
+    } else {
+      throw new UnauthorizedException('Invalid session data');
+    }
+
     return {
       session,
-      user: session.admin || session.doctor,
-      role: session.adminId ? 'admin' : 'doctor',
+      user,
+      role,
     };
   }
 
@@ -316,74 +365,74 @@ export class AuthService {
     });
   }
 
-// ----------------- FORGOT PASSWORD -------------------
-async forgotPassword(dto: ForgotPasswordDto) {
-  // Check both admin and doctor tables
-  const [admin, doctor] = await Promise.all([
-    this.prisma.admin.findUnique({ where: { email: dto.email } }),
-    this.prisma.doctor.findUnique({ where: { email: dto.email } }),
-  ]);
+  // ----------------- FORGOT PASSWORD -------------------
+  async forgotPassword(dto: ForgotPasswordDto) {
+    // Check both admin and doctor tables
+    const [admin, doctor] = await Promise.all([
+      this.prisma.admin.findUnique({ where: { email: dto.email } }),
+      this.prisma.doctor.findUnique({ where: { email: dto.email } }),
+    ]);
 
-  if (!admin && !doctor) {
-    // Don't reveal if email exists for security
-    return { message: 'If the email exists, an OTP has been sent' };
-  }
-
-  // Clean up old unused OTPs for this email (older than 1 hour)
-  await this.prisma.passwordReset.deleteMany({
-    where: {
-      email: dto.email,
-      usedAt: null,
-      createdAt: {
-        lt: new Date(Date.now() - 60 * 60 * 1000), // 1 hour ago
-      },
-    },
-  });
-
-  // Generate 6-digit OTP
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-  // Store OTP in database with appropriate relation
-  const resetData: any = {
-    email: dto.email,
-    otp,
-    expiresAt,
-  };
-
-  let userName: string | undefined;
-
-  if (admin) {
-    resetData.adminId = admin.id;
-    userName = admin.firstName || undefined;
-  } else if (doctor) {
-    resetData.doctorId = doctor.id;
-    userName = doctor.firstName || undefined;
-  }
-
-  await this.prisma.passwordReset.create({
-    data: resetData,
-  });
-
-  // Send OTP via email
-  try {
-    const emailSent = await this.emailService.sendOtpEmail(
-      dto.email,
-      otp,
-      userName,
-    );
-
-    if (!emailSent) {
-      throw new BadRequestException('Failed to send OTP email');
+    if (!admin && !doctor) {
+      // Don't reveal if email exists for security
+      return { message: 'If the email exists, an OTP has been sent' };
     }
-  } catch (error) {
-    throw new BadRequestException(
-      'Failed to send OTP email. Please try again later.',
-    );
-  }
 
-  return { message: 'OTP sent to your email' };
-}
+    // Clean up old unused OTPs for this email (older than 1 hour)
+    await this.prisma.passwordReset.deleteMany({
+      where: {
+        email: dto.email,
+        usedAt: null,
+        createdAt: {
+          lt: new Date(Date.now() - 60 * 60 * 1000), // 1 hour ago
+        },
+      },
+    });
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Store OTP in database with appropriate relation
+    const resetData: any = {
+      email: dto.email,
+      otp,
+      expiresAt,
+    };
+
+    let userName: string | undefined;
+
+    if (admin) {
+      resetData.adminId = admin.id;
+      userName = admin.firstName || undefined;
+    } else if (doctor) {
+      resetData.doctorId = doctor.id;
+      userName = doctor.firstName || undefined;
+    }
+
+    await this.prisma.passwordReset.create({
+      data: resetData,
+    });
+
+    // Send OTP via email
+    try {
+      const emailSent = await this.emailService.sendOtpEmail(
+        dto.email,
+        otp,
+        userName,
+      );
+
+      if (!emailSent) {
+        throw new BadRequestException('Failed to send OTP email');
+      }
+    } catch (error) {
+      throw new BadRequestException(
+        'Failed to send OTP email. Please try again later.',
+      );
+    }
+
+    return { message: 'OTP sent to your email' };
+  }
 
   // ----------------- VERIFY OTP -------------------
   async verifyOtp(dto: VerifyOtpDto) {
@@ -408,7 +457,9 @@ async forgotPassword(dto: ForgotPasswordDto) {
       data: { verifiedAt: new Date() },
     });
 
-    return { message: 'OTP verified successfully. You can now reset your password.' };
+    return {
+      message: 'OTP verified successfully. You can now reset your password.',
+    };
   }
 
   // ----------------- RESET PASSWORD -------------------
@@ -439,7 +490,7 @@ async forgotPassword(dto: ForgotPasswordDto) {
     // Determine user type and update password
     let user: any;
     let userType: 'admin' | 'doctor';
-    
+
     const saltRounds = parseInt(
       this.config.get<string>('bcrypt_salt_rounds') || '10',
       10,
@@ -474,7 +525,7 @@ async forgotPassword(dto: ForgotPasswordDto) {
     // Mark OTP as used
     await this.prisma.passwordReset.update({
       where: { id: resetRecord.id },
-      data: { 
+      data: {
         usedAt: new Date(),
         verifiedAt: resetRecord.verifiedAt || new Date(), // Set verifiedAt if not already set
       },
@@ -483,8 +534,102 @@ async forgotPassword(dto: ForgotPasswordDto) {
     // Invalidate all existing sessions for security
     await this.invalidateAllSessions(user.id, userType);
 
-    return { 
-      message: 'Password reset successfully. You can now login with your new password.' 
+    return {
+      message:
+        'Password reset successfully. You can now login with your new password.',
+    };
+  }
+
+  // ----------------- CHANGE PASSWORD -------------------
+  async changePassword(accessToken: string, dto: ChangePasswordDto) {
+    // Validate session and get user info
+    const sessionData = await this.validateSession(accessToken);
+
+    if (!sessionData.user) {
+      throw new UnauthorizedException('Invalid session');
+    }
+
+    const { user, role } = sessionData;
+    const userId = user.id;
+
+    // Validate current password
+    let isCurrentPasswordValid = false;
+
+    if (role === 'admin') {
+      const admin = await this.prisma.admin.findUnique({
+        where: { id: userId },
+        select: { passwordHash: true },
+      });
+
+      if (!admin?.passwordHash) {
+        throw new BadRequestException('Password not set for this account');
+      }
+
+      isCurrentPasswordValid = await bcrypt.compare(
+        dto.currentPassword,
+        admin.passwordHash,
+      );
+    } else if (role === 'doctor') {
+      const doctor = await this.prisma.doctor.findUnique({
+        where: { id: userId },
+        select: { passwordHash: true },
+      });
+
+      if (!doctor?.passwordHash) {
+        throw new BadRequestException('Password not set for this account');
+      }
+
+      isCurrentPasswordValid = await bcrypt.compare(
+        dto.currentPassword,
+        doctor.passwordHash,
+      );
+    } else {
+      throw new BadRequestException('Invalid user role');
+    }
+
+    if (!isCurrentPasswordValid) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    // Validate new password is different from current password
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException(
+        'New password must be different from current password',
+      );
+    }
+
+    // Validate new password strength
+    if (dto.newPassword.length < 6) {
+      throw new BadRequestException(
+        'Password must be at least 6 characters long',
+      );
+    }
+
+    // Hash new password
+    const saltRounds = parseInt(
+      this.config.get<string>('bcrypt_salt_rounds') || '10',
+      10,
+    );
+    const newPasswordHash = await bcrypt.hash(dto.newPassword, saltRounds);
+
+    // Update password based on role
+    if (role === 'admin') {
+      await this.prisma.admin.update({
+        where: { id: userId },
+        data: { passwordHash: newPasswordHash },
+      });
+    } else if (role === 'doctor') {
+      await this.prisma.doctor.update({
+        where: { id: userId },
+        data: { passwordHash: newPasswordHash },
+      });
+    }
+
+    // Invalidate all existing sessions for security
+    await this.invalidateAllSessions(userId, role as 'admin' | 'doctor');
+
+    return {
+      message: 'Password changed successfully. Please login again.',
     };
   }
 }

@@ -17,6 +17,7 @@ export default () => ({
   stripe_webhook_secret: process.env.STRIPE_WEBHOOK_SECRET,
   redis_connection_url: process.env.REDIS_CONNECTION_URL,
   database: {
-    url: process.env.DATABASE_URL
+    url: process.env.DATABASE_URL,
+    directUrl: process.env.DIRECT_URL
   }
 });
