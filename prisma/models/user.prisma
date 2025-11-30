@@ -1,59 +1,65 @@
 model Admin {
-  id           String  @id @default(uuid()) 
-  clinicId     String?  
-  email        String @unique 
-  passwordHash String? 
-  firstName    String? 
-  lastName     String?  
-  photo        String? 
+  id           String  @id @default(uuid())
+  clinicId     String?
+  email        String  @unique
+  passwordHash String?
+  firstName    String?
+  lastName     String?
+  photo        String?
 
-  emailVerifiedAt  DateTime?  
-  twoFactorSecret  String?   
-  twoFactorEnabled Boolean?  
-  lastLoginAt      DateTime? 
-  createdAt        DateTime? @default(now()) 
-  updatedAt        DateTime? @updatedAt 
-  deletedAt        DateTime?  
+  emailVerifiedAt  DateTime?
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean?
+  lastLoginAt      DateTime?
+  createdAt        DateTime? @default(now())
+  updatedAt        DateTime? @updatedAt
+  deletedAt        DateTime?
 
   // Relations
-  clinic        Clinic?    @relation(fields: [clinicId], references: [id])
-  sessions      Session[]
-  auditLogs     AuditLog[]
-  assignedTasks Task[]     @relation("AdminTaskAssignee")
+  clinic         Clinic?         @relation(fields: [clinicId], references: [id])
+  sessions       Session[]
+  auditLogs      AuditLog[]
+  assignedTasks  Task[]          @relation("AdminTaskAssignee")
   passwordResets PasswordReset[]
 
   @@map("admins")
 }
 
 model Doctor {
-  id           String  @id @default(uuid()) 
-  clinicId     String? 
-  email        String? @unique 
-  passwordHash String? 
-  firstName    String? 
-  lastName     String? 
+  id           String  @id @default(uuid())
+  clinicId     String?
+  email        String? @unique
+  phone        String? @unique
+  passwordHash String?
+  firstName    String?
+  lastName     String?
 
   // Doctor Specific Fields
-  licenceNo    String?  
-  specialities String[] 
+  licenceNo    String?
+  specialities String[]
+  experience   String?
 
-  emailVerifiedAt  DateTime? 
-  twoFactorSecret  String?   
-  twoFactorEnabled Boolean?  
-  lastLoginAt      DateTime? 
-  createdAt        DateTime? @default(now()) 
-  updatedAt        DateTime? @updatedAt 
-  deletedAt        DateTime?  
+  emailVerifiedAt  DateTime?
+  dob              DateTime?
+  photo            String?
+  gender           Gender?
+  address         String?
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean?
+  lastLoginAt      DateTime?
+  createdAt        DateTime? @default(now())
+  updatedAt        DateTime? @updatedAt
+  deletedAt        DateTime?
 
   // Relations
-  clinic        Clinic?        @relation(fields: [clinicId], references: [id])
-  sessions      Session[]
-  appointments  Appointment[]  @relation("DoctorAppointments")
-  calls         Call[]         @relation("DoctorCalls")
-  prescriptions Prescription[] @relation("DoctorPrescriptions")
-  diagnoses     Diagnosis[]    @relation("DoctorDiagnoses")
-  assignedTasks Task[]         @relation("DoctorTaskAssignee")
-  auditLogs     AuditLog[]
+  clinic         Clinic?         @relation(fields: [clinicId], references: [id])
+  sessions       Session[]
+  appointments   Appointment[]   @relation("DoctorAppointments")
+  calls          Call[]          @relation("DoctorCalls")
+  prescriptions  Prescription[]  @relation("DoctorPrescriptions")
+  diagnoses      Diagnosis[]     @relation("DoctorDiagnoses")
+  assignedTasks  Task[]          @relation("DoctorTaskAssignee")
+  auditLogs      AuditLog[]
   passwordResets PasswordReset[]
 
   // HR Relations
@@ -67,9 +73,9 @@ model Doctor {
 }
 
 model Session {
-  id       String  @id @default(uuid()) 
-  adminId  String? 
-  doctorId String?  
+  id       String  @id @default(uuid())
+  adminId  String?
+  doctorId String?
 
   accessToken  String @unique
   refreshToken String @unique
@@ -81,7 +87,7 @@ model Session {
   lastActivity          DateTime @default(now())
   refreshTokenExpiresAt DateTime
 
-  createdAt DateTime? @default(now()) 
+  createdAt DateTime? @default(now())
   updatedAt DateTime  @updatedAt
 
   admin  Admin?  @relation(fields: [adminId], references: [id])
@@ -94,18 +100,18 @@ model PasswordReset {
   id         String    @id @default(uuid())
   email      String
   otp        String
-  token      String?   @unique 
+  token      String?   @unique
   expiresAt  DateTime
   verifiedAt DateTime?
   usedAt     DateTime?
   createdAt  DateTime  @default(now())
-  
+
   // Relation to track which user
   adminId  String?
   doctorId String?
-  
+
   admin  Admin?  @relation(fields: [adminId], references: [id])
   doctor Doctor? @relation(fields: [doctorId], references: [id])
-  
+
   @@map("password_resets")
 }
