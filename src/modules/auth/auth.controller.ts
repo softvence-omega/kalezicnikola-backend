@@ -7,6 +7,7 @@ import {
   Get,
   UnauthorizedException,
   UseGuards,
+  Delete,
 } from '@nestjs/common';
 import { AdminRegistrationDto } from './dto/auth-admin.dto';
 import { DoctorRegistrationDto } from './dto/auth-doctor.dto';
@@ -20,6 +21,7 @@ import { DoctorGuard } from 'src/common/guard/doctor.guard';
 import { AdminGuard } from 'src/common/guard/admin.guard';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { AdminOrDoctorGuard } from 'src/common/guard/admin-or-doctor.guard';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -162,9 +164,9 @@ export class AuthController {
     };
   }
 
-  // In AuthController
+  // ----------------- CHANGE PASSWORD -------------------
   @Post('change-password')
-  @UseGuards(AdminOrDoctorGuard)
+  @UseGuards(AdminGuard, DoctorGuard)
   async changePassword(
     @Headers('authorization') authorization: string,
     @Body() dto: ChangePasswordDto,
@@ -179,6 +181,30 @@ export class AuthController {
     }
 
     const result = await this.authService.changePassword(token, dto);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: result.message,
+    };
+  }
+
+  // ----------------- DELETE ACCOUNT -------------------
+  @Delete('delete-my-account')
+  @UseGuards(DoctorGuard)
+  async deleteAccount(
+    @Headers('authorization') authorization: string,
+    @Body() dto: DeleteAccountDto,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.authService.deleteAccount(token, dto);
 
     return {
       statusCode: HttpStatus.OK,

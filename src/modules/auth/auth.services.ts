@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AdminRegistrationDto } from './dto/auth-admin.dto';
@@ -16,6 +17,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 
 @Injectable()
 export class AuthService {
@@ -632,4 +634,184 @@ export class AuthService {
       message: 'Password changed successfully. Please login again.',
     };
   }
+
+  // ----------------- DELETE ACCOUNT (DOCTOR ONLY) -------------------
+  async deleteAccount(accessToken: string, dto: DeleteAccountDto) {
+    // Validate session and get user info
+    const sessionData = await this.validateSession(accessToken);
+
+    if (!sessionData.user) {
+      throw new UnauthorizedException('Invalid session');
+    }
+
+    const { user, role } = sessionData;
+    const userId = user.id;
+
+    // RESTRICT TO DOCTORS ONLY
+    if (role !== 'doctor') {
+      throw new ForbiddenException('This endpoint is for doctors only');
+    }
+
+    // Verify password before deletion
+    let isPasswordValid = false;
+
+    // REMOVED ADMIN LOGIC - ONLY DOCTOR LOGIC REMAINS
+    const doctor = await this.prisma.doctor.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true },
+    });
+
+    if (!doctor?.passwordHash) {
+      throw new BadRequestException(
+        'Unable to verify password for this account',
+      );
+    }
+
+    isPasswordValid = await bcrypt.compare(dto.password, doctor.passwordHash);
+
+    if (!isPasswordValid) {
+      throw new BadRequestException(
+        'Password is incorrect. Account deletion failed.',
+      );
+    }
+
+    // Use transaction to ensure all operations succeed or fail together
+    return await this.prisma.$transaction(async (tx) => {
+      // 1. First, invalidate all sessions (ONLY DOCTOR SESSIONS)
+      await tx.session.updateMany({
+        where: { doctorId: userId },
+        data: {
+          isActive: false,
+          isRevoked: true,
+          revokedAt: new Date(),
+        },
+      });
+
+      // 2. Clean up password reset records (ONLY DOCTOR RECORDS)
+      await tx.passwordReset.deleteMany({
+        where: {
+          doctorId: userId,
+        },
+      });
+
+      // 3. Soft delete the doctor account
+      await tx.doctor.update({
+        where: { id: userId },
+        data: {
+          email: `deleted_${userId}@deleted.com`, // Change email to avoid conflicts
+          passwordHash: null,
+          firstName: 'Deleted',
+          lastName: 'User',
+          deletedAt: new Date(),
+        },
+      });
+
+      return {
+        message:
+          'Doctor account deleted successfully. All your data has been removed.',
+      };
+    });
+  }
+
+  // Alternative: Hard delete implementation for doctors only
+  // async hardDeleteAccount(accessToken: string, dto: DeleteAccountDto) {
+  //   // Validate session and get user info
+  //   const sessionData = await this.validateSession(accessToken);
+
+  //   if (!sessionData.user) {
+  //     throw new UnauthorizedException('Invalid session');
+  //   }
+
+  //   const { user, role } = sessionData;
+  //   const userId = user.id;
+
+  //   // RESTRICT TO DOCTORS ONLY
+  //   if (role !== 'doctor') {
+  //     throw new ForbiddenException('This endpoint is for doctors only');
+  //   }
+
+  //   // Verify password before deletion
+  //   const doctor = await this.prisma.doctor.findUnique({
+  //     where: { id: userId },
+  //     select: { passwordHash: true },
+  //   });
+
+  //   if (!doctor?.passwordHash) {
+  //     throw new BadRequestException(
+  //       'Unable to verify password for this account',
+  //     );
+  //   }
+
+  //   const isPasswordValid = await bcrypt.compare(
+  //     dto.password,
+  //     doctor.passwordHash,
+  //   );
+
+  //   if (!isPasswordValid) {
+  //     throw new BadRequestException(
+  //       'Password is incorrect. Account deletion failed.',
+  //     );
+  //   }
+
+  //   // Use transaction for hard deletion
+  //   return await this.prisma.$transaction(async (tx) => {
+  //     // Delete in correct order to respect foreign key constraints
+
+  //     // 1. Delete sessions (ONLY DOCTOR SESSIONS)
+  //     await tx.session.deleteMany({
+  //       where: { doctorId: userId },
+  //     });
+
+  //     // 2. Delete password reset records (ONLY DOCTOR RECORDS)
+  //     await tx.passwordReset.deleteMany({
+  //       where: { doctorId: userId },
+  //     });
+
+  //     // 3. Delete audit logs (if any)
+  //     await tx.auditLog.deleteMany({
+  //       where: { doctorId: userId },
+  //     });
+
+  //     // 4. Delete assigned tasks (if any)
+  //     await tx.task.deleteMany({
+  //       where: { assigneeDoctorId: userId },
+  //     });
+
+  //     // 5. Delete staff info if exists
+  //     await tx.staffPersonalInfo.deleteMany({
+  //       where: { doctorId: userId },
+  //     });
+
+  //     await tx.staffEmploymentInfo.deleteMany({
+  //       where: { doctorId: userId },
+  //     });
+
+  //     // 6. Delete doctor-specific relations
+  //     await tx.appointment.deleteMany({
+  //       where: { doctorId: userId },
+  //     });
+
+  //     await tx.prescription.deleteMany({
+  //       where: { doctorId: userId },
+  //     });
+
+  //     await tx.diagnosis.deleteMany({
+  //       where: { doctorId: userId },
+  //     });
+
+  //     // 7. Delete calls associated with doctor
+  //     await tx.call.deleteMany({
+  //       where: { doctorId: userId },
+  //     });
+
+  //     // 8. Finally delete the doctor
+  //     await tx.doctor.delete({
+  //       where: { id: userId },
+  //     });
+
+  //     return {
+  //       message: 'Doctor account permanently deleted successfully.',
+  //     };
+  //   });
+  // }
 }
