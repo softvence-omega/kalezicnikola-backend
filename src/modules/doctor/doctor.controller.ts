@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Body,
   HttpStatus,
@@ -11,6 +12,7 @@ import {
 import { DoctorService } from './doctor.service';
 import { DoctorGuard } from 'src/common/guard/doctor.guard';
 import { UpdateDoctorProfileDto } from './dto/update-profile.dto';
+import { CreateStaffDto } from './dto/create-staff.dto';
 
 @Controller('doctor')
 export class DoctorController {
@@ -59,6 +61,31 @@ export class DoctorController {
     return {
       statusCode: HttpStatus.OK,
       message: 'Profile updated successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- ADD STAFF -------------------
+  @Post('add-staff')
+  @UseGuards(DoctorGuard)
+  async addStaff(
+    @Headers('authorization') authorization: string,
+    @Body() dto: CreateStaffDto,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.addStaff(token, dto);
+
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: 'Staff member added successfully',
       data: result,
     };
   }

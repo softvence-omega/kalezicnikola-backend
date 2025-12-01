@@ -6,12 +6,8 @@ import {
   IsDateString,
   IsEnum,
 } from 'class-validator';
+import { Gender } from 'generated/prisma';
 
-enum Gender {
-  MALE = 'MALE',
-  FEMALE = 'FEMALE',
-  OTHER = 'OTHER',
-}
 
 export class UpdateDoctorProfileDto {
   @IsOptional()
@@ -52,7 +48,6 @@ export class UpdateDoctorProfileDto {
   photo?: string;
 
   @IsOptional()
-  @IsEnum(Gender)
   gender?: Gender;
 
   @IsOptional()

@@ -60,7 +60,7 @@ model Doctor {
   auditLogs      AuditLog[]
   passwordResets PasswordReset[]
 
-  staff   Staff?
+  staff   Staff[]
 
     // Settings Relations
   doctorNotificationSettings DoctorNotificationSettings?

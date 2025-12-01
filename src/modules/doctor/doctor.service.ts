@@ -1,8 +1,9 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UpdateDoctorProfileDto } from './dto/update-profile.dto';
+import { CreateStaffDto } from './dto/create-staff.dto';
 
 @Injectable()
 export class DoctorService {
@@ -165,6 +166,144 @@ export class DoctorService {
 
     return {
       profile: updatedDoctor,
+    };
+  }
+
+  // ----------------- ADD STAFF -------------------
+  async addStaff(accessToken: string, dto: CreateStaffDto) {
+    // Find session to get doctor ID
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Handle employmentId - use provided one or generate new one
+    let employmentId: string = '';
+
+    if (dto.employmentId) {
+      // If employmentId is provided, check if it already exists
+      const existingStaff = await this.prisma.staff.findUnique({
+        where: { employmentId: dto.employmentId },
+      });
+
+      if (existingStaff) {
+        throw new ConflictException(`Employment ID ${dto.employmentId} already exists`);
+      }
+
+      employmentId = dto.employmentId;
+    } else {
+      // Generate unique employmentId in pattern STF-XXXXXXXX
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 10;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8 random digits
+        const randomDigits = Math.floor(10000000 + Math.random() * 90000000);
+        employmentId = `STF-${randomDigits}`;
+
+        // Check if employmentId already exists
+        const existingStaff = await this.prisma.staff.findUnique({
+          where: { employmentId },
+        });
+
+        if (!existingStaff) {
+          isUnique = true;
+        }
+        attempts++;
+      }
+
+      if (!isUnique) {
+        throw new BadRequestException('Failed to generate unique employment ID. Please try again.');
+      }
+    }
+
+    // Check if email is already in use by another staff member
+    const emailExists = await this.prisma.staff.findFirst({
+      where: { email: dto.email },
+    });
+
+    if (emailExists) {
+      throw new ConflictException('Email is already in use by another staff member');
+    }
+
+    // Check if phone is already in use by another staff member
+    const phoneExists = await this.prisma.staff.findFirst({
+      where: { phone: dto.phone },
+    });
+
+    if (phoneExists) {
+      throw new ConflictException('Phone number is already in use by another staff member');
+    }
+
+    // Create staff record
+    const staff = await this.prisma.staff.create({
+      data: {
+        employmentId,
+        doctorId,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        dob: new Date(dto.dob),
+        gender: dto.gender,
+        photo: dto.photo,
+        email: dto.email,
+        phone: dto.phone,
+        presentAddress: dto.presentAddress,
+        permanentAddress: dto.permanentAddress,
+        maritalStatus: dto.maritalStatus,
+        state: dto.state,
+        postalCode: dto.postalCode,
+        country: dto.country,
+        nationality: dto.nationality,
+        nationalIdNumber: dto.nationalIdNumber,
+        department: dto.department,
+        position: dto.position,
+        description: dto.description,
+        joinDate: dto.joinDate ? new Date(dto.joinDate) : null,
+        employmentType: dto.employmentType,
+        workSchedule: dto.workSchedule,
+        weeklyHours: dto.weeklyHours,
+        employmentStatus: dto.employmentStatus,
+      },
+      select: {
+        id: true,
+        employmentId: true,
+        firstName: true,
+        lastName: true,
+        dob: true,
+        gender: true,
+        photo: true,
+        email: true,
+        phone: true,
+        presentAddress: true,
+        permanentAddress: true,
+        maritalStatus: true,
+        state: true,
+        postalCode: true,
+        country: true,
+        nationality: true,
+        nationalIdNumber: true,
+        department: true,
+        position: true,
+        description: true,
+        joinDate: true,
+        employmentType: true,
+        workSchedule: true,
+        weeklyHours: true,
+        employmentStatus: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      staff,
     };
   }
 }

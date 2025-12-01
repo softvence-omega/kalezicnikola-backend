@@ -1,6 +1,6 @@
 model Staff {
   id               String         @id @default(uuid())
-  doctorId         String?        @unique
+  doctorId         String?
 
   // personal details
   employmentId     String        @unique
@@ -9,8 +9,8 @@ model Staff {
   dob              DateTime
   gender           Gender
   photo            String?
-  email            String
-  phone            String
+  email            String @unique
+  phone            String @unique
   presentAddress   String
   permanentAddress String?
   maritalStatus    MaritalStatus?
