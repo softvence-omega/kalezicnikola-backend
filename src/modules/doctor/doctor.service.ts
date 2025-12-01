@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UpdateDoctorProfileDto } from './dto/update-profile.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
+import { CheckEmploymentIdDto } from './dto/check-employment-id.dto';
 
 @Injectable()
 export class DoctorService {
@@ -306,4 +307,73 @@ export class DoctorService {
       staff,
     };
   }
+
+  // ----------------- CHECK EMPLOYMENT ID AVAILABILITY -------------------
+  async checkEmploymentIdAvailability(accessToken: string, employmentId: string) {
+    // Find session to verify doctor authentication
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    // Validate employmentId format
+    const employmentIdPattern = /^STF-\d+$/;
+    if (!employmentIdPattern.test(employmentId)) {
+      throw new BadRequestException('Employment ID must start with STF- followed by digits');
+    }
+
+    // Check if the provided employment ID exists
+    const existingStaff = await this.prisma.staff.findUnique({
+      where: { employmentId },
+    });
+
+    // Always generate a suggested ID
+    let suggestedId: string = '';
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!isUnique && attempts < maxAttempts) {
+      // Generate 8 random digits
+      const randomDigits = Math.floor(10000000 + Math.random() * 90000000);
+      suggestedId = `STF-${randomDigits}`;
+
+      // Check if suggested ID already exists
+      const existingSuggestion = await this.prisma.staff.findUnique({
+        where: { employmentId: suggestedId },
+      });
+
+      if (!existingSuggestion) {
+        isUnique = true;
+      }
+      attempts++;
+    }
+
+    if (!isUnique) {
+      throw new BadRequestException('Failed to generate a unique employment ID suggestion. Please try again.');
+    }
+
+    if (existingStaff) {
+      // Employment ID already exists
+      return {
+        exists: true,
+        requestedId: employmentId,
+        suggestedId: suggestedId,
+        message: `Employment ID ${employmentId} already exists. Suggested new ID: ${suggestedId}`,
+      };
+    } else {
+      // Employment ID is available
+      return {
+        exists: false,
+        requestedId: employmentId,
+        suggestedId: suggestedId,
+        message: `Employment ID ${employmentId} is available. Alternative suggestion: ${suggestedId}`,
+      };
+    }
+  }
 }
+

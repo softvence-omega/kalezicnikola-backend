@@ -4,6 +4,7 @@ import {
   Post,
   Patch,
   Body,
+  Param,
   HttpStatus,
   Headers,
   UnauthorizedException,
@@ -13,6 +14,7 @@ import { DoctorService } from './doctor.service';
 import { DoctorGuard } from 'src/common/guard/doctor.guard';
 import { UpdateDoctorProfileDto } from './dto/update-profile.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
+import { CheckEmploymentIdDto } from './dto/check-employment-id.dto';
 
 @Controller('doctor')
 export class DoctorController {
@@ -86,6 +88,31 @@ export class DoctorController {
     return {
       statusCode: HttpStatus.CREATED,
       message: 'Staff member added successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- CHECK EMPLOYMENT ID AVAILABILITY -------------------
+  @Get('check-employment-id-availability/:employmentId')
+  @UseGuards(DoctorGuard)
+  async checkEmploymentIdAvailability(
+    @Headers('authorization') authorization: string,
+    @Param('employmentId') employmentId: string,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.checkEmploymentIdAvailability(token, employmentId);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: result.message,
       data: result,
     };
   }
