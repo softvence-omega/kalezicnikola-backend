@@ -1,67 +1,75 @@
 model StaffPersonalInfo {
-  id                           String    @id @default(uuid()) 
-  doctorId                     String?   @unique 
-  dateOfBirth                  DateTime?  
-  phoneCipher                  String?   
-  addressCipher                String?   
-  stateProvince                String?  
-  postalCode                   String?   
-  country                      String?   
-  emergencyContactName         String?  
-  emergencyContactPhone        String?    
-  emergencyContactRelationship String?    
-  createdAt                    DateTime? @default(now()) 
-  updatedAt                    DateTime? @updatedAt 
+  id               String         @id @default(uuid())
+  doctorId         String?        @unique
+  employmentId     String?        @unique
+  firstName        String
+  lastName         String
+  dob              DateTime
+  gender           Gender
+  photo            String?
+  email            String
+  phone            String
+  presentAddress   String
+  permanentAddress String?
+  maritalStatus    MaritalStatus?
+  state            String
+  postalCode       String
+  country          String
+  nationality      String
+  nationalIdNumber String?
 
-  doctor Doctor? @relation(fields: [doctorId], references: [id])
+  emergencyContactName         String?
+  emergencyContactPhone        String?
+  emergencyContactRelationship String?
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+
+  // Relations
+  employmentInfo StaffEmploymentInfo? @relation(fields: [employmentId], references: [id])
+  doctor         Doctor?              @relation(fields: [doctorId], references: [id])
 
   @@map("staff_personal_info")
 }
 
 model StaffEmploymentInfo {
-  id               String          @id @default(uuid()) 
-  doctorId         String?         @unique 
-  employeeId       String?         @unique 
-  department       Department?
-  position         String?         
-  reportingToId    String?         
-  joinDate         DateTime?       
-  employmentType   EmploymentType? 
-  workSchedule     String?         
-  weeklyHours      Int?            
-  salaryCipher     String?         
-  employmentStatus String?          
-  createdAt        DateTime?       @default(now()) 
-  updatedAt        DateTime?       @updatedAt  
+  id             String          @id @default(uuid())
+  doctorId       String?         @unique
+  department     Department?
+  position       String?
+  description    String?
+  joinDate       DateTime?
+  employmentType EmploymentType?
+  workSchedule   String?
+  weeklyHours    Int?
+  employmentStatus StaffStatus?
 
-  doctor      Doctor? @relation(fields: [doctorId], references: [id])
-  reportingTo Doctor? @relation("ReportingManager", fields: [reportingToId], references: [id])
+  createdAt        DateTime?    @default(now())
+  updatedAt        DateTime?    @updatedAt
+
+  // Reverse relation to PersonalInfo
+  personalInfo StaffPersonalInfo?
+
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
 
   @@map("staff_employment_info")
 }
 
 model Task {
-  id              String      @id @default(uuid()) 
-  clinicId        String?     
-  title           String?     
-  description     String?     
-  status          TaskStatus?
-  priority        Priority?
-  dueDate         DateTime?   
-  
-  // Task can be assigned to either
-  assigneeDoctorId String?    
-  assigneeAdminId  String?   
-  
-  patientId       String?     
-  createdAt       DateTime?   @default(now())  
-  updatedAt       DateTime?   @updatedAt 
-  deletedAt       DateTime?   
+  id          String      @id @default(uuid())
+  title       String?
+  description String?
+  status      TaskStatus?
+  priority    Priority?
+  dueDate     DateTime?
 
-  clinic          Clinic?  @relation(fields: [clinicId], references: [id])
-  assignedDoctor  Doctor?  @relation("DoctorTaskAssignee", fields: [assigneeDoctorId], references: [id])
-  assignedAdmin   Admin?   @relation("AdminTaskAssignee", fields: [assigneeAdminId], references: [id])
-  patient         Patient? @relation(fields: [patientId], references: [id])
+  patientId String?
+  
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+  deletedAt DateTime?
+
+  patient        Patient? @relation(fields: [patientId], references: [id])
 
   @@map("tasks")
 }

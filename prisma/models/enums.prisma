@@ -113,6 +113,7 @@ enum EmploymentType {
   CONTRACT
   TEMPORARY
   INTERN
+  TRAINEE
 }
 
 enum MetricType {
@@ -252,4 +253,26 @@ enum BufferTime {
   Minutes_15
   Minutes_20
   Minutes_30
+}
+
+
+// Staff
+enum StaffRole {
+    CARDIOLOGIST
+    NEUROLOGIST
+    HEAD_NURSE
+    LAB_TECHNICIAN
+    PHARMACIST
+    RECEPTIONIST
+}
+
+enum StaffStatus {
+    ACTIVE
+    INACTIVE
+    ON_LEAVE
+}
+
+enum MaritalStatus {
+  MARRIED
+  UNMARRIED
 }

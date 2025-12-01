@@ -19,7 +19,6 @@ model Admin {
   clinic         Clinic?         @relation(fields: [clinicId], references: [id])
   sessions       Session[]
   auditLogs      AuditLog[]
-  assignedTasks  Task[]          @relation("AdminTaskAssignee")
   passwordResets PasswordReset[]
 
   @@map("admins")
@@ -58,7 +57,6 @@ model Doctor {
   calls          Call[]          @relation("DoctorCalls")
   prescriptions  Prescription[]  @relation("DoctorPrescriptions")
   diagnoses      Diagnosis[]     @relation("DoctorDiagnoses")
-  assignedTasks  Task[]          @relation("DoctorTaskAssignee")
   auditLogs      AuditLog[]
   passwordResets PasswordReset[]
 
@@ -70,10 +68,6 @@ model Doctor {
   doctorNotificationSettings DoctorNotificationSettings?
   doctorRegionalSettings     DoctorRegionalSettings?
   doctorSecuritySettings     DoctorSecuritySettings?
-
-
-  // Self-relation for reporting hierarchy
-  subordinates StaffEmploymentInfo[] @relation("ReportingManager")
 
   @@map("doctors")
 }

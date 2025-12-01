@@ -14,7 +14,6 @@ model Clinic {
   calls              Call[]
   labs               Lab[]
   prescriptions      Prescription[]
-  tasks              Task[]
   subscription       Subscription?
   invoices           Invoice[]
   notificationQueues NotificationQueue[]
