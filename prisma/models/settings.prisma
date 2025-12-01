@@ -1,67 +1,62 @@
 model DoctorNotificationSettings {
-  id                   String   @id @default(uuid())
-  doctorId             String   @unique
-  doctor               Doctor   @relation(fields: [doctorId], references: [id])
+  id       String @id @default(uuid())
+  doctorId String @unique
+  doctor   Doctor @relation(fields: [doctorId], references: [id])
 
-  appointmentReminders Boolean  @default(true)
-  patientUpdates       Boolean  @default(false)
-  callLogs             Boolean  @default(true)
-  taskDeadlines        Boolean  @default(false)
-  securityAlerts       Boolean  @default(true)
-  emailNotifications   Boolean  @default(true)
+  appointmentReminders Boolean @default(true)
+  patientUpdates       Boolean @default(false)
+  callLogs             Boolean @default(true)
+  taskDeadlines        Boolean @default(false)
+  securityAlerts       Boolean @default(true)
+  emailNotifications   Boolean @default(true)
 
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("doctor_notification_settings")
 }
 
-
-
 model DoctorRegionalSettings {
-  id                          String             @id @default(uuid())
-  doctorId                    String             @unique
-  doctor                      Doctor             @relation(fields: [doctorId], references: [id])
+  id       String @id @default(uuid())
+  doctorId String @unique
+  doctor   Doctor @relation(fields: [doctorId], references: [id])
 
-  timezone                    Timezone?
-  dateFormat                  DateFormat?
-  timeFormat                  TimeFormat?
-  language                    Language?
+  timezone   Timezone   @default(Asia_Dhaka)
+  dateFormat DateFormat @default(DD_MM_YYYY)
+  timeFormat TimeFormat @default(HOUR_24)
+  language   Language   @default(English)
 
-  defaultCalendarView         CalendarView?
-  defaultAppointmentDuration  AppointmentDuration?
+  defaultCalendarView        CalendarView        @default(DayView)
+  defaultAppointmentDuration AppointmentDuration @default(Minutes_20)
 
-  allowOnlineBooking          Boolean            @default(true)
-  requireApprovalForBooking   Boolean            @default(false)
-  sendAppointmentReminders    Boolean            @default(false)
+  allowOnlineBooking        Boolean @default(true)
+  requireApprovalForBooking Boolean @default(false)
+  sendAppointmentReminders  Boolean @default(false)
 
-  reminderTime                ReminderTime?
-  bufferTimeBetween           BufferTime?
+  reminderTime      ReminderTime @default(Minutes_30_Before)
+  bufferTimeBetween BufferTime   @default(Minutes_10)
 
-  createdAt                   DateTime           @default(now())
-  updatedAt                   DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("doctor_regional_settings")
 }
 
-
-
-
 model DoctorSecuritySettings {
-  id                    String   @id @default(uuid())
-  doctorId              String   @unique
-  doctor                Doctor   @relation(fields: [doctorId], references: [id])
+  id       String @id @default(uuid())
+  doctorId String @unique
+  doctor   Doctor @relation(fields: [doctorId], references: [id])
 
-  enforceTwoFA          Boolean  @default(true)
+  enforceTwoFA Boolean @default(true)
 
-  sessionTimeoutMinutes Int?
-  maxLoginAttempts      Int?
+  sessionTimeoutMinutes Int @default(30)
+  maxLoginAttempts      Int @default(5)
 
-  encryptSensitiveData  Boolean  @default(true)
-  enableAuditLogs       Boolean  @default(true)
+  encryptSensitiveData Boolean @default(true)
+  enableAuditLogs      Boolean @default(true)
 
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("doctor_security_settings")
 }
