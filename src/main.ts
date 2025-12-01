@@ -15,7 +15,7 @@ async function bootstrap() {
   app.enableCors();
 
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
-    prefix: '/uploads/',
+    prefix: '/api/v1/uploads/',
   });
 
   // Global success response formatting

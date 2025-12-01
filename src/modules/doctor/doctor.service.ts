@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { UpdateDoctorProfileDto } from './dto/update-profile.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { CheckEmploymentIdDto } from './dto/check-employment-id.dto';
+import { deleteFileFromUploads } from 'src/utils/file-delete.util';
 
 @Injectable()
 export class DoctorService {
@@ -475,6 +476,11 @@ export class DoctorService {
     await this.prisma.staff.delete({
       where: { id: staffId },
     });
+
+    // Delete the staff photo if it exists
+    if (staff.photo) {
+      await deleteFileFromUploads(staff.photo);
+    }
 
     return {
       message: 'Staff member deleted successfully',

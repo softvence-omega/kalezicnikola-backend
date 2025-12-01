@@ -1,8 +1,15 @@
 import { extname, join } from 'path';
 import { diskStorage } from 'multer';
+import { existsSync, mkdirSync } from 'fs';
 
 export const fileStorage = diskStorage({
-  destination: join(process.cwd(), 'dist', 'uploads'),
+  destination: (req, file, cb) => {
+    const uploadPath = join(process.cwd(), 'uploads');
+    if (!existsSync(uploadPath)) {
+      mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
+  },
   filename: (req, file, cb) => {
     const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1e9);
     const extension = extname(file.originalname);
