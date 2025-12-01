@@ -331,34 +331,33 @@ export class DoctorService {
       where: { employmentId },
     });
 
-    // Always generate a suggested ID
-    let suggestedId: string = '';
-    let isUnique = false;
-    let attempts = 0;
-    const maxAttempts = 10;
-
-    while (!isUnique && attempts < maxAttempts) {
-      // Generate 8 random digits
-      const randomDigits = Math.floor(10000000 + Math.random() * 90000000);
-      suggestedId = `STF-${randomDigits}`;
-
-      // Check if suggested ID already exists
-      const existingSuggestion = await this.prisma.staff.findUnique({
-        where: { employmentId: suggestedId },
-      });
-
-      if (!existingSuggestion) {
-        isUnique = true;
-      }
-      attempts++;
-    }
-
-    if (!isUnique) {
-      throw new BadRequestException('Failed to generate a unique employment ID suggestion. Please try again.');
-    }
-
     if (existingStaff) {
-      // Employment ID already exists
+      // Employment ID already exists - generate a suggestion
+      let suggestedId: string = '';
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 10;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate 8 random digits
+        const randomDigits = Math.floor(10000000 + Math.random() * 90000000);
+        suggestedId = `STF-${randomDigits}`;
+
+        // Check if suggested ID already exists
+        const existingSuggestion = await this.prisma.staff.findUnique({
+          where: { employmentId: suggestedId },
+        });
+
+        if (!existingSuggestion) {
+          isUnique = true;
+        }
+        attempts++;
+      }
+
+      if (!isUnique) {
+        throw new BadRequestException('Failed to generate a unique employment ID suggestion. Please try again.');
+      }
+
       return {
         exists: true,
         requestedId: employmentId,
@@ -366,12 +365,11 @@ export class DoctorService {
         message: `Employment ID ${employmentId} already exists. Suggested new ID: ${suggestedId}`,
       };
     } else {
-      // Employment ID is available
+      // Employment ID is available - no suggestion needed
       return {
         exists: false,
         requestedId: employmentId,
-        suggestedId: suggestedId,
-        message: `Employment ID ${employmentId} is available. Alternative suggestion: ${suggestedId}`,
+        message: `Employment ID ${employmentId} is available`,
       };
     }
   }
