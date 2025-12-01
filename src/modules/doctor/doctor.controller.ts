@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   HttpStatus,
@@ -114,6 +115,77 @@ export class DoctorController {
       statusCode: HttpStatus.OK,
       message: result.message,
       data: result,
+    };
+  }
+
+  // ----------------- GET ALL STAFFS -------------------
+  @Get('staffs')
+  @UseGuards(DoctorGuard)
+  async getAllStaffs(@Headers('authorization') authorization: string) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.getAllStaffs(token);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Staffs retrieved successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- GET SINGLE STAFF -------------------
+  @Get('staff/:id')
+  @UseGuards(DoctorGuard)
+  async getSingleStaff(
+    @Headers('authorization') authorization: string,
+    @Param('id') staffId: string,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.getSingleStaff(token, staffId);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Staff retrieved successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- DELETE STAFF -------------------
+  @Delete('staff/delete/:id')
+  @UseGuards(DoctorGuard)
+  async deleteStaff(
+    @Headers('authorization') authorization: string,
+    @Param('id') staffId: string,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.deleteStaff(token, staffId);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: result.message,
     };
   }
 }

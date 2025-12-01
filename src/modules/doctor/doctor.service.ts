@@ -373,5 +373,112 @@ export class DoctorService {
       };
     }
   }
+
+  // ----------------- GET ALL STAFFS -------------------
+  async getAllStaffs(accessToken: string) {
+    // Find session to verify doctor authentication
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Fetch all staffs for this doctor
+    const staffs = await this.prisma.staff.findMany({
+      where: { doctorId },
+      select: {
+        id: true,
+        employmentId: true,
+        firstName: true,
+        lastName: true,
+        joinDate: true,
+        position: true,
+        phone: true,
+        employmentStatus: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return {
+      staffs,
+      total: staffs.length,
+    };
+  }
+
+  // ----------------- GET SINGLE STAFF -------------------
+  async getSingleStaff(accessToken: string, staffId: string) {
+    // Find session to verify doctor authentication
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Fetch staff by ID and verify it belongs to this doctor
+    const staff = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+    });
+
+    if (!staff) {
+      throw new BadRequestException('Staff member not found');
+    }
+
+    if (staff.doctorId !== doctorId) {
+      throw new UnauthorizedException('You do not have permission to access this staff member');
+    }
+
+    return {
+      staff,
+    };
+  }
+
+  // ----------------- DELETE STAFF -------------------
+  async deleteStaff(accessToken: string, staffId: string) {
+    // Find session to verify doctor authentication
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Fetch staff by ID and verify it belongs to this doctor
+    const staff = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+    });
+
+    if (!staff) {
+      throw new BadRequestException('Staff member not found');
+    }
+
+    if (staff.doctorId !== doctorId) {
+      throw new UnauthorizedException('You do not have permission to delete this staff member');
+    }
+
+    // Delete the staff
+    await this.prisma.staff.delete({
+      where: { id: staffId },
+    });
+
+    return {
+      message: 'Staff member deleted successfully',
+    };
+  }
 }
 
