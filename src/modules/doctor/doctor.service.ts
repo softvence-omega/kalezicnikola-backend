@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UpdateDoctorProfileDto } from './dto/update-profile.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
+import { UpdateStaffDto } from './dto/update-staff.dto';
 import { CheckEmploymentIdDto } from './dto/check-employment-id.dto';
 import { deleteFileFromUploads } from 'src/utils/file-delete.util';
 
@@ -535,6 +536,149 @@ export class DoctorService {
 
     return {
       staff,
+    };
+  }
+
+  // ----------------- UPDATE STAFF -------------------
+  async updateStaff(accessToken: string, staffId: string, dto: UpdateStaffDto) {
+    // Find session to verify doctor authentication
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Fetch staff by ID and verify it belongs to this doctor
+    const existingStaff = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+    });
+
+    if (!existingStaff) {
+      throw new BadRequestException('Staff member not found');
+    }
+
+    if (existingStaff.doctorId !== doctorId) {
+      throw new UnauthorizedException('You do not have permission to update this staff member');
+    }
+
+    // Check if employmentId is being updated and if it already exists
+    if (dto.employmentId && dto.employmentId !== existingStaff.employmentId) {
+      const employmentIdExists = await this.prisma.staff.findUnique({
+        where: { employmentId: dto.employmentId },
+      });
+
+      if (employmentIdExists) {
+        throw new ConflictException(`Employment ID ${dto.employmentId} already exists`);
+      }
+    }
+
+    // Check if email is being updated and if it's already in use
+    if (dto.email && dto.email !== existingStaff.email) {
+      const emailExists = await this.prisma.staff.findFirst({
+        where: {
+          email: dto.email,
+          id: { not: staffId },
+        },
+      });
+
+      if (emailExists) {
+        throw new ConflictException('Email is already in use by another staff member');
+      }
+    }
+
+    // Check if phone is being updated and if it's already in use
+    if (dto.phone && dto.phone !== existingStaff.phone) {
+      const phoneExists = await this.prisma.staff.findFirst({
+        where: {
+          phone: dto.phone,
+          id: { not: staffId },
+        },
+      });
+
+      if (phoneExists) {
+        throw new ConflictException('Phone number is already in use by another staff member');
+      }
+    }
+
+    // Prepare update data
+    const updateData: any = {};
+
+    if (dto.employmentId !== undefined) updateData.employmentId = dto.employmentId;
+    if (dto.firstName !== undefined) updateData.firstName = dto.firstName;
+    if (dto.lastName !== undefined) updateData.lastName = dto.lastName;
+    if (dto.dob !== undefined) updateData.dob = new Date(dto.dob);
+    if (dto.gender !== undefined) updateData.gender = dto.gender;
+    if (dto.email !== undefined) updateData.email = dto.email;
+    if (dto.phone !== undefined) updateData.phone = dto.phone;
+    if (dto.presentAddress !== undefined) updateData.presentAddress = dto.presentAddress;
+    if (dto.permanentAddress !== undefined) updateData.permanentAddress = dto.permanentAddress;
+    if (dto.maritalStatus !== undefined) updateData.maritalStatus = dto.maritalStatus;
+    if (dto.state !== undefined) updateData.state = dto.state;
+    if (dto.postalCode !== undefined) updateData.postalCode = dto.postalCode;
+    if (dto.country !== undefined) updateData.country = dto.country;
+    if (dto.nationality !== undefined) updateData.nationality = dto.nationality;
+    if (dto.nationalIdNumber !== undefined) updateData.nationalIdNumber = dto.nationalIdNumber;
+    if (dto.department !== undefined) updateData.department = dto.department;
+    if (dto.position !== undefined) updateData.position = dto.position;
+    if (dto.description !== undefined) updateData.description = dto.description;
+    if (dto.joinDate !== undefined) updateData.joinDate = dto.joinDate ? new Date(dto.joinDate) : null;
+    if (dto.employmentType !== undefined) updateData.employmentType = dto.employmentType;
+    if (dto.workSchedule !== undefined) updateData.workSchedule = dto.workSchedule;
+    if (dto.weeklyHours !== undefined) updateData.weeklyHours = dto.weeklyHours;
+    if (dto.employmentStatus !== undefined) updateData.employmentStatus = dto.employmentStatus;
+
+    // Handle photo update - delete old photo if new one is uploaded
+    if (dto.photo !== undefined) {
+      updateData.photo = dto.photo;
+      
+      // Delete old photo if it exists and a new one is being set
+      if (existingStaff.photo && dto.photo && existingStaff.photo !== dto.photo) {
+        await deleteFileFromUploads(existingStaff.photo);
+      }
+    }
+
+    // Update staff record
+    const updatedStaff = await this.prisma.staff.update({
+      where: { id: staffId },
+      data: updateData,
+      select: {
+        id: true,
+        employmentId: true,
+        firstName: true,
+        lastName: true,
+        dob: true,
+        gender: true,
+        photo: true,
+        email: true,
+        phone: true,
+        presentAddress: true,
+        permanentAddress: true,
+        maritalStatus: true,
+        state: true,
+        postalCode: true,
+        country: true,
+        nationality: true,
+        nationalIdNumber: true,
+        department: true,
+        position: true,
+        description: true,
+        joinDate: true,
+        employmentType: true,
+        workSchedule: true,
+        weeklyHours: true,
+        employmentStatus: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      staff: updatedStaff,
     };
   }
 

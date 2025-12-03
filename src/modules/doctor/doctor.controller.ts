@@ -22,7 +22,7 @@ import { DoctorService } from './doctor.service';
 import { DoctorGuard } from 'src/common/guard/doctor.guard';
 import { UpdateDoctorProfileDto } from './dto/update-profile.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
-import { CheckEmploymentIdDto } from './dto/check-employment-id.dto';
+import { UpdateStaffDto } from './dto/update-staff.dto';
 import { GetAllStaffsDto } from './dto/get-all-staffs.dto';
 import { fileStorage, imageFileFilter } from 'src/utils/file-upload.util';
 
@@ -220,6 +220,74 @@ export class DoctorController {
     return {
       statusCode: HttpStatus.OK,
       message: 'Staff retrieved successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- UPDATE STAFF -------------------
+  @Patch('staff/update/:id')
+  @UseGuards(DoctorGuard)
+  @UseInterceptors(
+    FileInterceptor('photo', {
+      storage: fileStorage,
+      fileFilter: imageFileFilter,
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    }),
+  )
+  async updateStaff(
+    @Headers('authorization') authorization: string,
+    @Param('id') staffId: string,
+    @Body() body: any,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    let dto: UpdateStaffDto;
+
+    // Handle JSON in 'data' field (multipart/form-data pattern)
+    if (body.data) {
+      try {
+        const parsedData = JSON.parse(body.data);
+        dto = plainToInstance(UpdateStaffDto, parsedData);
+      } catch (err) {
+        throw new BadRequestException("Invalid JSON format in 'data' field");
+      }
+    } else {
+      // Handle standard body (application/json or direct fields)
+      dto = plainToInstance(UpdateStaffDto, body);
+    }
+
+    // Attach file path if uploaded
+    if (file) {
+      dto.photo = `/api/v1/uploads/${file.filename}`;
+    }
+
+    // Manually validate the DTO since we bypassed global pipe for multipart
+    const errors = await validate(dto);
+    if (errors.length > 0) {
+      // Format errors similar to ValidationPipe
+      const formattedErrors = errors.map((err) => ({
+        property: err.property,
+        constraints: err.constraints,
+      }));
+      throw new BadRequestException({
+        message: 'Validation failed',
+        errors: formattedErrors,
+      });
+    }
+
+    const result = await this.doctorService.updateStaff(token, staffId, dto);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Staff member updated successfully',
       data: result,
     };
   }
