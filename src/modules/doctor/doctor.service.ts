@@ -376,7 +376,7 @@ export class DoctorService {
   }
 
   // ----------------- GET ALL STAFFS -------------------
-  async getAllStaffs(accessToken: string) {
+  async getAllStaffs(accessToken: string, query: any) {
     // Find session to verify doctor authentication
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
@@ -389,9 +389,91 @@ export class DoctorService {
 
     const doctorId = session.doctorId;
 
-    // Fetch all staffs for this doctor
+    // Extract pagination parameters
+    const page = query.page || 1;
+    const limit = query.limit || 10;
+    const skip = (page - 1) * limit;
+    const sortBy = query.sortBy || 'createdAt';
+    const sortOrder = query.sortOrder?.toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+    // Build where clause for filtering
+    const where: any = { doctorId };
+
+    // Search functionality - searches across multiple fields
+    if (query.search) {
+      where.OR = [
+        { firstName: { contains: query.search, mode: 'insensitive' } },
+        { lastName: { contains: query.search, mode: 'insensitive' } },
+        { employmentId: { contains: query.search, mode: 'insensitive' } },
+        { email: { contains: query.search, mode: 'insensitive' } },
+        { phone: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+
+    // Filter by department
+    if (query.department) {
+      where.department = query.department;
+    }
+
+    // Filter by position
+    if (query.position) {
+      where.position = { contains: query.position, mode: 'insensitive' };
+    }
+
+    // Filter by employment status
+    if (query.employmentStatus) {
+      where.employmentStatus = query.employmentStatus;
+    }
+
+    // Filter by employment type
+    if (query.employmentType) {
+      where.employmentType = query.employmentType;
+    }
+
+    // Filter by gender
+    if (query.gender) {
+      where.gender = query.gender;
+    }
+
+    // Filter by join date range
+    if (query.joinDateFrom || query.joinDateTo) {
+      where.joinDate = {};
+      if (query.joinDateFrom) {
+        where.joinDate.gte = new Date(query.joinDateFrom);
+      }
+      if (query.joinDateTo) {
+        where.joinDate.lte = new Date(query.joinDateTo);
+      }
+    }
+
+    // Get total count for pagination metadata
+    const total = await this.prisma.staff.count({ where });
+
+    // Check if no staff found and return with message
+    if (total === 0) {
+      const hasFilters = query.search || query.department || query.position || 
+                         query.employmentStatus || query.employmentType || 
+                         query.gender || query.joinDateFrom || query.joinDateTo;
+
+      const message = hasFilters 
+        ? 'No staff members found matching your search criteria'
+        : 'No staff members found. You haven\'t added any staff yet.';
+
+      return {
+        staffs: [],
+        pagination: {
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+        },
+        message, // This will be used by controller for top-level message
+      };
+    }
+
+    // Fetch staffs with pagination and sorting
     const staffs = await this.prisma.staff.findMany({
-      where: { doctorId },
+      where,
       select: {
         id: true,
         employmentId: true,
@@ -400,16 +482,27 @@ export class DoctorService {
         joinDate: true,
         position: true,
         phone: true,
+        email: true,
+        department: true,
         employmentStatus: true,
+        employmentType: true,
+        gender: true,
       },
       orderBy: {
-        createdAt: 'desc',
+        [sortBy]: sortOrder,
       },
+      skip,
+      take: limit,
     });
 
     return {
       staffs,
-      total: staffs.length,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 

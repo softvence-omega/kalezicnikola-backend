@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   HttpStatus,
   Headers,
   UnauthorizedException,
@@ -22,6 +23,7 @@ import { DoctorGuard } from 'src/common/guard/doctor.guard';
 import { UpdateDoctorProfileDto } from './dto/update-profile.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { CheckEmploymentIdDto } from './dto/check-employment-id.dto';
+import { GetAllStaffsDto } from './dto/get-all-staffs.dto';
 import { fileStorage, imageFileFilter } from 'src/utils/file-upload.util';
 
 @Controller('doctor')
@@ -170,7 +172,10 @@ export class DoctorController {
   // ----------------- GET ALL STAFFS -------------------
   @Get('staffs')
   @UseGuards(DoctorGuard)
-  async getAllStaffs(@Headers('authorization') authorization: string) {
+  async getAllStaffs(
+    @Headers('authorization') authorization: string,
+    @Query() query: GetAllStaffsDto,
+  ) {
     if (!authorization) {
       throw new UnauthorizedException('Authorization header is required');
     }
@@ -180,12 +185,17 @@ export class DoctorController {
       throw new UnauthorizedException('Invalid authorization format');
     }
 
-    const result = await this.doctorService.getAllStaffs(token);
+    const result = await this.doctorService.getAllStaffs(token, query);
+
+    // Extract message if exists (for empty results) and remove from data
+    const message = result.message || 'Staffs retrieved successfully';
+    const { message: _, ...data } = result; // Remove message from data object
 
     return {
       statusCode: HttpStatus.OK,
-      message: 'Staffs retrieved successfully',
-      data: result,
+      success: true,
+      message,
+      data,
     };
   }
 
