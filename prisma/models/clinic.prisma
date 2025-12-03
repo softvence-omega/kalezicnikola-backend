@@ -1,10 +1,10 @@
 model Clinic {
-  id                 String               @id @default(uuid()) @db.Uuid
-  name               String?              @db.VarChar
-  address            String?              @db.VarChar
-  vatId              String?              @unique @map("vat_id") @db.VarChar
-  createdAt          DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt          DateTime?            @updatedAt @map("updated_at") @db.Timestamp(6)
+  id                 String               @id @default(uuid()) 
+  name               String?              
+  address            String?              
+  vatId              String?              @unique 
+  createdAt          DateTime?            @default(now()) 
+  updatedAt          DateTime?            @updatedAt
 
   // Relations
   admins             Admin[]
@@ -14,7 +14,6 @@ model Clinic {
   calls              Call[]
   labs               Lab[]
   prescriptions      Prescription[]
-  tasks              Task[]
   subscription       Subscription?
   invoices           Invoice[]
   notificationQueues NotificationQueue[]

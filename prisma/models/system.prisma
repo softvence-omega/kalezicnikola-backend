@@ -1,13 +1,12 @@
 // prisma/models/system.prisma
 model SystemMetric {
-  id         String      @id @default(uuid()) @db.Uuid
-  serviceName ServiceName? @map("service_name")
-  metricType MetricType? @map("metric_type")
+  id         String      @id @default(uuid()) 
+  serviceName ServiceName? 
+  metricType MetricType? 
   value      Float?
-  unit       String?     @db.VarChar
-  recordedAt DateTime?   @map("recorded_at") @db.Timestamptz(6)
-  createdAt  DateTime?   @default(now()) @map("created_at") @db.Timestamp(6)
+  unit       String?     
+  recordedAt DateTime?  
+  createdAt  DateTime?   @default(now()) 
 
-  @@index([serviceName, metricType, recordedAt])
   @@map("system_metrics")
 }

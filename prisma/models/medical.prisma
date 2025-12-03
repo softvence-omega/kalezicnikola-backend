@@ -1,16 +1,15 @@
-// prisma/models/medical.prisma
 model Appointment {
-  id        String             @id @default(uuid()) @db.Uuid
-  clinicId  String?            @map("clinic_id") @db.Uuid
-  patientId String?            @map("patient_id") @db.Uuid
-  doctorId  String?            @map("doctor_id") @db.Uuid
-  startAt   DateTime?          @map("start_at") @db.Timestamptz(6)
-  endAt     DateTime?          @map("end_at") @db.Timestamptz(6)
+  id        String             @id @default(uuid()) 
+  clinicId  String?            
+  patientId String?            
+  doctorId  String?            
+  startAt   DateTime?           
+  endAt     DateTime?          
   status    AppointmentStatus?
-  note      String?            @db.Text
-  createdAt DateTime?          @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt DateTime?          @updatedAt @map("updated_at") @db.Timestamp(6)
-  deletedAt DateTime?          @map("deleted_at") @db.Timestamp(6)
+  note      String?            
+  createdAt DateTime?          @default(now())  
+  updatedAt DateTime?          @updatedAt  
+  deletedAt DateTime?           
 
   clinic  Clinic?  @relation(fields: [clinicId], references: [id])
   patient Patient? @relation(fields: [patientId], references: [id])
@@ -20,25 +19,24 @@ model Appointment {
 }
 
 model Call {
-  id                 String      @id @default(uuid()) @db.Uuid
-  clinicId           String?     @map("clinic_id") @db.Uuid
-  patientId          String?     @map("patient_id") @db.Uuid
-  doctorId           String?     @map("doctor_id") @db.Uuid
-  startAt            DateTime?   @map("start_at") @db.Timestamptz(6)
-  endAt              DateTime?   @map("end_at") @db.Timestamptz(6)
-  durationSeconds    Int?        @map("duration_seconds")
+  id                 String      @id @default(uuid()) 
+  clinicId           String?     
+  patientId          String?      
+  doctorId           String?     
+  startAt            DateTime?    
+  endAt              DateTime?    
+  durationSeconds    Int?        
   status             CallStatus?
-  recordingUrlCipher String?     @map("recording_url_cipher") @db.VarChar
-  transcript         String?     @db.Text
-  aiSummary          String?     @map("ai_summary") @db.Text
+  recordingUrlCipher String?     
+  transcript         String?     
+  aiSummary          String?      
   sentiment          Sentiment?
   escalated          Boolean?
-  minutesUsed        Int?        @map("minutes_used")
-  createdAt          DateTime?   @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt          DateTime?   @updatedAt @map("updated_at") @db.Timestamp(6)
-  aiModelId          String?     @map("ai_model_id") @db.Uuid
-  aiDecision         String?     @map("ai_decision") @db.VarChar
-
+  minutesUsed        Int?        
+  createdAt          DateTime?   @default(now()) 
+  updatedAt          DateTime?   @updatedAt 
+  aiModelId          String?     
+  aiDecision         String?     
   clinic  Clinic?  @relation(fields: [clinicId], references: [id])
   patient Patient? @relation(fields: [patientId], references: [id])
   doctor  Doctor?  @relation("DoctorCalls", fields: [doctorId], references: [id])
@@ -47,17 +45,17 @@ model Call {
 }
 
 model Diagnosis {
-  id            String    @id @default(uuid()) @db.Uuid
-  patientId     String?   @map("patient_id") @db.Uuid
-  doctorId      String?   @map("doctor_id") @db.Uuid
-  diagnosisCode String?   @map("diagnosis_code") @db.VarChar
-  diagnosisName String?   @map("diagnosis_name") @db.VarChar
-  description   String?   @db.Text
-  status        String?   @db.VarChar
-  diagnosedDate DateTime? @map("diagnosed_date") @db.Date
-  resolvedDate  DateTime? @map("resolved_date") @db.Date
-  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt     DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+  id            String    @id @default(uuid()) 
+  patientId     String?   
+  doctorId      String?   
+  diagnosisCode String?   
+  diagnosisName String?   
+  description   String?   
+  status        String?   
+  diagnosedDate DateTime? 
+  resolvedDate  DateTime?
+  createdAt     DateTime? @default(now())  
+  updatedAt     DateTime? @updatedAt  
 
   patient Patient? @relation(fields: [patientId], references: [id])
   doctor  Doctor?  @relation("DoctorDiagnoses", fields: [doctorId], references: [id])
@@ -66,14 +64,14 @@ model Diagnosis {
 }
 
 model Lab {
-  id           String    @id @default(uuid()) @db.Uuid
-  clinicId     String?   @map("clinic_id") @db.Uuid
-  patientId    String?   @map("patient_id") @db.Uuid
-  testDate     DateTime? @map("test_date") @db.Date
-  pdfKeyCipher String?   @map("pdf_key_cipher") @db.VarChar
-  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt    DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
-  deletedAt    DateTime? @map("deleted_at") @db.Timestamp(6)
+  id           String    @id @default(uuid()) 
+  clinicId     String?    
+  patientId    String?   
+  testDate     DateTime? 
+  pdfKeyCipher String?    
+  createdAt    DateTime? @default(now()) 
+  updatedAt    DateTime? @updatedAt  
+  deletedAt    DateTime? 
 
   clinic  Clinic?  @relation(fields: [clinicId], references: [id])
   patient Patient? @relation(fields: [patientId], references: [id])
@@ -83,13 +81,13 @@ model Lab {
 }
 
 model LabResult {
-  id        String  @id @default(uuid()) @db.Uuid
-  labId     String? @map("lab_id") @db.Uuid
-  testName  String? @map("test_name") @db.VarChar
-  result    String? @db.VarChar
-  unit      String? @db.VarChar
-  normalMin Float?  @map("normal_min")
-  normalMax Float?  @map("normal_max")
+  id        String  @id @default(uuid()) 
+  labId     String? 
+  testName  String?
+  result    String? 
+  unit      String? 
+  normalMin Float?  
+  normalMax Float?  
   flag      Flag?
 
   lab Lab? @relation(fields: [labId], references: [id])
@@ -98,15 +96,15 @@ model LabResult {
 }
 
 model Prescription {
-  id             String              @id @default(uuid()) @db.Uuid
-  clinicId       String?             @map("clinic_id") @db.Uuid
-  patientId      String?             @map("patient_id") @db.Uuid
-  doctorId       String?             @map("doctor_id") @db.Uuid
-  prescriptionNo Int?                @map("prescription_no")
+  id             String              @id @default(uuid()) 
+  clinicId       String?             
+  patientId      String?             
+  doctorId       String?            
+  prescriptionNo Int?                
   status         PrescriptionStatus?
-  createdAt      DateTime?           @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt      DateTime?           @updatedAt @map("updated_at") @db.Timestamp(6)
-  deletedAt      DateTime?           @map("deleted_at") @db.Timestamp(6)
+  createdAt      DateTime?           @default(now()) 
+  updatedAt      DateTime?           @updatedAt  
+  deletedAt      DateTime?           
 
   clinic    Clinic?                @relation(fields: [clinicId], references: [id])
   patient   Patient?               @relation(fields: [patientId], references: [id])
@@ -117,14 +115,14 @@ model Prescription {
 }
 
 model PrescriptionMedicine {
-  id             String  @id @default(uuid()) @db.Uuid
-  prescriptionId String? @map("prescription_id") @db.Uuid
-  medicine       String? @db.VarChar
-  strength       String? @db.VarChar
-  dose           String? @db.VarChar
-  frequency      String? @db.VarChar
-  route          String? @db.VarChar
-  duration       String? @db.VarChar
+  id             String  @id @default(uuid()) 
+  prescriptionId String?  
+  medicine       String? 
+  strength       String? 
+  dose           String? 
+  frequency      String? 
+  route          String? 
+  duration       String? 
   refill         Int?
 
   prescription Prescription? @relation(fields: [prescriptionId], references: [id])

@@ -2,8 +2,6 @@ export default () => ({
   port: parseInt(process.env.PORT as string, 10),
   node_env: process.env.NODE_ENV,
   bcrypt_salt_rounds: process.env.BCRYPT_SALT_ROUNDS,
-  jwt_secret: process.env.JWT_SECRET,
-  jwt_expired_in: process.env.JWT_EXPIRED_IN || '5m',
   jwt_access_secret: process.env.JWT_ACCESS_SECRET,
   jwt_access_expires_in: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
   jwt_refresh_secret: process.env.JWT_REFRESH_SECRET,
@@ -19,6 +17,7 @@ export default () => ({
   stripe_webhook_secret: process.env.STRIPE_WEBHOOK_SECRET,
   redis_connection_url: process.env.REDIS_CONNECTION_URL,
   database: {
-    url: process.env.DATABASE_URL
+    url: process.env.DATABASE_URL,
+    directUrl: process.env.DIRECT_URL
   }
 });
