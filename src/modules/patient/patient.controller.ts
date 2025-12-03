@@ -17,6 +17,7 @@ import { PatientService } from './patient.service';
 import { DoctorGuard } from 'src/common/guard/doctor.guard';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { fileStorage, imageFileFilter } from 'src/utils/file-upload.util';
+import { deleteFileFromUploads } from 'src/utils/file-delete.util';
 
 @Controller('doctor/patient')
 export class PatientController {
@@ -55,6 +56,12 @@ export class PatientController {
         dto = plainToInstance(CreatePatientDto, parsedData);
       } catch (err) {
         console.error('JSON Parse Error:', err);
+        
+        // Delete uploaded file if JSON parsing fails
+        if (file) {
+          await deleteFileFromUploads(`/api/v1/uploads/${file.filename}`);
+        }
+        
         throw new BadRequestException({
           message: "Invalid JSON format in 'data' field",
           error: err.message,
@@ -73,6 +80,11 @@ export class PatientController {
     // Manually validate the DTO since we bypassed global pipe for multipart
     const errors = await validate(dto);
     if (errors.length > 0) {
+      // Delete uploaded file if validation fails
+      if (file) {
+        await deleteFileFromUploads(`/api/v1/uploads/${file.filename}`);
+      }
+
       // Format errors similar to ValidationPipe with detailed constraints
       const formattedErrors = errors.map((err) => ({
         property: err.property,
@@ -88,12 +100,22 @@ export class PatientController {
       });
     }
 
-    const result = await this.patientService.addPatient(token, dto);
+    try {
+      const result = await this.patientService.addPatient(token, dto);
 
-    return {
-      statusCode: HttpStatus.CREATED,
-      message: 'Patient added successfully',
-      data: result,
-    };
+      return {
+        statusCode: HttpStatus.CREATED,
+        message: 'Patient added successfully',
+        data: result,
+      };
+    } catch (error) {
+      // Delete uploaded file if patient creation fails
+      if (file) {
+        await deleteFileFromUploads(`/api/v1/uploads/${file.filename}`);
+      }
+      
+      // Re-throw the error to be handled by global exception filter
+      throw error;
+    }
   }
 }
