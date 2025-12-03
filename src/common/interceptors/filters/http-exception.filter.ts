@@ -144,11 +144,16 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const response = exceptionResponse as {
       message?: string | string[];
       error?: string;
+      errors?: any[];
     };
     let message: string;
     let errorDetails: Record<string, unknown> | undefined;
 
-    if (typeof response.message === 'string') {
+    // Handle custom errors array (from our manual validation)
+    if (response.errors && Array.isArray(response.errors)) {
+      message = response.message as string || 'Validation failed';
+      errorDetails = { errors: response.errors };
+    } else if (typeof response.message === 'string') {
       message = response.message;
     } else if (Array.isArray(response.message)) {
       message = response.message[0] || 'Validation failed';

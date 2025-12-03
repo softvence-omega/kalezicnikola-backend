@@ -7,6 +7,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { EmailModule } from './modules/email/email.module';
 import { DoctorModule } from './modules/doctor/doctor.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { PatientModule } from './modules/patient/patient.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     EmailModule,
     DoctorModule,
     SettingsModule,
+    PatientModule,
   ],
   controllers: [AppController],
   providers: [AppService],

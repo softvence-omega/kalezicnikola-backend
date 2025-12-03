@@ -3,6 +3,7 @@ model Patient {
   clinicId           String?
   firstName          String?
   lastName           String?
+  photo              String?
   phone              String?
   alternativePhone   String?
   email              String?
