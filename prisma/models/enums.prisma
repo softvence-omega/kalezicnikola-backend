@@ -113,6 +113,7 @@ enum EmploymentType {
   CONTRACT
   TEMPORARY
   INTERN
+  TRAINEE
 }
 
 enum MetricType {
@@ -166,4 +167,112 @@ enum HealthCheckStatus {
   HEALTHY
   UNHEALTHY
   TIMEOUT
+}
+
+// Settings Enums
+
+enum Timezone {
+  UTC
+  Africa_Cairo
+  Africa_Johannesburg
+  America_New_York
+  America_Chicago
+  America_Denver
+  America_Los_Angeles
+  America_Toronto
+  America_Sao_Paulo
+  Asia_Dhaka
+  Asia_Dubai
+  Asia_Riyadh
+  Asia_Singapore
+  Asia_Kuala_Lumpur
+  Asia_Tokyo
+  Europe_London
+  Europe_Berlin
+  Europe_Paris
+  Europe_Madrid
+  Europe_Rome
+  Australia_Sydney
+}
+
+enum DateFormat {
+  DD_MM_YYYY       // 31-12-2025
+  MM_DD_YYYY       // 12-31-2025
+  YYYY_MM_DD       // 2025-12-31
+  DD_MMM_YYYY      // 31 Dec 2025
+  MMM_DD_YYYY      // Dec 31 2025
+}
+
+
+enum TimeFormat {
+  HOUR_12           // 03:30 PM
+  HOUR_24           // 15:30
+}
+
+enum Language {
+  English
+  Arabic
+  Bengali
+  French
+  German
+  Spanish
+  Italian
+  Hindi
+  Chinese
+}
+
+enum CalendarView {
+  DayView
+  WeekView
+  MonthView
+  AgendaView
+}
+
+enum AppointmentDuration {
+  Minutes_10
+  Minutes_15
+  Minutes_20
+  Minutes_30
+  Minutes_45
+  Minutes_60
+}
+
+enum ReminderTime {
+  Minutes_10_Before
+  Minutes_30_Before
+  Hour_1_Before
+  Hours_2_Before
+  Hours_6_Before
+  Hours_12_Before
+  Hours_24_Before
+}
+
+enum BufferTime {
+  Minutes_5
+  Minutes_10
+  Minutes_15
+  Minutes_20
+  Minutes_30
+}
+
+
+// Staff
+enum StaffRole {
+    CARDIOLOGIST
+    NEUROLOGIST
+    HEAD_NURSE
+    LAB_TECHNICIAN
+    PHARMACIST
+    RECEPTIONIST
+}
+
+enum StaffStatus {
+    ACTIVE
+    INACTIVE
+    ON_LEAVE
+}
+
+enum MaritalStatus {
+  MARRIED
+  UNMARRIED
 }
