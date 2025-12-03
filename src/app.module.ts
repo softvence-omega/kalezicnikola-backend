@@ -8,6 +8,7 @@ import { EmailModule } from './modules/email/email.module';
 import { DoctorModule } from './modules/doctor/doctor.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { PatientModule } from './modules/patient/patient.module';
+import { TaskModule } from './modules/task/task.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { PatientModule } from './modules/patient/patient.module';
     DoctorModule,
     SettingsModule,
     PatientModule,
+    TaskModule,
   ],
   controllers: [AppController],
   providers: [AppService],
