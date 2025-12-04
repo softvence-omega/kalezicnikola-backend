@@ -14,7 +14,7 @@ model Patient {
   maritalStatus      MaritalStatus?
   city               String?
   gender             Gender?
-  bloodGroup         String?
+  bloodGroup         BloodGroup?
   conditionName      String?
   diagnosedDate      DateTime?
   severity           String?
@@ -23,9 +23,7 @@ model Patient {
   createdAt          DateTime?      @default(now())
   updatedAt          DateTime?      @updatedAt
   deletedAt          DateTime?
-  firstNameBlind     String?
-  lastNameBlind      String?
-  insuranceIdBlind   String?
+
 
   // emergency contact
   emergencyContactName         String?

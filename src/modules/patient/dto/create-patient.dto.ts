@@ -36,6 +36,9 @@ export class CreatePatientDto {
 
   @IsOptional()
   @IsString()
+    @Matches(/^INS-\d+$/, {
+    message: 'Insurance ID must start with INS- followed by digits',
+  })
   insuranceId?: string;
 
   @IsOptional()

@@ -1,18 +1,23 @@
 model Appointment {
-  id        String             @id @default(uuid()) 
-  clinicId  String?            
-  patientId String?            
-  doctorId  String?            
-  startAt   DateTime?           
-  endAt     DateTime?          
-  status    AppointmentStatus?
-  note      String?            
+  id        String             @id @default(uuid())           
+  insuranceId String?          
+  doctorId  String?   
+  firstName  String?          
+  lastName   String?   
+  email     String?   
+  phone     String?   
+  dob       DateTime?
+  gender    Gender?
+  bloodGroup BloodGroup?
+  scheduleId String?
+  appointmentDetails String?
+  address     String?            
+  status    AppointmentStatus? @default(NEW)
+          
   createdAt DateTime?          @default(now())  
   updatedAt DateTime?          @updatedAt  
   deletedAt DateTime?           
 
-  clinic  Clinic?  @relation(fields: [clinicId], references: [id])
-  patient Patient? @relation(fields: [patientId], references: [id])
   doctor  Doctor?  @relation("DoctorAppointments", fields: [doctorId], references: [id])
 
   @@map("appointments")
