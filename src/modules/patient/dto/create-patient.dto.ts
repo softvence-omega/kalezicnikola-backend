@@ -7,7 +7,7 @@ import {
   Matches,
   IsEnum,
 } from 'class-validator';
-import { Gender, MaritalStatus } from 'generated/prisma';
+import { Gender, MaritalStatus, PatientStatus } from 'generated/prisma';
 
 export class CreatePatientDto {
   // Personal Details
@@ -84,8 +84,10 @@ export class CreatePatientDto {
   severity?: string;
 
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(PatientStatus, {
+    message: 'Patient status must be either ACTIVE, INACTIVE, or DISCHARGED',
+  })
+  status?: PatientStatus;
 
   // Emergency Contact
   @IsOptional()
