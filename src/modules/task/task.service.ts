@@ -135,14 +135,19 @@ export class TaskService {
       }),
     ]);
 
+    const totalPages = Math.ceil(total / limit);
+
     return {
-      tasks,
       pagination: {
         total,
         page,
         limit,
-        totalPages: Math.ceil(total / limit),
+        totalPages,
+        previous: page > 1 ? page - 1 : null,
+        next: page < totalPages ? page + 1 : null,
       },
+      tasks,
+      
     };
   }
 

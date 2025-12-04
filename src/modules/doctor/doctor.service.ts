@@ -467,6 +467,8 @@ export class DoctorService {
           page,
           limit,
           totalPages: 0,
+          previous: null,
+          next: null,
         },
         message, // This will be used by controller for top-level message
       };
@@ -496,14 +498,19 @@ export class DoctorService {
       take: limit,
     });
 
+    const totalPages = Math.ceil(total / limit);
+
     return {
-      staffs,
-      pagination: {
+            pagination: {
         total,
         page,
         limit,
-        totalPages: Math.ceil(total / limit),
+        totalPages,
+        previous: page > 1 ? page - 1 : null,
+        next: page < totalPages ? page + 1 : null,
       },
+      staffs,
+
     };
   }
 
