@@ -292,3 +292,17 @@ enum BloodGroup {
   O_POS
   O_NEG
 }
+
+
+// docotor
+
+enum WeekDay {
+  SATURDAY
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+}
+

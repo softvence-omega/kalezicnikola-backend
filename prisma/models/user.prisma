@@ -39,7 +39,7 @@ model Doctor {
   dob              DateTime?
   photo            String?
   gender           Gender?
-  address         String?
+  address          String?
   twoFactorSecret  String?
   twoFactorEnabled Boolean?
   lastLoginAt      DateTime?
@@ -56,9 +56,11 @@ model Doctor {
   auditLogs      AuditLog[]
   passwordResets PasswordReset[]
 
-  staff   Staff[]
+  staff Staff[]
 
-    // Settings Relations
+  weeklySchedules DoctorWeeklySchedule[]
+
+  // Settings Relations
   doctorNotificationSettings DoctorNotificationSettings?
   doctorRegionalSettings     DoctorRegionalSettings?
   doctorSecuritySettings     DoctorSecuritySettings?

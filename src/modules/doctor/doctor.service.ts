@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -6,6 +6,11 @@ import { UpdateDoctorProfileDto } from './dto/update-profile.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { CheckEmploymentIdDto } from './dto/check-employment-id.dto';
+import { CreateScheduleDto } from './dto/create-schedule.dto';
+import { UpdateScheduleDto } from './dto/update-schedule.dto';
+import { CreateSlotDto } from './dto/create-slot.dto';
+import { UpdateSlotDto } from './dto/update-slot.dto';
+import { GetAllSchedulesDto } from './dto/get-all-schedules.dto';
 import { deleteFileFromUploads } from 'src/utils/file-delete.util';
 
 @Injectable()
@@ -715,5 +720,279 @@ export class DoctorService {
       message: 'Staff member deleted successfully',
     };
   }
+
+  // ==================== SCHEDULE MANAGEMENT ====================
+
+  // ----------------- CREATE SCHEDULE -------------------
+  async createSchedule(accessToken: string, dto: CreateScheduleDto) {
+    // Find session to get doctor ID
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Check if schedule for this day already exists
+    const existingSchedule = await this.prisma.doctorWeeklySchedule.findUnique({
+      where: {
+        doctorId_day: {
+          doctorId,
+          day: dto.day,
+        },
+      },
+    });
+
+    if (existingSchedule) {
+      throw new ConflictException(`Schedule for ${dto.day} already exists`);
+    }
+
+    // Validate time slots
+    for (const slot of dto.slots) {
+      const [startHour, startMin] = slot.startTime.split(':').map(Number);
+      const [endHour, endMin] = slot.endTime.split(':').map(Number);
+      
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
+
+      if (endMinutes <= startMinutes) {
+        throw new BadRequestException(`End time must be after start time for slot ${slot.startTime} - ${slot.endTime}`);
+      }
+    }
+
+    // Create schedule with slots
+    const schedule = await this.prisma.doctorWeeklySchedule.create({
+      data: {
+        doctorId,
+        day: dto.day,
+        isClosed: dto.isClosed || false,
+        slots: {
+          create: dto.slots.map(slot => ({
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+          })),
+        },
+      },
+      include: {
+        slots: true,
+      },
+    });
+
+    return {
+      schedule,
+    };
+  }
+
+  // ----------------- GET ALL SCHEDULES -------------------
+  async getAllSchedules(accessToken: string, query: GetAllSchedulesDto) {
+    // Find session to get doctor ID
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Build where clause
+    const where: any = { doctorId };
+
+    if (query.day) {
+      where.day = query.day;
+    }
+
+    if (query.isClosed !== undefined) {
+      where.isClosed = query.isClosed;
+    }
+
+    // Fetch schedules with slots
+    const schedules = await this.prisma.doctorWeeklySchedule.findMany({
+      where,
+      include: {
+        slots: {
+          orderBy: {
+            startTime: 'asc',
+          },
+        },
+      },
+      orderBy: {
+        day: 'asc',
+      },
+    });
+
+    return {
+      schedules,
+      total: schedules.length,
+    };
+  }
+
+  // ----------------- GET SINGLE SCHEDULE -------------------
+  async getSingleSchedule(accessToken: string, scheduleId: string) {
+    // Find session to get doctor ID
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Fetch schedule with slots
+    const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
+      where: { id: scheduleId },
+      include: {
+        slots: {
+          orderBy: {
+            startTime: 'asc',
+          },
+        },
+      },
+    });
+
+    if (!schedule) {
+      throw new NotFoundException('Schedule not found');
+    }
+
+    if (schedule.doctorId !== doctorId) {
+      throw new UnauthorizedException('You do not have permission to access this schedule');
+    }
+
+    return {
+      schedule,
+    };
+  }
+
+  // ----------------- UPDATE SCHEDULE -------------------
+  async updateSchedule(accessToken: string, scheduleId: string, dto: UpdateScheduleDto) {
+    // Find session to get doctor ID
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Fetch existing schedule
+    const existingSchedule = await this.prisma.doctorWeeklySchedule.findUnique({
+      where: { id: scheduleId },
+      include: { slots: true },
+    });
+
+    if (!existingSchedule) {
+      throw new NotFoundException('Schedule not found');
+    }
+
+    if (existingSchedule.doctorId !== doctorId) {
+      throw new UnauthorizedException('You do not have permission to update this schedule');
+    }
+
+    // Validate time slots if provided
+    if (dto.slots) {
+      for (const slot of dto.slots) {
+        const [startHour, startMin] = slot.startTime.split(':').map(Number);
+        const [endHour, endMin] = slot.endTime.split(':').map(Number);
+        
+        const startMinutes = startHour * 60 + startMin;
+        const endMinutes = endHour * 60 + endMin;
+
+        if (endMinutes <= startMinutes) {
+          throw new BadRequestException(`End time must be after start time for slot ${slot.startTime} - ${slot.endTime}`);
+        }
+      }
+    }
+
+    // Prepare update data
+    const updateData: any = {};
+
+    if (dto.isClosed !== undefined) {
+      updateData.isClosed = dto.isClosed;
+    }
+
+    // If slots are provided, delete old slots and create new ones
+    if (dto.slots) {
+      // Delete existing slots
+      await this.prisma.doctorScheduleSlot.deleteMany({
+        where: { scheduleId },
+      });
+
+      // Create new slots
+      updateData.slots = {
+        create: dto.slots.map(slot => ({
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        })),
+      };
+    }
+
+    // Update schedule
+    const updatedSchedule = await this.prisma.doctorWeeklySchedule.update({
+      where: { id: scheduleId },
+      data: updateData,
+      include: {
+        slots: {
+          orderBy: {
+            startTime: 'asc',
+          },
+        },
+      },
+    });
+
+    return {
+      schedule: updatedSchedule,
+    };
+  }
+
+  // ----------------- DELETE SCHEDULE -------------------
+  async deleteSchedule(accessToken: string, scheduleId: string) {
+    // Find session to get doctor ID
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Fetch schedule
+    const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
+      where: { id: scheduleId },
+    });
+
+    if (!schedule) {
+      throw new NotFoundException('Schedule not found');
+    }
+
+    if (schedule.doctorId !== doctorId) {
+      throw new UnauthorizedException('You do not have permission to delete this schedule');
+    }
+
+    // Delete schedule (slots will be cascade deleted)
+    await this.prisma.doctorWeeklySchedule.delete({
+      where: { id: scheduleId },
+    });
+
+    return {
+      message: 'Schedule deleted successfully',
+    };
+  }
+
+
 }
 

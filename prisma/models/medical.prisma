@@ -27,6 +27,35 @@ model Appointment {
   @@map("appointments")
 }
 
+model DoctorWeeklySchedule {
+  id        String   @id @default(uuid())
+  doctorId  String
+  day       WeekDay
+  isClosed  Boolean  @default(false)
+
+  // One-to-many: multiple time slots allowed
+  slots     DoctorScheduleSlot[]
+
+  doctor    Doctor   @relation(fields: [doctorId], references: [id])
+
+  @@unique([doctorId, day]) // Only one schedule record per day per doctor
+  @@map("doctor_weekly_schedules")
+}
+
+model DoctorScheduleSlot {
+  id          String   @id @default(uuid())
+  scheduleId  String
+
+  startTime   String   // e.g., "09:00"
+  endTime     String   // e.g., "13:00"
+
+  schedule    DoctorWeeklySchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@map("doctor_schedule_slots")
+}
+
+
+
 model Call {
   id                 String      @id @default(uuid())
   patientId          String?
