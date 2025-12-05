@@ -1,61 +1,100 @@
 model Appointment {
-  id        String             @id @default(uuid()) 
-  clinicId  String?            
-  patientId String?            
-  doctorId  String?            
-  startAt   DateTime?           
-  endAt     DateTime?          
-  status    AppointmentStatus?
-  note      String?            
-  createdAt DateTime?          @default(now())  
-  updatedAt DateTime?          @updatedAt  
-  deletedAt DateTime?           
+  id                 String             @id @default(uuid())
+  patientId          String?
+  insuranceId        String?
+  doctorId           String?
 
-  clinic  Clinic?  @relation(fields: [clinicId], references: [id])
-  patient Patient? @relation(fields: [patientId], references: [id])
-  doctor  Doctor?  @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  firstName          String?
+  lastName           String?
+  email              String?
+  phone              String?
+  dob                DateTime?
+  gender             Gender?
+  bloodGroup         BloodGroup?
+  scheduleSlotId         String?
+  appointmentDate    DateTime?          // Specific date for the appointment
+  appointmentDetails String?
+  address            String?
+  status             AppointmentStatus? @default(SCHEDULED)
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  doctor       Doctor?              @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  patient      Patient?             @relation("PatientAppointments", fields: [patientId], references: [id])
+  scheduleSlot DoctorScheduleSlot?  @relation("AppointmentScheduleSlot", fields: [scheduleSlotId], references: [id])
 
   @@map("appointments")
 }
 
+model DoctorWeeklySchedule {
+  id        String   @id @default(uuid())
+  doctorId  String
+  day       WeekDay
+  isClosed  Boolean  @default(false)
+
+  // One-to-many: multiple time slots allowed
+  slots     DoctorScheduleSlot[]
+
+  doctor    Doctor   @relation(fields: [doctorId], references: [id])
+
+  @@unique([doctorId, day]) // Only one schedule record per day per doctor
+  @@map("doctor_weekly_schedules")
+}
+
+model DoctorScheduleSlot {
+  id          String   @id @default(uuid())
+  scheduleId  String
+
+  startTime   String   // e.g., "09:00"
+  endTime     String   // e.g., "13:00"
+
+  schedule     DoctorWeeklySchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  appointments Appointment[]        @relation("AppointmentScheduleSlot")
+
+  @@map("doctor_schedule_slots")
+}
+
+
+
 model Call {
-  id                 String      @id @default(uuid()) 
-  clinicId           String?     
-  patientId          String?      
-  doctorId           String?     
-  startAt            DateTime?    
-  endAt              DateTime?    
-  durationSeconds    Int?        
+  id                 String      @id @default(uuid())
+  patientId          String?
+  doctorId           String?
+  startAt            DateTime?
+  endAt              DateTime?
+  durationSeconds    Int?
   status             CallStatus?
-  recordingUrlCipher String?     
-  transcript         String?     
-  aiSummary          String?      
+  recordingUrlCipher String?
+  transcript         String?
+  aiSummary          String?
   sentiment          Sentiment?
   escalated          Boolean?
-  minutesUsed        Int?        
-  createdAt          DateTime?   @default(now()) 
-  updatedAt          DateTime?   @updatedAt 
-  aiModelId          String?     
-  aiDecision         String?     
-  clinic  Clinic?  @relation(fields: [clinicId], references: [id])
-  patient Patient? @relation(fields: [patientId], references: [id])
-  doctor  Doctor?  @relation("DoctorCalls", fields: [doctorId], references: [id])
+  minutesUsed        Int?
+  createdAt          DateTime?   @default(now())
+  updatedAt          DateTime?   @updatedAt
+  aiModelId          String?
+  aiDecision         String?
+  patient            Patient?    @relation(fields: [patientId], references: [id])
+  doctor             Doctor?     @relation("DoctorCalls", fields: [doctorId], references: [id])
 
   @@map("calls")
 }
 
 model Diagnosis {
-  id            String    @id @default(uuid()) 
-  patientId     String?   
-  doctorId      String?   
-  diagnosisCode String?   
-  diagnosisName String?   
-  description   String?   
-  status        String?   
-  diagnosedDate DateTime? 
+  id            String    @id @default(uuid())
+  patientId     String?
+  doctorId      String?
+  diagnosisCode String?
+  diagnosisName String?
+  description   String?
+  status        String?
+  diagnosedDate DateTime?
   resolvedDate  DateTime?
-  createdAt     DateTime? @default(now())  
-  updatedAt     DateTime? @updatedAt  
+  createdAt     DateTime? @default(now())
+  updatedAt     DateTime? @updatedAt
 
   patient Patient? @relation(fields: [patientId], references: [id])
   doctor  Doctor?  @relation("DoctorDiagnoses", fields: [doctorId], references: [id])
@@ -64,30 +103,28 @@ model Diagnosis {
 }
 
 model Lab {
-  id           String    @id @default(uuid()) 
-  clinicId     String?    
-  patientId    String?   
-  testDate     DateTime? 
-  pdfKeyCipher String?    
-  createdAt    DateTime? @default(now()) 
-  updatedAt    DateTime? @updatedAt  
-  deletedAt    DateTime? 
+  id           String    @id @default(uuid())
+  patientId    String?
+  testDate     DateTime?
+  pdfKeyCipher String?
+  createdAt    DateTime? @default(now())
+  updatedAt    DateTime? @updatedAt
+  deletedAt    DateTime?
 
-  clinic  Clinic?  @relation(fields: [clinicId], references: [id])
-  patient Patient? @relation(fields: [patientId], references: [id])
+  patient Patient?    @relation(fields: [patientId], references: [id])
   results LabResult[]
 
   @@map("labs")
 }
 
 model LabResult {
-  id        String  @id @default(uuid()) 
-  labId     String? 
+  id        String  @id @default(uuid())
+  labId     String?
   testName  String?
-  result    String? 
-  unit      String? 
-  normalMin Float?  
-  normalMax Float?  
+  result    String?
+  unit      String?
+  normalMin Float?
+  normalMax Float?
   flag      Flag?
 
   lab Lab? @relation(fields: [labId], references: [id])
@@ -96,17 +133,15 @@ model LabResult {
 }
 
 model Prescription {
-  id             String              @id @default(uuid()) 
-  clinicId       String?             
-  patientId      String?             
-  doctorId       String?            
-  prescriptionNo Int?                
+  id             String              @id @default(uuid())
+  patientId      String?
+  doctorId       String?
+  prescriptionNo Int?
   status         PrescriptionStatus?
-  createdAt      DateTime?           @default(now()) 
-  updatedAt      DateTime?           @updatedAt  
-  deletedAt      DateTime?           
+  createdAt      DateTime?           @default(now())
+  updatedAt      DateTime?           @updatedAt
+  deletedAt      DateTime?
 
-  clinic    Clinic?                @relation(fields: [clinicId], references: [id])
   patient   Patient?               @relation(fields: [patientId], references: [id])
   doctor    Doctor?                @relation("DoctorPrescriptions", fields: [doctorId], references: [id])
   medicines PrescriptionMedicine[]
@@ -115,14 +150,14 @@ model Prescription {
 }
 
 model PrescriptionMedicine {
-  id             String  @id @default(uuid()) 
-  prescriptionId String?  
-  medicine       String? 
-  strength       String? 
-  dose           String? 
-  frequency      String? 
-  route          String? 
-  duration       String? 
+  id             String  @id @default(uuid())
+  prescriptionId String?
+  medicine       String?
+  strength       String?
+  dose           String?
+  frequency      String?
+  route          String?
+  duration       String?
   refill         Int?
 
   prescription Prescription? @relation(fields: [prescriptionId], references: [id])

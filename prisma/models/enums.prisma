@@ -10,7 +10,7 @@ enum Gender {
 }
 
 enum AppointmentStatus {
-  NEW
+  SCHEDULED
   CONFIRMED
   COMPLETED
   CANCELLED
@@ -196,17 +196,16 @@ enum Timezone {
 }
 
 enum DateFormat {
-  DD_MM_YYYY       // 31-12-2025
-  MM_DD_YYYY       // 12-31-2025
-  YYYY_MM_DD       // 2025-12-31
-  DD_MMM_YYYY      // 31 Dec 2025
-  MMM_DD_YYYY      // Dec 31 2025
+  DD_MM_YYYY // 31-12-2025
+  MM_DD_YYYY // 12-31-2025
+  YYYY_MM_DD // 2025-12-31
+  DD_MMM_YYYY // 31 Dec 2025
+  MMM_DD_YYYY // Dec 31 2025
 }
 
-
 enum TimeFormat {
-  HOUR_12           // 03:30 PM
-  HOUR_24           // 15:30
+  HOUR_12 // 03:30 PM
+  HOUR_24 // 15:30
 }
 
 enum Language {
@@ -255,24 +254,56 @@ enum BufferTime {
   Minutes_30
 }
 
-
 // Staff
 enum StaffRole {
-    CARDIOLOGIST
-    NEUROLOGIST
-    HEAD_NURSE
-    LAB_TECHNICIAN
-    PHARMACIST
-    RECEPTIONIST
+  CARDIOLOGIST
+  NEUROLOGIST
+  HEAD_NURSE
+  LAB_TECHNICIAN
+  PHARMACIST
+  RECEPTIONIST
 }
 
 enum StaffStatus {
-    ACTIVE
-    INACTIVE
-    ON_LEAVE
+  ACTIVE
+  INACTIVE
+  ON_LEAVE
 }
 
 enum MaritalStatus {
   MARRIED
   UNMARRIED
 }
+
+// patient
+enum PatientStatus {
+  ACTIVE // Currently under treatment
+  INACTIVE // Not currently under treatment
+  DISCHARGED // Treatment completed
+}
+
+enum BloodGroup {
+  A_POS
+  A_NEG
+  B_POS
+  B_NEG
+  AB_POS
+  AB_NEG
+  O_POS
+  O_NEG
+}
+
+
+// docotor
+
+enum WeekDay {
+  SATURDAY
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+}
+
+// appointment

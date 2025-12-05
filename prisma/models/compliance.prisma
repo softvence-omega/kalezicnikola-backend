@@ -1,6 +1,5 @@
 model ConsentVersion {
-  id            String       @id @default(uuid()) 
-  clinicId      String?      
+  id            String       @id @default(uuid())    
   type          ConsentType?
   version       String?     
   title         String?     
@@ -8,7 +7,6 @@ model ConsentVersion {
   effectiveDate DateTime?    
   createdAt     DateTime?    @default(now())  
 
-  clinic          Clinic?          @relation(fields: [clinicId], references: [id])
   patientConsents PatientConsent[]
 
   @@map("consent_versions")
@@ -54,13 +52,11 @@ model AuditLog {
   // Can be triggered by Admin or Doctor
   adminId    String?   
   doctorId   String?    
-  
-  clinicId   String?    
+    
   ip         String?   
   userAgent  String?   
   occurredAt DateTime? 
 
-  clinic Clinic? @relation(fields: [clinicId], references: [id])
   admin  Admin?  @relation(fields: [adminId], references: [id])
   doctor Doctor? @relation(fields: [doctorId], references: [id])
 
@@ -68,8 +64,7 @@ model AuditLog {
 }
 
 model DataRequest {
-  id                String             @id @default(uuid()) 
-  clinicId          String?            
+  id                String             @id @default(uuid())     
   patientId         String?            
   type              DataRequestType?
   status            DataRequestStatus?
@@ -79,7 +74,6 @@ model DataRequest {
   downloadUrl       String?            
   downloadExpiresAt DateTime?          
 
-  clinic  Clinic?  @relation(fields: [clinicId], references: [id])
   patient Patient? @relation(fields: [patientId], references: [id])
 
   @@map("data_requests")

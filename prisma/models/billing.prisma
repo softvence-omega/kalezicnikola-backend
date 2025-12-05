@@ -1,6 +1,5 @@
 model Subscription {
   id                   String              @id @default(uuid()) 
-  clinicId             String?             @unique 
   stripeCustomerId     String?             @unique 
   stripeSubscriptionId String?             @unique
   plan                 Plan?
@@ -10,14 +9,11 @@ model Subscription {
   createdAt            DateTime?           @default(now()) 
   updatedAt            DateTime?           @updatedAt 
 
-  clinic Clinic? @relation(fields: [clinicId], references: [id])
-
   @@map("subscriptions")
 }
 
 model Invoice {
-  id              String    @id @default(uuid()) 
-  clinicId        String?    
+  id              String    @id @default(uuid())    
   stripeInvoiceId String?   @unique 
   invoiceNo       String?  
   amountDue       Int?      
@@ -26,23 +22,19 @@ model Invoice {
   status          String?  
   invoicePdfUrl   String?   
   createdAt       DateTime? @default(now())  
-
-  clinic Clinic? @relation(fields: [clinicId], references: [id])
+  updatedAt       DateTime? @updatedAt
 
   @@map("invoices")
 }
 
 model NotificationQueue {
-  id        String              @id @default(uuid()) 
-  clinicId  String?              
+  id        String              @id @default(uuid())             
   type      NotificationType?
   recipient String?            
   payload   Json?               
   status    NotificationStatus?
   sentAt    DateTime?          
   createdAt DateTime?           @default(now()) 
-
-  clinic Clinic? @relation(fields: [clinicId], references: [id])
 
   @@map("notification_queues")
 }

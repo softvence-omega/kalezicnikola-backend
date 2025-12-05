@@ -24,6 +24,11 @@ import { UpdateDoctorProfileDto } from './dto/update-profile.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { GetAllStaffsDto } from './dto/get-all-staffs.dto';
+import { CreateScheduleDto } from './dto/create-schedule.dto';
+import { UpdateScheduleDto } from './dto/update-schedule.dto';
+import { CreateSlotDto } from './dto/create-slot.dto';
+import { UpdateSlotDto } from './dto/update-slot.dto';
+import { GetAllSchedulesDto } from './dto/get-all-schedules.dto';
 import { fileStorage, imageFileFilter } from 'src/utils/file-upload.util';
 
 @Controller('doctor')
@@ -315,4 +320,133 @@ export class DoctorController {
       message: result.message,
     };
   }
+
+  // ==================== SCHEDULE MANAGEMENT ====================
+
+  // ----------------- CREATE SCHEDULE -------------------
+  @Post('schedules/create')
+  @UseGuards(DoctorGuard)
+  async createSchedule(
+    @Headers('authorization') authorization: string,
+    @Body() dto: CreateScheduleDto,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.createSchedule(token, dto);
+
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: 'Schedule created successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- GET ALL SCHEDULES -------------------
+  @Get('schedules/all')
+  @UseGuards(DoctorGuard)
+  async getAllSchedules(
+    @Headers('authorization') authorization: string,
+    @Query() query: GetAllSchedulesDto,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.getAllSchedules(token, query);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Schedules retrieved successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- GET SINGLE SCHEDULE -------------------
+  @Get('schedules/:id')
+  @UseGuards(DoctorGuard)
+  async getSingleSchedule(
+    @Headers('authorization') authorization: string,
+    @Param('id') scheduleSlotId: string,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.getSingleSchedule(token, scheduleSlotId);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Schedule retrieved successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- UPDATE SCHEDULE -------------------
+  @Patch('schedules/update/:id')
+  @UseGuards(DoctorGuard)
+  async updateSchedule(
+    @Headers('authorization') authorization: string,
+    @Param('id') scheduleSlotId: string,
+    @Body() dto: UpdateScheduleDto,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.updateSchedule(token, scheduleSlotId, dto);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Schedule updated successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- DELETE SCHEDULE -------------------
+  @Delete('schedules/delete/:id')
+  @UseGuards(DoctorGuard)
+  async deleteSchedule(
+    @Headers('authorization') authorization: string,
+    @Param('id') scheduleSlotId: string,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.deleteSchedule(token, scheduleSlotId);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: result.message,
+    };
+  }
+
+
 }

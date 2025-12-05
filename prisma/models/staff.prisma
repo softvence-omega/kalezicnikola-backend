@@ -46,6 +46,7 @@ model Task {
   description String?
   status      TaskStatus?
   priority    Priority?
+  time        String?
   dueDate     DateTime?
 
   patientId String?
