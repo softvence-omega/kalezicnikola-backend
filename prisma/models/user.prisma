@@ -1,6 +1,5 @@
 model Admin {
   id           String  @id @default(uuid())
-  clinicId     String?
   email        String  @unique
   passwordHash String?
   firstName    String?
@@ -16,7 +15,6 @@ model Admin {
   deletedAt        DateTime?
 
   // Relations
-  clinic         Clinic?         @relation(fields: [clinicId], references: [id])
   sessions       Session[]
   auditLogs      AuditLog[]
   passwordResets PasswordReset[]
@@ -26,7 +24,6 @@ model Admin {
 
 model Doctor {
   id           String  @id @default(uuid())
-  clinicId     String?
   email        String? @unique
   phone        String? @unique
   passwordHash String?
@@ -51,7 +48,6 @@ model Doctor {
   deletedAt        DateTime?
 
   // Relations
-  clinic         Clinic?         @relation(fields: [clinicId], references: [id])
   sessions       Session[]
   appointments   Appointment[]   @relation("DoctorAppointments")
   calls          Call[]          @relation("DoctorCalls")

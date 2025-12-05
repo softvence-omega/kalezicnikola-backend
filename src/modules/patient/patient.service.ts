@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -28,10 +33,8 @@ export class PatientService {
 
     const doctorId = session.doctorId;
 
-    // Get doctor's clinic ID
     const doctor = await this.prisma.doctor.findUnique({
       where: { id: doctorId },
-      select: { clinicId: true },
     });
 
     if (!doctor) {
@@ -45,7 +48,9 @@ export class PatientService {
       });
 
       if (emailExists) {
-        throw new ConflictException('Email is already in use by another patient');
+        throw new ConflictException(
+          'Email is already in use by another patient',
+        );
       }
     }
 
@@ -56,14 +61,15 @@ export class PatientService {
       });
 
       if (phoneExists) {
-        throw new ConflictException('Phone number is already in use by another patient');
+        throw new ConflictException(
+          'Phone number is already in use by another patient',
+        );
       }
     }
 
     // Create patient record
     const patient = await this.prisma.patient.create({
       data: {
-        clinicId: doctor.clinicId,
         firstName: dto.firstName,
         lastName: dto.lastName,
         phone: dto.phone,
@@ -87,7 +93,6 @@ export class PatientService {
       },
       select: {
         id: true,
-        clinicId: true,
         firstName: true,
         lastName: true,
         phone: true,
@@ -132,10 +137,8 @@ export class PatientService {
 
     const doctorId = session.doctorId;
 
-    // Get doctor's clinic ID
     const doctor = await this.prisma.doctor.findUnique({
       where: { id: doctorId },
-      select: { clinicId: true },
     });
 
     if (!doctor) {
@@ -150,7 +153,7 @@ export class PatientService {
     const sortOrder = query.sortOrder?.toLowerCase() === 'asc' ? 'asc' : 'desc';
 
     // Build where clause for filtering
-    const where: any = { clinicId: doctor.clinicId };
+    const where: any = {};
 
     // Search functionality - searches across multiple fields
     if (query.search) {
@@ -192,12 +195,17 @@ export class PatientService {
 
     // Check if no patients found and return with message
     if (total === 0) {
-      const hasFilters = query.search || query.gender || query.status || 
-                         query.bloodGroup || query.severity || query.city;
+      const hasFilters =
+        query.search ||
+        query.gender ||
+        query.status ||
+        query.bloodGroup ||
+        query.severity ||
+        query.city;
 
-      const message = hasFilters 
+      const message = hasFilters
         ? 'No patients found matching your search criteria'
-        : 'No patients found. You haven\'t added any patients yet.';
+        : "No patients found. You haven't added any patients yet.";
 
       return {
         patients: [],
@@ -265,10 +273,8 @@ export class PatientService {
 
     const doctorId = session.doctorId;
 
-    // Get doctor's clinic ID
     const doctor = await this.prisma.doctor.findUnique({
       where: { id: doctorId },
-      select: { clinicId: true },
     });
 
     if (!doctor) {
@@ -284,18 +290,17 @@ export class PatientService {
       throw new BadRequestException('Patient not found');
     }
 
-    // Verify patient belongs to doctor's clinic
-    if (patient.clinicId !== doctor.clinicId) {
-      throw new UnauthorizedException('You do not have permission to access this patient');
-    }
-
     return {
       patient,
     };
   }
 
   // ----------------- UPDATE PATIENT -------------------
-  async updatePatient(accessToken: string, patientId: string, dto: UpdatePatientDto) {
+  async updatePatient(
+    accessToken: string,
+    patientId: string,
+    dto: UpdatePatientDto,
+  ) {
     // Find session to verify doctor authentication
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
@@ -308,27 +313,20 @@ export class PatientService {
 
     const doctorId = session.doctorId;
 
-    // Get doctor's clinic ID
     const doctor = await this.prisma.doctor.findUnique({
       where: { id: doctorId },
-      select: { clinicId: true },
     });
 
     if (!doctor) {
       throw new UnauthorizedException('Doctor not found');
     }
 
-    // Fetch patient by ID and verify it belongs to doctor's clinic
     const existingPatient = await this.prisma.patient.findUnique({
       where: { id: patientId },
     });
 
     if (!existingPatient) {
       throw new BadRequestException('Patient not found');
-    }
-
-    if (existingPatient.clinicId !== doctor.clinicId) {
-      throw new UnauthorizedException('You do not have permission to update this patient');
     }
 
     // Check if email is being updated and if it's already in use
@@ -341,7 +339,9 @@ export class PatientService {
       });
 
       if (emailExists) {
-        throw new ConflictException('Email is already in use by another patient');
+        throw new ConflictException(
+          'Email is already in use by another patient',
+        );
       }
     }
 
@@ -355,7 +355,9 @@ export class PatientService {
       });
 
       if (phoneExists) {
-        throw new ConflictException('Phone number is already in use by another patient');
+        throw new ConflictException(
+          'Phone number is already in use by another patient',
+        );
       }
     }
 
@@ -365,29 +367,41 @@ export class PatientService {
     if (dto.firstName !== undefined) updateData.firstName = dto.firstName;
     if (dto.lastName !== undefined) updateData.lastName = dto.lastName;
     if (dto.phone !== undefined) updateData.phone = dto.phone;
-    if (dto.alternativePhone !== undefined) updateData.alternativePhone = dto.alternativePhone;
+    if (dto.alternativePhone !== undefined)
+      updateData.alternativePhone = dto.alternativePhone;
     if (dto.email !== undefined) updateData.email = dto.email;
     if (dto.insuranceId !== undefined) updateData.insuranceId = dto.insuranceId;
     if (dto.address !== undefined) updateData.address = dto.address;
     if (dto.dob !== undefined) updateData.dob = new Date(dto.dob);
-    if (dto.maritalStatus !== undefined) updateData.maritalStatus = dto.maritalStatus;
+    if (dto.maritalStatus !== undefined)
+      updateData.maritalStatus = dto.maritalStatus;
     if (dto.city !== undefined) updateData.city = dto.city;
     if (dto.gender !== undefined) updateData.gender = dto.gender;
     if (dto.bloodGroup !== undefined) updateData.bloodGroup = dto.bloodGroup;
-    if (dto.conditionName !== undefined) updateData.conditionName = dto.conditionName;
-    if (dto.diagnosedDate !== undefined) updateData.diagnosedDate = new Date(dto.diagnosedDate);
+    if (dto.conditionName !== undefined)
+      updateData.conditionName = dto.conditionName;
+    if (dto.diagnosedDate !== undefined)
+      updateData.diagnosedDate = new Date(dto.diagnosedDate);
     if (dto.severity !== undefined) updateData.severity = dto.severity;
     if (dto.status !== undefined) updateData.status = dto.status;
-    if (dto.emergencyContactName !== undefined) updateData.emergencyContactName = dto.emergencyContactName;
-    if (dto.emergencyContactPhone !== undefined) updateData.emergencyContactPhone = dto.emergencyContactPhone;
-    if (dto.emergencyContactRelationship !== undefined) updateData.emergencyContactRelationship = dto.emergencyContactRelationship;
+    if (dto.emergencyContactName !== undefined)
+      updateData.emergencyContactName = dto.emergencyContactName;
+    if (dto.emergencyContactPhone !== undefined)
+      updateData.emergencyContactPhone = dto.emergencyContactPhone;
+    if (dto.emergencyContactRelationship !== undefined)
+      updateData.emergencyContactRelationship =
+        dto.emergencyContactRelationship;
 
     // Handle photo update - delete old photo if new one is uploaded
     if (dto.photo !== undefined) {
       updateData.photo = dto.photo;
-      
+
       // Delete old photo if it exists and a new one is being set
-      if (existingPatient.photo && dto.photo && existingPatient.photo !== dto.photo) {
+      if (
+        existingPatient.photo &&
+        dto.photo &&
+        existingPatient.photo !== dto.photo
+      ) {
         await deleteFileFromUploads(existingPatient.photo);
       }
     }
@@ -398,7 +412,6 @@ export class PatientService {
       data: updateData,
       select: {
         id: true,
-        clinicId: true,
         firstName: true,
         lastName: true,
         phone: true,
@@ -443,27 +456,20 @@ export class PatientService {
 
     const doctorId = session.doctorId;
 
-    // Get doctor's clinic ID
     const doctor = await this.prisma.doctor.findUnique({
       where: { id: doctorId },
-      select: { clinicId: true },
     });
 
     if (!doctor) {
       throw new UnauthorizedException('Doctor not found');
     }
 
-    // Fetch patient by ID and verify it belongs to doctor's clinic
     const patient = await this.prisma.patient.findUnique({
       where: { id: patientId },
     });
 
     if (!patient) {
       throw new BadRequestException('Patient not found');
-    }
-
-    if (patient.clinicId !== doctor.clinicId) {
-      throw new UnauthorizedException('You do not have permission to delete this patient');
     }
 
     // Delete the patient

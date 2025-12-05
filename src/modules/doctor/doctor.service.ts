@@ -49,14 +49,6 @@ export class DoctorService {
         lastLoginAt: true,
         createdAt: true,
         updatedAt: true,
-        // Include clinic information if available
-        clinic: {
-          select: {
-            id: true,
-            name: true,
-            address: true,
-          },
-        },
       },
     });
 
@@ -157,13 +149,6 @@ export class DoctorService {
         lastLoginAt: true,
         createdAt: true,
         updatedAt: true,
-        clinic: {
-          select: {
-            id: true,
-            name: true,
-            address: true,
-          },
-        },
       },
     });
 

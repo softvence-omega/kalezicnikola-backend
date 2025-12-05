@@ -1,13 +1,12 @@
 model Patient {
   id                 String         @id @default(uuid())
-  clinicId           String?
   firstName          String?
   lastName           String?
   photo              String?
   phone              String?
   alternativePhone   String?
   email              String?
-  insuranceId        String?
+  insuranceId        String?        @unique
   address            String?
   emergencyContact   String?
   dob                DateTime?
@@ -18,12 +17,11 @@ model Patient {
   conditionName      String?
   diagnosedDate      DateTime?
   severity           String?
-  status             PatientStatus @default(ACTIVE)
+  status             PatientStatus  @default(ACTIVE)
   retentionExpiresAt DateTime?
   createdAt          DateTime?      @default(now())
   updatedAt          DateTime?      @updatedAt
   deletedAt          DateTime?
-
 
   // emergency contact
   emergencyContactName         String?
@@ -31,8 +29,7 @@ model Patient {
   emergencyContactRelationship String?
 
   // Relations
-  clinic        Clinic?          @relation(fields: [clinicId], references: [id])
-  appointments  Appointment[]
+  appointments  Appointment[]    @relation("PatientAppointments")
   calls         Call[]
   labs          Lab[]
   prescriptions Prescription[]
@@ -40,6 +37,7 @@ model Patient {
   dataRequests  DataRequest[]
   diagnoses     Diagnosis[]
   consents      PatientConsent[]
+
 
   @@map("patients")
 }
