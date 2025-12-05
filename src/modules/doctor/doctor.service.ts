@@ -764,6 +764,31 @@ export class DoctorService {
       }
     }
 
+    // Validate for overlapping time slots
+    for (let i = 0; i < dto.slots.length; i++) {
+      for (let j = i + 1; j < dto.slots.length; j++) {
+        const slot1 = dto.slots[i];
+        const slot2 = dto.slots[j];
+
+        const [start1Hour, start1Min] = slot1.startTime.split(':').map(Number);
+        const [end1Hour, end1Min] = slot1.endTime.split(':').map(Number);
+        const [start2Hour, start2Min] = slot2.startTime.split(':').map(Number);
+        const [end2Hour, end2Min] = slot2.endTime.split(':').map(Number);
+
+        const start1Minutes = start1Hour * 60 + start1Min;
+        const end1Minutes = end1Hour * 60 + end1Min;
+        const start2Minutes = start2Hour * 60 + start2Min;
+        const end2Minutes = end2Hour * 60 + end2Min;
+
+        // Check for overlap: slot1 starts before slot2 ends AND slot2 starts before slot1 ends
+        if (start1Minutes < end2Minutes && start2Minutes < end1Minutes) {
+          throw new BadRequestException(
+            `Time slots overlap: ${slot1.startTime}-${slot1.endTime} overlaps with ${slot2.startTime}-${slot2.endTime}`
+          );
+        }
+      }
+    }
+
     // Create schedule with slots
     const schedule = await this.prisma.doctorWeeklySchedule.create({
       data: {
@@ -911,6 +936,31 @@ export class DoctorService {
 
         if (endMinutes <= startMinutes) {
           throw new BadRequestException(`End time must be after start time for slot ${slot.startTime} - ${slot.endTime}`);
+        }
+      }
+
+      // Validate for overlapping time slots
+      for (let i = 0; i < dto.slots.length; i++) {
+        for (let j = i + 1; j < dto.slots.length; j++) {
+          const slot1 = dto.slots[i];
+          const slot2 = dto.slots[j];
+
+          const [start1Hour, start1Min] = slot1.startTime.split(':').map(Number);
+          const [end1Hour, end1Min] = slot1.endTime.split(':').map(Number);
+          const [start2Hour, start2Min] = slot2.startTime.split(':').map(Number);
+          const [end2Hour, end2Min] = slot2.endTime.split(':').map(Number);
+
+          const start1Minutes = start1Hour * 60 + start1Min;
+          const end1Minutes = end1Hour * 60 + end1Min;
+          const start2Minutes = start2Hour * 60 + start2Min;
+          const end2Minutes = end2Hour * 60 + end2Min;
+
+          // Check for overlap: slot1 starts before slot2 ends AND slot2 starts before slot1 ends
+          if (start1Minutes < end2Minutes && start2Minutes < end1Minutes) {
+            throw new BadRequestException(
+              `Time slots overlap: ${slot1.startTime}-${slot1.endTime} overlaps with ${slot2.startTime}-${slot2.endTime}`
+            );
+          }
         }
       }
     }
