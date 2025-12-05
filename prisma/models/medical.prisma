@@ -11,18 +11,20 @@ model Appointment {
   dob                DateTime?
   gender             Gender?
   bloodGroup         BloodGroup?
-  scheduleId         String?
+  scheduleSlotId         String?
+  appointmentDate    DateTime?          // Specific date for the appointment
   appointmentDetails String?
   address            String?
-  status             AppointmentStatus? @default(NEW)
+  status             AppointmentStatus? @default(SCHEDULED)
 
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt
   deletedAt DateTime?
 
   // Relations
-  doctor   Doctor?  @relation("DoctorAppointments", fields: [doctorId], references: [id])
-  patient  Patient? @relation("PatientAppointments", fields: [patientId], references: [id])
+  doctor       Doctor?              @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  patient      Patient?             @relation("PatientAppointments", fields: [patientId], references: [id])
+  scheduleSlot DoctorScheduleSlot?  @relation("AppointmentScheduleSlot", fields: [scheduleSlotId], references: [id])
 
   @@map("appointments")
 }
@@ -49,7 +51,8 @@ model DoctorScheduleSlot {
   startTime   String   // e.g., "09:00"
   endTime     String   // e.g., "13:00"
 
-  schedule    DoctorWeeklySchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  schedule     DoctorWeeklySchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  appointments Appointment[]        @relation("AppointmentScheduleSlot")
 
   @@map("doctor_schedule_slots")
 }

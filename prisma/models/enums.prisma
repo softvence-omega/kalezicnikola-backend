@@ -10,7 +10,7 @@ enum Gender {
 }
 
 enum AppointmentStatus {
-  NEW
+  SCHEDULED
   CONFIRMED
   COMPLETED
   CANCELLED
@@ -306,3 +306,4 @@ enum WeekDay {
   FRIDAY
 }
 
+// appointment

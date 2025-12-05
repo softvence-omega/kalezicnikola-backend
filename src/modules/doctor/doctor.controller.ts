@@ -378,7 +378,7 @@ export class DoctorController {
   @UseGuards(DoctorGuard)
   async getSingleSchedule(
     @Headers('authorization') authorization: string,
-    @Param('id') scheduleId: string,
+    @Param('id') scheduleSlotId: string,
   ) {
     if (!authorization) {
       throw new UnauthorizedException('Authorization header is required');
@@ -389,7 +389,7 @@ export class DoctorController {
       throw new UnauthorizedException('Invalid authorization format');
     }
 
-    const result = await this.doctorService.getSingleSchedule(token, scheduleId);
+    const result = await this.doctorService.getSingleSchedule(token, scheduleSlotId);
 
     return {
       statusCode: HttpStatus.OK,
@@ -403,7 +403,7 @@ export class DoctorController {
   @UseGuards(DoctorGuard)
   async updateSchedule(
     @Headers('authorization') authorization: string,
-    @Param('id') scheduleId: string,
+    @Param('id') scheduleSlotId: string,
     @Body() dto: UpdateScheduleDto,
   ) {
     if (!authorization) {
@@ -415,7 +415,7 @@ export class DoctorController {
       throw new UnauthorizedException('Invalid authorization format');
     }
 
-    const result = await this.doctorService.updateSchedule(token, scheduleId, dto);
+    const result = await this.doctorService.updateSchedule(token, scheduleSlotId, dto);
 
     return {
       statusCode: HttpStatus.OK,
@@ -429,7 +429,7 @@ export class DoctorController {
   @UseGuards(DoctorGuard)
   async deleteSchedule(
     @Headers('authorization') authorization: string,
-    @Param('id') scheduleId: string,
+    @Param('id') scheduleSlotId: string,
   ) {
     if (!authorization) {
       throw new UnauthorizedException('Authorization header is required');
@@ -440,7 +440,7 @@ export class DoctorController {
       throw new UnauthorizedException('Invalid authorization format');
     }
 
-    const result = await this.doctorService.deleteSchedule(token, scheduleId);
+    const result = await this.doctorService.deleteSchedule(token, scheduleSlotId);
 
     return {
       statusCode: HttpStatus.OK,
