@@ -11,6 +11,8 @@ import { ConfigService } from '@nestjs/config';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { GetAllAppointmentsDto } from './dto/get-all-appointments.dto';
+import { GetSlotAvailabilityDto } from './dto/get-slot-availability.dto';
+import { AppointmentStatus } from 'generated/prisma';
 
 @Injectable()
 export class AppointmentService {
@@ -91,14 +93,13 @@ export class AppointmentService {
     }
 
     // 8. Check for conflicting appointments (same doctor, same slot, same date)
+    // Only SCHEDULED appointments block the slot; COMPLETED and CANCELLED free it up
     const conflictingAppointment = await this.prisma.appointment.findFirst({
       where: {
         doctorId,
         scheduleSlotId: dto.scheduleSlotId,
         appointmentDate: new Date(dto.appointmentDate),
-        status: {
-          not: 'CANCELLED',
-        },
+        status: 'SCHEDULED',
       },
     });
 
@@ -228,6 +229,212 @@ export class AppointmentService {
         next: page < totalPages ? page + 1 : null,
       },
       appointments,
+    };
+  }
+
+  // ----------------- GET TODAY'S APPOINTMENTS -------------------
+  async getTodayAppointments(accessToken: string) {
+    // Verify doctor is authenticated
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Get today's date range (start and end of day)
+    const today = new Date();
+    const startOfDay = new Date(today.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+
+    // Fetch today's appointments
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        doctorId,
+        status: AppointmentStatus.SCHEDULED,
+        appointmentDate: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+      },
+      include: {
+        scheduleSlot: {
+          select: {
+            id: true,
+            startTime: true,
+            endTime: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    // Check if appointments exist
+    if (appointments.length === 0) {
+      return {
+        message: 'No appointments scheduled for today',
+        data: {
+          count: 0,
+          appointments: [],
+        },
+      };
+    }
+
+    return {
+      message: `Found ${appointments.length} appointment${appointments.length > 1 ? 's' : ''} for today`,
+      data: {
+        count: appointments.length,
+        appointments,
+      },
+    };
+  }
+
+  // ----------------- GET SLOT AVAILABILITY -------------------
+  async getSlotAvailability(
+    accessToken: string,
+    query: { date: string; scheduleSlotId?: string },
+  ) {
+    // Verify doctor is authenticated
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Parse the date
+    const targetDate = new Date(query.date);
+    const startOfDay = new Date(targetDate.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(targetDate.setHours(23, 59, 59, 999));
+
+    // Get the day of week for the target date
+    const dayOfWeek = new Date(query.date)
+      .toLocaleDateString('en-US', { weekday: 'long' })
+      .toUpperCase();
+
+    // Build where clause for slots
+    const slotWhere: any = {
+      schedule: {
+        doctorId,
+        day: dayOfWeek as any,
+        isClosed: false,
+      },
+    };
+
+    // If specific slot requested, filter by it
+    if (query.scheduleSlotId) {
+      slotWhere.id = query.scheduleSlotId;
+    }
+
+    // Get all schedule slots for this doctor on this day
+    const slots = await this.prisma.doctorScheduleSlot.findMany({
+      where: slotWhere,
+      include: {
+        schedule: {
+          select: {
+            day: true,
+            isClosed: true,
+          },
+        },
+        appointments: {
+          where: {
+            appointmentDate: {
+              gte: startOfDay,
+              lte: endOfDay,
+            },
+            status: AppointmentStatus.SCHEDULED,
+          },
+          include: {
+            patient: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phone: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        startTime: 'asc',
+      },
+    });
+
+    // Categorize slots as available or unavailable
+    const availableSlots: any[] = [];
+    const unavailableSlots: any[] = [];
+
+    for (const slot of slots) {
+      const slotInfo = {
+        slotId: slot.id,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        day: slot.schedule.day,
+      };
+
+      if (slot.appointments.length > 0) {
+        // Slot is booked
+        unavailableSlots.push({
+          ...slotInfo,
+          isAvailable: false,
+          appointment: {
+            id: slot.appointments[0].id,
+            patientName: `${slot.appointments[0].firstName} ${slot.appointments[0].lastName}`,
+            appointmentDetails: slot.appointments[0].appointmentDetails,
+            status: slot.appointments[0].status,
+            type: slot.appointments[0].type,
+          },
+        });
+      } else {
+        // Slot is available
+        availableSlots.push({
+          ...slotInfo,
+          isAvailable: true,
+        });
+      }
+    }
+
+    const totalSlots = slots.length;
+    const availableCount = availableSlots.length;
+    const unavailableCount = unavailableSlots.length;
+
+    // Build message
+    let message = '';
+    if (totalSlots === 0) {
+      message = `No schedule slots found for ${dayOfWeek}`;
+    } else if (availableCount === 0) {
+      message = `All ${totalSlots} slot(s) are booked for ${query.date}`;
+    } else if (unavailableCount === 0) {
+      message = `All ${totalSlots} slot(s) are available for ${query.date}`;
+    } else {
+      message = `${availableCount} of ${totalSlots} slot(s) available for ${query.date}`;
+    }
+
+    return {
+      message,
+      data: {
+        date: query.date,
+        dayOfWeek,
+        summary: {
+          total: totalSlots,
+          available: availableCount,
+          unavailable: unavailableCount,
+        },
+        availableSlots,
+        unavailableSlots,
+      },
     };
   }
 
@@ -414,13 +621,14 @@ export class AppointmentService {
       updateData.appointmentDate = appointmentDate;
 
       // Check for conflicts if date or slot changed
+      // Only SCHEDULED appointments block the slot; COMPLETED and CANCELLED free it up
       if (dto.scheduleSlotId || dto.appointmentDate) {
         const conflictingAppointment = await this.prisma.appointment.findFirst({
           where: {
             doctorId,
             scheduleSlotId: dto.scheduleSlotId || existingAppointment.scheduleSlotId,
             appointmentDate: appointmentDate,
-            status: { not: 'CANCELLED' },
+            status: 'SCHEDULED',
             id: { not: appointmentId }, // Exclude current appointment
           },
         });
@@ -439,6 +647,9 @@ export class AppointmentService {
     }
     if (dto.address !== undefined) {
       updateData.address = dto.address;
+    }
+    if (dto.type !== undefined) {
+      updateData.type = dto.type;
     }
     if (dto.status !== undefined) {
       updateData.status = dto.status;

@@ -17,6 +17,7 @@ import { DoctorGuard } from 'src/common/guard/doctor.guard';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { GetAllAppointmentsDto } from './dto/get-all-appointments.dto';
+import { GetSlotAvailabilityDto } from './dto/get-slot-availability.dto';
 
 @Controller('appointment')
 export class AppointmentController {
@@ -72,6 +73,60 @@ export class AppointmentController {
       statusCode: HttpStatus.OK,
       message: 'Appointments retrieved successfully',
       data: result,
+    };
+  }
+
+  // ----------------- GET TODAY'S Scheduled APPOINTMENTS -------------------
+  @Get('scheduled-today')
+  @UseGuards(DoctorGuard)
+  async getTodayAppointments(
+    @Headers('authorization') authorization: string,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.appointmentService.getTodayAppointments(token);
+
+    return {
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: result.message,
+      data: result.data,
+    };
+  }
+
+  // ----------------- GET SLOT AVAILABILITY -------------------
+  @Get('slot-availability')
+  @UseGuards(DoctorGuard)
+  async getSlotAvailability(
+    @Headers('authorization') authorization: string,
+    @Query() query: GetSlotAvailabilityDto,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.appointmentService.getSlotAvailability(
+      token,
+      query,
+    );
+
+    return {
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: result.message,
+      data: result.data,
     };
   }
 
