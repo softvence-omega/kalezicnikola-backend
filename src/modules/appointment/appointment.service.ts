@@ -440,6 +440,9 @@ export class AppointmentService {
     if (dto.address !== undefined) {
       updateData.address = dto.address;
     }
+    if (dto.type !== undefined) {
+      updateData.type = dto.type;
+    }
     if (dto.status !== undefined) {
       updateData.status = dto.status;
     }

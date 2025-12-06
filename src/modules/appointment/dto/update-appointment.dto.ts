@@ -5,7 +5,7 @@ import {
   IsOptional,
   IsEnum,
 } from 'class-validator';
-import { AppointmentStatus } from 'generated/prisma';
+import { AppointmentStatus, AppointmentType } from 'generated/prisma';
 
 export class UpdateAppointmentDto {
   @IsOptional()
@@ -27,6 +27,10 @@ export class UpdateAppointmentDto {
   @IsOptional()
   @IsString()
   appointmentDetails?: string;
+
+    @IsOptional()
+    @IsEnum(AppointmentType)
+    type?: AppointmentType;
 
   @IsOptional()
   @IsString()

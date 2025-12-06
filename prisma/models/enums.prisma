@@ -307,3 +307,7 @@ enum WeekDay {
 }
 
 // appointment
+enum AppointmentType {
+  CHECKUP
+  FOLLOWUP
+}

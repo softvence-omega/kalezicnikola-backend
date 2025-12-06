@@ -16,6 +16,7 @@ model Appointment {
   appointmentDetails String?
   address            String?
   status             AppointmentStatus? @default(SCHEDULED)
+  type               AppointmentType?   @default(CHECKUP)
 
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt
