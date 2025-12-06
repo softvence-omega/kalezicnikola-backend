@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { GetAllAppointmentsDto } from './dto/get-all-appointments.dto';
+import { AppointmentStatus } from 'generated/prisma';
 
 @Injectable()
 export class AppointmentService {
@@ -91,14 +92,13 @@ export class AppointmentService {
     }
 
     // 8. Check for conflicting appointments (same doctor, same slot, same date)
+    // Only SCHEDULED appointments block the slot; COMPLETED and CANCELLED free it up
     const conflictingAppointment = await this.prisma.appointment.findFirst({
       where: {
         doctorId,
         scheduleSlotId: dto.scheduleSlotId,
         appointmentDate: new Date(dto.appointmentDate),
-        status: {
-          not: 'CANCELLED',
-        },
+        status: 'SCHEDULED',
       },
     });
 
@@ -254,6 +254,7 @@ export class AppointmentService {
     const appointments = await this.prisma.appointment.findMany({
       where: {
         doctorId,
+        status: AppointmentStatus.SCHEDULED,
         appointmentDate: {
           gte: startOfDay,
           lte: endOfDay,
@@ -476,13 +477,14 @@ export class AppointmentService {
       updateData.appointmentDate = appointmentDate;
 
       // Check for conflicts if date or slot changed
+      // Only SCHEDULED appointments block the slot; COMPLETED and CANCELLED free it up
       if (dto.scheduleSlotId || dto.appointmentDate) {
         const conflictingAppointment = await this.prisma.appointment.findFirst({
           where: {
             doctorId,
             scheduleSlotId: dto.scheduleSlotId || existingAppointment.scheduleSlotId,
             appointmentDate: appointmentDate,
-            status: { not: 'CANCELLED' },
+            status: 'SCHEDULED',
             id: { not: appointmentId }, // Exclude current appointment
           },
         });

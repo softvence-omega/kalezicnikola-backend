@@ -75,8 +75,8 @@ export class AppointmentController {
     };
   }
 
-  // ----------------- GET TODAY'S APPOINTMENTS -------------------
-  @Get('today')
+  // ----------------- GET TODAY'S Scheduled APPOINTMENTS -------------------
+  @Get('scheduled-today')
   @UseGuards(DoctorGuard)
   async getTodayAppointments(
     @Headers('authorization') authorization: string,
