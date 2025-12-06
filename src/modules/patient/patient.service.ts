@@ -235,6 +235,9 @@ export class PatientService {
         bloodGroup: true,
         city: true,
         photo: true,
+        insuranceId: true,
+        dob: true,
+        address: true,
         createdAt: true,
       },
       orderBy: {
