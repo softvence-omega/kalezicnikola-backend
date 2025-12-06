@@ -65,6 +65,9 @@ model Doctor {
   doctorRegionalSettings     DoctorRegionalSettings?
   doctorSecuritySettings     DoctorSecuritySettings?
 
+  // Subscription Relation
+  subscription Subscription?
+
   @@map("doctors")
 }
 
