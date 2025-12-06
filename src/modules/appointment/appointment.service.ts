@@ -231,6 +231,68 @@ export class AppointmentService {
     };
   }
 
+  // ----------------- GET TODAY'S APPOINTMENTS -------------------
+  async getTodayAppointments(accessToken: string) {
+    // Verify doctor is authenticated
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Get today's date range (start and end of day)
+    const today = new Date();
+    const startOfDay = new Date(today.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+
+    // Fetch today's appointments
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        doctorId,
+        appointmentDate: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+      },
+      include: {
+        scheduleSlot: {
+          select: {
+            id: true,
+            startTime: true,
+            endTime: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    // Check if appointments exist
+    if (appointments.length === 0) {
+      return {
+        message: 'No appointments scheduled for today',
+        data: {
+          count: 0,
+          appointments: [],
+        },
+      };
+    }
+
+    return {
+      message: `Found ${appointments.length} appointment${appointments.length > 1 ? 's' : ''} for today`,
+      data: {
+        count: appointments.length,
+        appointments,
+      },
+    };
+  }
+
   // ----------------- GET SINGLE APPOINTMENT -------------------
   async getSingleAppointment(accessToken: string, appointmentId: string) {
     // Verify doctor is authenticated

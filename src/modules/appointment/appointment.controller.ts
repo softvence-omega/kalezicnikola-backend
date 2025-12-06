@@ -75,6 +75,31 @@ export class AppointmentController {
     };
   }
 
+  // ----------------- GET TODAY'S APPOINTMENTS -------------------
+  @Get('today')
+  @UseGuards(DoctorGuard)
+  async getTodayAppointments(
+    @Headers('authorization') authorization: string,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.appointmentService.getTodayAppointments(token);
+
+    return {
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: result.message,
+      data: result.data,
+    };
+  }
+
   // ----------------- GET SINGLE APPOINTMENT -------------------
   @Get(':id')
   @UseGuards(DoctorGuard)
