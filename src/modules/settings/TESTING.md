@@ -60,7 +60,7 @@ curl -X PATCH http://localhost:7000/api/v1/settings/doctor/notification \
   }'
 ```
 
-**Notes:**
+**instructions:**
 - All fields are optional
 - Only send the fields you want to update
 - Boolean values: `true` or `false`

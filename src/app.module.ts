@@ -10,6 +10,8 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { PatientModule } from './modules/patient/patient.module';
 import { TaskModule } from './modules/task/task.module';
 import { AppointmentModule } from './modules/appointment/appointment.module';
+import { PrescriptionModule } from './modules/prescription/prescription.module';
+
 
 @Module({
   imports: [
@@ -22,6 +24,7 @@ import { AppointmentModule } from './modules/appointment/appointment.module';
     PatientModule,
     TaskModule,
     AppointmentModule,
+    PrescriptionModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -310,3 +310,9 @@ enum AppointmentType {
   CHECKUP
   FOLLOWUP
 }
+
+enum PrescriptionTime {
+  MORNING
+  AFTERNOON
+  NIGHT
+}
