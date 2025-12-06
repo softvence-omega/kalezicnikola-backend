@@ -28,6 +28,7 @@ model Appointment {
   scheduleSlot DoctorScheduleSlot? @relation("AppointmentScheduleSlot", fields: [scheduleSlotId], references: [id])
 
   prescriptions Prescription[]
+  labs          Lab[]
 
   @@map("appointments")
 }
@@ -104,16 +105,21 @@ model Diagnosis {
 }
 
 model Lab {
-  id           String    @id @default(uuid())
-  patientId    String?
-  testDate     DateTime?
-  pdfKeyCipher String?
-  createdAt    DateTime? @default(now())
-  updatedAt    DateTime? @updatedAt
-  deletedAt    DateTime?
+  id              String    @id @default(uuid())
+  patientId       String?
+  doctorId        String?
+  appointmentId   String?
+  testDate        DateTime?
+  additionalNotes String?
 
-  patient Patient?    @relation(fields: [patientId], references: [id])
-  results LabResult[]
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+  deletedAt DateTime?
+
+  doctor      Doctor?      @relation("DoctorLabs", fields: [doctorId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  patient     Patient?     @relation(fields: [patientId], references: [id])
+  results     LabResult[]
 
   @@map("labs")
 }
@@ -139,12 +145,12 @@ model Prescription {
   doctorId      String?
   appointmentId String?
 
-  prescriptionNo String?         @unique
+  prescriptionNo String?             @unique
   status         PrescriptionStatus? @default(ACTIVE)
-  
+
   // General prescription instructions (optional)
   instructions String?
-  
+
   // Additional notes (optional)
   additionalNotes String?
 
@@ -156,7 +162,7 @@ model Prescription {
   doctor  Doctor?  @relation("DoctorPrescriptions", fields: [doctorId], references: [id])
 
   appointment Appointment? @relation(fields: [appointmentId], references: [id])
-  
+
   // One prescription can have multiple medicines
   items PrescriptionItem[]
 
@@ -169,7 +175,7 @@ model PrescriptionItem {
 
   medicineName         String?
   medicineInstructions String?
-  
+
   // Dosage per time of day (e.g., 0, 0.5, 1, 2 tablets/spoons)
   morningDosage   Float?
   afternoonDosage Float?

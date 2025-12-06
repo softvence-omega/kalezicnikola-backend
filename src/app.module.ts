@@ -11,6 +11,7 @@ import { PatientModule } from './modules/patient/patient.module';
 import { TaskModule } from './modules/task/task.module';
 import { AppointmentModule } from './modules/appointment/appointment.module';
 import { PrescriptionModule } from './modules/prescription/prescription.module';
+import { LabModule } from './modules/lab/lab.module';
 
 
 @Module({
@@ -25,6 +26,7 @@ import { PrescriptionModule } from './modules/prescription/prescription.module';
     TaskModule,
     AppointmentModule,
     PrescriptionModule,
+    LabModule,
   ],
   controllers: [AppController],
   providers: [AppService],

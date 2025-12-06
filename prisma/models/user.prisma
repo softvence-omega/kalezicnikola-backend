@@ -52,6 +52,7 @@ model Doctor {
   appointments   Appointment[]   @relation("DoctorAppointments")
   calls          Call[]          @relation("DoctorCalls")
   prescriptions  Prescription[]  @relation("DoctorPrescriptions")
+  labs           Lab[]           @relation("DoctorLabs")
   diagnoses      Diagnosis[]     @relation("DoctorDiagnoses")
   auditLogs      AuditLog[]
   passwordResets PasswordReset[]
