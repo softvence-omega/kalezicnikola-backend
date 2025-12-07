@@ -29,6 +29,8 @@ model Appointment {
 
   prescriptions Prescription[]
   labs          Lab[]
+  // AI Agent Relations
+  callTranscription CallTranscription? @relation("AppointmentCallTranscription")
 
   @@map("appointments")
 }
@@ -188,3 +190,73 @@ model PrescriptionItem {
 
   @@map("prescription_items")
 }
+
+// AI Agent Models
+
+model CallTranscription {
+  id            String    @id @default(uuid())
+  doctorId      String
+  patientId     String?
+  
+  // Call metadata
+  callSid       String?   @unique // ElevenLabs/Twilio call identifier
+  phoneNumber   String?
+  duration      Int?      // Duration in seconds
+  
+  // Audio & transcription
+  audioUrl      String?   // Path to stored audio file
+  transcription String?   @db.Text
+  
+  // AI analysis
+  intent        CallIntent?
+  sentiment     Sentiment?
+  summary       String?   @db.Text
+  
+  // Appointment context (if booking was made)
+  appointmentId String?   @unique
+  
+  // Fallback info
+  fallbackNumber String?  // Physical assistant number if agent is busy
+  wasTransferred Boolean? @default(false)
+  
+  // Timestamps
+  callStartedAt DateTime?
+  callEndedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  doctor        Doctor      @relation("DoctorCallTranscriptions", fields: [doctorId], references: [id])
+  patient       Patient?    @relation("PatientCallTranscriptions", fields: [patientId], references: [id])
+  appointment   Appointment? @relation("AppointmentCallTranscription", fields: [appointmentId], references: [id])
+  
+  @@index([doctorId, createdAt])
+  @@index([patientId, createdAt])
+  @@map("call_transcriptions")
+}
+
+model DoctorKnowledgeBase {
+  id          String    @id @default(uuid())
+  doctorId    String
+  
+  // Knowledge content
+  category    KnowledgeBaseCategory? @default(GENERAL)
+  question    String    @db.Text
+  answer      String    @db.Text
+  keywords    String[]  // Array of keywords for better matching
+  
+  // Metadata
+  isActive    Boolean   @default(true)
+  priority    Int       @default(0) // Higher priority answers shown first
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Relations
+  doctor      Doctor    @relation("DoctorKnowledgeBase", fields: [doctorId], references: [id])
+  
+  @@index([doctorId, category])
+  @@index([doctorId, isActive])
+  @@map("doctor_knowledge_base")
+}
+

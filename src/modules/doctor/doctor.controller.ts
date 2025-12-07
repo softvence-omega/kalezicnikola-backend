@@ -448,5 +448,158 @@ export class DoctorController {
     };
   }
 
+  // ==================== KNOWLEDGE BASE MANAGEMENT ====================
+
+  // ----------------- CREATE KB ENTRY -------------------
+  @Post('kb/create')
+  @UseGuards(DoctorGuard)
+  async createKbEntry(
+    @Headers('authorization') authorization: string,
+    @Body() dto: any,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.createKbEntry(token, dto);
+
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: 'Knowledge base entry created successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- GET ALL KB ENTRIES -------------------
+  @Get('kb/all')
+  @UseGuards(DoctorGuard)
+  async getAllKbEntries(
+    @Headers('authorization') authorization: string,
+    @Query() query: any,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.getAllKbEntries(token, query);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Knowledge base entries retrieved successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- UPDATE KB ENTRY -------------------
+  @Patch('kb/update/:kbId')
+  @UseGuards(DoctorGuard)
+  async updateKbEntry(
+    @Headers('authorization') authorization: string,
+    @Param('kbId') kbId: string,
+    @Body() dto: any,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.updateKbEntry(token, kbId, dto);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Knowledge base entry updated successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- DELETE KB ENTRY -------------------
+  @Delete('kb/delete/:kbId')
+  @UseGuards(DoctorGuard)
+  async deleteKbEntry(
+    @Headers('authorization') authorization: string,
+    @Param('kbId') kbId: string,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.deleteKbEntry(token, kbId);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: result.message,
+    };
+  }
+
+  // ==================== CALL HISTORY ====================
+
+  // ----------------- GET CALL HISTORY -------------------
+  @Get('calls/history')
+  @UseGuards(DoctorGuard)
+  async getCallHistory(
+    @Headers('authorization') authorization: string,
+    @Query() query: any,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.getCallHistory(token, query);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Call history retrieved successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- GET CALL DETAILS -------------------
+  @Get('calls/:callId')
+  @UseGuards(DoctorGuard)
+  async getCallDetails(
+    @Headers('authorization') authorization: string,
+    @Param('callId') callId: string,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.getCallDetails(token, callId);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Call details retrieved successfully',
+      data: result,
+    };
+  }
 
 }

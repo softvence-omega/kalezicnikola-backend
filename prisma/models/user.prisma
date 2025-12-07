@@ -66,6 +66,10 @@ model Doctor {
   doctorRegionalSettings     DoctorRegionalSettings?
   doctorSecuritySettings     DoctorSecuritySettings?
 
+  // AI Agent Relations
+  callTranscriptions CallTranscription[] @relation("DoctorCallTranscriptions")
+  knowledgeBase      DoctorKnowledgeBase[] @relation("DoctorKnowledgeBase")
+
   @@map("doctors")
 }
 
