@@ -1,13 +1,38 @@
+model SubscriptionPlan {
+  id          String   @id @default(uuid())
+  planType    PlanType @unique
+  name        String
+  price       Int
+  stripePriceId String
+  minutes     Int
+  features    Json     // Array of features stored as JSON
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("subscription_plans")
+}
+
+
 model Subscription {
   id                   String              @id @default(uuid()) 
+  userId               String?             @unique // Link to user
   stripeCustomerId     String?             @unique 
   stripeSubscriptionId String?             @unique
   plan                 Plan?
+  planType             PlanType?           // Current plan type
   status               SubscriptionStatus?
+  minutesAllocated     Int?                // Minutes for current plan
+  minutesUsed          Int?                @default(0)
   currentPeriodStart   DateTime?           
   currentPeriodEnd     DateTime?           
+  cancelledAt          DateTime?
+  isActive             Boolean?            @default(true) // Set to false when period ends after cancellation
   createdAt            DateTime?           @default(now()) 
   updatedAt            DateTime?           @updatedAt 
+
+  // Relations
+  doctor Doctor? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("subscriptions")
 }
