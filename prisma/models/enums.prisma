@@ -16,10 +16,10 @@ enum AppointmentStatus {
 }
 
 enum CallStatus {
-  STARTED
-  ENDED
+  SUCCESSFUL
+  UNSUCCESSFUL
+  TRANSFERRED
   MISSED
-  FAILED
 }
 
 enum Sentiment {
@@ -334,6 +334,7 @@ enum CallIntent {
   GENERAL
   EMERGENCY
 }
+
 
 enum KnowledgeBaseCategory {
   FAQ

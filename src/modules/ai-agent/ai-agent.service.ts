@@ -457,6 +457,17 @@ export class AiAgentService {
     let patientId = dto.patient_id;
     let appointmentId = dto.appointment_id;
 
+    // Handle Insurance ID smart formatting
+    let formattedInsuranceId = dto.insurance_id;
+    if (formattedInsuranceId) {
+      // Remove any whitespace
+      formattedInsuranceId = formattedInsuranceId.trim().toUpperCase();
+      // Add prefix if missing and it's just numbers or doesn't start with INS-
+      if (!formattedInsuranceId.startsWith('INS-')) {
+        formattedInsuranceId = `INS-${formattedInsuranceId}`;
+      }
+    }
+
     // STEP 1: Try to extract patient info from transcription/summary if not provided
     if (!patientId && dto.phone_number) {
       // Try to find existing patient by phone
@@ -468,6 +479,14 @@ export class AiAgentService {
 
       if (existingPatient) {
         patientId = existingPatient.id;
+        
+        // Update patient's insurance ID if provided and not already set
+        if (formattedInsuranceId && !existingPatient.insuranceId) {
+          await this.prisma.patient.update({
+            where: { id: patientId },
+            data: { insuranceId: formattedInsuranceId },
+          });
+        }
       } else {
         // Extract patient info from transcription/summary
         const patientInfo = this.extractPatientInfoFromText(
@@ -482,11 +501,21 @@ export class AiAgentService {
               lastName: patientInfo.lastName,
               phone: dto.phone_number,
               email: patientInfo.email,
+              insuranceId: formattedInsuranceId, // Save insurance ID for new patient
             },
           });
           patientId = newPatient.id;
         }
       }
+    } else if (patientId && formattedInsuranceId) {
+       // If patientId provided (e.g. from existing context), check if we need to update insurance
+       const patient = await this.prisma.patient.findUnique({ where: { id: patientId }});
+       if (patient && !patient.insuranceId) {
+          await this.prisma.patient.update({
+            where: { id: patientId },
+            data: { insuranceId: formattedInsuranceId },
+          });
+       }
     }
 
     // STEP 2: Try to find appointment if not provided
@@ -520,12 +549,17 @@ export class AiAgentService {
         transcription: dto.transcription,
         intent: dto.intent?.toUpperCase() as any,
         sentiment: dto.sentiment?.toUpperCase() as any,
-        summary: dto.summary, // Save full summary from ElevenLabs
+        summary: dto.summary,
         appointmentId: appointmentId,
         fallbackNumber: dto.fallback_number || this.fallbackNumber,
         wasTransferred: dto.was_transferred || false,
         callStartedAt: dto.call_started_at ? new Date(dto.call_started_at) : null,
         callEndedAt: dto.call_ended_at ? new Date(dto.call_ended_at) : null,
+        
+        // New fields
+        callStatus: dto.call_status ? (dto.call_status.toUpperCase() as any) : null,
+        reasonForCalling: dto.reason_for_calling,
+        insuranceId: formattedInsuranceId,
       },
     });
 
