@@ -1,8 +1,8 @@
 model Appointment {
-  id                 String             @id @default(uuid())
-  patientId          String?
-  insuranceId        String?
-  doctorId           String?
+  id          String  @id @default(uuid())
+  patientId   String?
+  insuranceId String?
+  doctorId    String?
 
   firstName          String?
   lastName           String?
@@ -11,8 +11,8 @@ model Appointment {
   dob                DateTime?
   gender             Gender?
   bloodGroup         BloodGroup?
-  scheduleSlotId         String?
-  appointmentDate    DateTime?          // Specific date for the appointment
+  scheduleSlotId     String?
+  appointmentDate    DateTime? // Specific date for the appointment
   appointmentDetails String?
   address            String?
   status             AppointmentStatus? @default(SCHEDULED)
@@ -23,42 +23,45 @@ model Appointment {
   deletedAt DateTime?
 
   // Relations
-  doctor       Doctor?              @relation("DoctorAppointments", fields: [doctorId], references: [id])
-  patient      Patient?             @relation("PatientAppointments", fields: [patientId], references: [id])
-  scheduleSlot DoctorScheduleSlot?  @relation("AppointmentScheduleSlot", fields: [scheduleSlotId], references: [id])
+  doctor       Doctor?             @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  patient      Patient?            @relation("PatientAppointments", fields: [patientId], references: [id])
+  scheduleSlot DoctorScheduleSlot? @relation("AppointmentScheduleSlot", fields: [scheduleSlotId], references: [id])
+
+  prescriptions Prescription[]
+  labs          Lab[]
+  // AI Agent Relations
+  callTranscription CallTranscription? @relation("AppointmentCallTranscription")
 
   @@map("appointments")
 }
 
 model DoctorWeeklySchedule {
-  id        String   @id @default(uuid())
-  doctorId  String
-  day       WeekDay
-  isClosed  Boolean  @default(false)
+  id       String  @id @default(uuid())
+  doctorId String
+  day      WeekDay
+  isClosed Boolean @default(false)
 
   // One-to-many: multiple time slots allowed
-  slots     DoctorScheduleSlot[]
+  slots DoctorScheduleSlot[]
 
-  doctor    Doctor   @relation(fields: [doctorId], references: [id])
+  doctor Doctor @relation(fields: [doctorId], references: [id])
 
   @@unique([doctorId, day]) // Only one schedule record per day per doctor
   @@map("doctor_weekly_schedules")
 }
 
 model DoctorScheduleSlot {
-  id          String   @id @default(uuid())
-  scheduleId  String
+  id         String @id @default(uuid())
+  scheduleId String
 
-  startTime   String   // e.g., "09:00"
-  endTime     String   // e.g., "13:00"
+  startTime String // e.g., "09:00"
+  endTime   String // e.g., "13:00"
 
   schedule     DoctorWeeklySchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
   appointments Appointment[]        @relation("AppointmentScheduleSlot")
 
   @@map("doctor_schedule_slots")
 }
-
-
 
 model Call {
   id                 String      @id @default(uuid())
@@ -104,16 +107,21 @@ model Diagnosis {
 }
 
 model Lab {
-  id           String    @id @default(uuid())
-  patientId    String?
-  testDate     DateTime?
-  pdfKeyCipher String?
-  createdAt    DateTime? @default(now())
-  updatedAt    DateTime? @updatedAt
-  deletedAt    DateTime?
+  id              String    @id @default(uuid())
+  patientId       String?
+  doctorId        String?
+  appointmentId   String?
+  testDate        DateTime?
+  additionalNotes String?
 
-  patient Patient?    @relation(fields: [patientId], references: [id])
-  results LabResult[]
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+  deletedAt DateTime?
+
+  doctor      Doctor?      @relation("DoctorLabs", fields: [doctorId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  patient     Patient?     @relation(fields: [patientId], references: [id])
+  results     LabResult[]
 
   @@map("labs")
 }
@@ -134,34 +142,121 @@ model LabResult {
 }
 
 model Prescription {
-  id             String              @id @default(uuid())
-  patientId      String?
-  doctorId       String?
-  prescriptionNo Int?
-  status         PrescriptionStatus?
-  createdAt      DateTime?           @default(now())
-  updatedAt      DateTime?           @updatedAt
-  deletedAt      DateTime?
+  id            String  @id @default(uuid())
+  patientId     String?
+  doctorId      String?
+  appointmentId String?
 
-  patient   Patient?               @relation(fields: [patientId], references: [id])
-  doctor    Doctor?                @relation("DoctorPrescriptions", fields: [doctorId], references: [id])
-  medicines PrescriptionMedicine[]
+  prescriptionNo String?             @unique
+  status         PrescriptionStatus? @default(ACTIVE)
+
+  // General prescription instructions (optional)
+  instructions String?
+
+  // Additional notes (optional)
+  additionalNotes String?
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+  deletedAt DateTime?
+
+  patient Patient? @relation(fields: [patientId], references: [id])
+  doctor  Doctor?  @relation("DoctorPrescriptions", fields: [doctorId], references: [id])
+
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+
+  // One prescription can have multiple medicines
+  items PrescriptionItem[]
 
   @@map("prescriptions")
 }
 
-model PrescriptionMedicine {
-  id             String  @id @default(uuid())
-  prescriptionId String?
-  medicine       String?
-  strength       String?
-  dose           String?
-  frequency      String?
-  route          String?
-  duration       String?
-  refill         Int?
+model PrescriptionItem {
+  id             String @id @default(uuid())
+  prescriptionId String
 
-  prescription Prescription? @relation(fields: [prescriptionId], references: [id])
+  medicineName         String?
+  medicineInstructions String?
 
-  @@map("prescription_medicines")
+  // Dosage per time of day (e.g., 0, 0.5, 1, 2 tablets/spoons)
+  morningDosage   Float?
+  afternoonDosage Float?
+  nightDosage     Float?
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+
+  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@map("prescription_items")
 }
+
+// AI Agent Models
+
+model CallTranscription {
+  id            String    @id @default(uuid())
+  doctorId      String
+  patientId     String?
+  
+  // Call metadata
+  callSid       String?   @unique // ElevenLabs/Twilio call identifier
+  phoneNumber   String?
+  duration      Int?      // Duration in seconds
+  
+  // Audio & transcription
+  audioUrl      String?   // Path to stored audio file
+  transcription String?   @db.Text
+  
+  // AI analysis
+  intent        CallIntent?
+  sentiment     Sentiment?
+  summary       String?   @db.Text
+  
+  // Appointment context (if booking was made)
+  appointmentId String?   @unique
+  
+  // Fallback info
+  fallbackNumber String?  // Physical assistant number if agent is busy
+  wasTransferred Boolean? @default(false)
+  
+  // Timestamps
+  callStartedAt DateTime?
+  callEndedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  doctor        Doctor      @relation("DoctorCallTranscriptions", fields: [doctorId], references: [id])
+  patient       Patient?    @relation("PatientCallTranscriptions", fields: [patientId], references: [id])
+  appointment   Appointment? @relation("AppointmentCallTranscription", fields: [appointmentId], references: [id])
+  
+  @@index([doctorId, createdAt])
+  @@index([patientId, createdAt])
+  @@map("call_transcriptions")
+}
+
+model DoctorKnowledgeBase {
+  id          String    @id @default(uuid())
+  doctorId    String
+  
+  // Knowledge content
+  category    KnowledgeBaseCategory? @default(GENERAL)
+  question    String    @db.Text
+  answer      String    @db.Text
+  keywords    String[]  // Array of keywords for better matching
+  
+  // Metadata
+  isActive    Boolean   @default(true)
+  priority    Int       @default(0) // Higher priority answers shown first
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Relations
+  doctor      Doctor    @relation("DoctorKnowledgeBase", fields: [doctorId], references: [id])
+  
+  @@index([doctorId, category])
+  @@index([doctorId, isActive])
+  @@map("doctor_knowledge_base")
+}
+
