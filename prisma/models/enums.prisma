@@ -317,3 +317,30 @@ enum AppointmentType {
   CHECKUP
   FOLLOWUP
 }
+
+enum PrescriptionTime {
+  MORNING
+  AFTERNOON
+  NIGHT
+}
+
+// AI Agent
+enum CallIntent {
+  BOOK_APPOINTMENT
+  CHECK_AVAILABILITY
+  RESCHEDULE
+  CANCEL
+  INQUIRY
+  GENERAL
+  EMERGENCY
+}
+
+enum KnowledgeBaseCategory {
+  FAQ
+  POLICY
+  TREATMENT
+  PRICING
+  OFFICE_HOURS
+  INSURANCE
+  GENERAL
+}

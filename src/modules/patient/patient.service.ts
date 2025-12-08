@@ -235,6 +235,9 @@ export class PatientService {
         bloodGroup: true,
         city: true,
         photo: true,
+        insuranceId: true,
+        dob: true,
+        address: true,
         createdAt: true,
       },
       orderBy: {
@@ -292,6 +295,100 @@ export class PatientService {
 
     return {
       patient,
+    };
+  }
+
+  // ----------------- GET PATIENT APPOINTMENTS -------------------
+  async getPatientAppointments(accessToken: string, patientId: string) {
+    // Find session to verify doctor authentication
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    const doctor = await this.prisma.doctor.findUnique({
+      where: { id: doctorId },
+    });
+
+    if (!doctor) {
+      throw new UnauthorizedException('Doctor not found');
+    }
+
+    // Verify patient exists
+    const patient = await this.prisma.patient.findUnique({
+      where: { id: patientId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+      },
+    });
+
+    if (!patient) {
+      throw new BadRequestException('Patient not found');
+    }
+
+    // Fetch all appointments for this patient
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        patientId,
+        doctorId, // Ensure only this doctor's appointments with the patient
+      },
+      include: {
+        scheduleSlot: {
+          select: {
+            id: true,
+            startTime: true,
+            endTime: true,
+            schedule: {
+              select: {
+                day: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        appointmentDate: 'desc',
+      },
+    });
+
+    // Build message based on results
+    const message =
+      appointments.length === 0
+        ? `No appointments found for ${patient.firstName} ${patient.lastName}`
+        : `Found ${appointments.length} appointment${appointments.length > 1 ? 's' : ''} for ${patient.firstName} ${patient.lastName}`;
+
+        const formattedAppointments = appointments.map(a => ({
+  id: a.id,
+  type: a.type,
+  appointmentDate: a.appointmentDate,
+  startTime: a.scheduleSlot?.startTime,
+  endTime: a.scheduleSlot?.endTime,
+  status: a.status,
+}));
+
+
+    return {
+      message,
+      data: {
+        patient: {
+          id: patient.id,
+          name: `${patient.firstName} ${patient.lastName}`,
+          email: patient.email,
+          phone: patient.phone,
+        },
+        appointmentCount: appointments.length,
+        formattedAppointments,
+      },
     };
   }
 

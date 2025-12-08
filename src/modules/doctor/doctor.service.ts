@@ -1043,6 +1043,208 @@ export class DoctorService {
     };
   }
 
+  // ==================== KNOWLEDGE BASE MANAGEMENT ====================
+
+  // ----------------- CREATE KB ENTRY -------------------
+  async createKbEntry(accessToken: string, dto: any) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const kbEntry = await this.prisma.doctorKnowledgeBase.create({
+      data: {
+        doctorId: session.doctorId,
+        category: dto.category || 'GENERAL',
+        question: dto.question,
+        answer: dto.answer,
+        keywords: dto.keywords || [],
+        priority: dto.priority || 0,
+      },
+    });
+
+    return { success: true, data: kbEntry };
+  }
+
+  // ----------------- GET ALL KB ENTRIES -------------------
+  async getAllKbEntries(accessToken: string, query: any) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const { category, search, page = 1, limit = 20 } = query;
+    const skip = (page - 1) * limit;
+
+    const where: any = { doctorId: session.doctorId };
+
+    if (category) where.category = category;
+    if (search) {
+      where.OR = [
+        { question: { contains: search, mode: 'insensitive' } },
+        { answer: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [entries, total] = await Promise.all([
+      this.prisma.doctorKnowledgeBase.findMany({
+        where,
+        skip,
+        take: +limit,
+        orderBy: { priority: 'desc' },
+      }),
+      this.prisma.doctorKnowledgeBase.count({ where }),
+    ]);
+
+    return {
+      data: entries,
+      pagination: {
+        total,
+        page: +page,
+        limit: +limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // ----------------- UPDATE KB ENTRY -------------------
+  async updateKbEntry(accessToken: string, kbId: string, dto: any) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    // Verify ownership
+    const existing = await this.prisma.doctorKnowledgeBase.findFirst({
+      where: { id: kbId, doctorId: session.doctorId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Knowledge base entry not found');
+    }
+
+    const updateData: any = {};
+    if (dto.category !== undefined) updateData.category = dto.category;
+    if (dto.question !== undefined) updateData.question = dto.question;
+    if (dto.answer !== undefined) updateData.answer = dto.answer;
+    if (dto.keywords !== undefined) updateData.keywords = dto.keywords;
+    if (dto.priority !== undefined) updateData.priority = dto.priority;
+    if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
+
+    const updated = await this.prisma.doctorKnowledgeBase.update({
+      where: { id: kbId },
+      data: updateData,
+    });
+
+    return { success: true, data: updated };
+  }
+
+  // ----------------- DELETE KB ENTRY -------------------
+  async deleteKbEntry(accessToken: string, kbId: string) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const existing = await this.prisma.doctorKnowledgeBase.findFirst({
+      where: { id: kbId, doctorId: session.doctorId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Knowledge base entry not found');
+    }
+
+    await this.prisma.doctorKnowledgeBase.delete({ where: { id: kbId } });
+
+    return { success: true, message: 'KB entry deleted successfully' };
+  }
+
+  // ==================== CALL HISTORY ====================
+
+  // ----------------- GET CALL HISTORY -------------------
+  async getCallHistory(accessToken: string, query: any) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const { page = 1, limit = 20, patientId, intent } = query;
+    const skip = (page - 1) * limit;
+
+    const where: any = { doctorId: session.doctorId };
+    if (patientId) where.patientId = patientId;
+    if (intent) where.intent = intent;
+
+    const [calls, total] = await Promise.all([
+      this.prisma.callTranscription.findMany({
+        where,
+        skip,
+        take: +limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          patient: { select: { firstName: true, lastName: true, phone: true } },
+          appointment: { select: { id: true, appointmentDate: true, status: true } },
+        },
+      }),
+      this.prisma.callTranscription.count({ where }),
+    ]);
+
+    return {
+      data: calls,
+      pagination: {
+        total,
+        page: +page,
+        limit: +limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // ----------------- GET CALL DETAILS -------------------
+  async getCallDetails(accessToken: string, callId: string) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const call = await this.prisma.callTranscription.findFirst({
+      where: { id: callId, doctorId: session.doctorId },
+      include: {
+        patient: true,
+        appointment: true,
+      },
+    });
+
+    if (!call) {
+      throw new NotFoundException('Call not found');
+    }
+
+    return { data: call };
+  }
 
 }
 

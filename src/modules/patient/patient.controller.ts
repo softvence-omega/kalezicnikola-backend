@@ -181,6 +181,35 @@ export class PatientController {
     };
   }
 
+  // ----------------- GET PATIENT APPOINTMENTS -------------------
+  @Get('appointments/:id')
+  @UseGuards(DoctorGuard)
+  async getPatientAppointments(
+    @Headers('authorization') authorization: string,
+    @Param('id') patientId: string,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.patientService.getPatientAppointments(
+      token,
+      patientId,
+    );
+
+    return {
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: result.message,
+      data: result.data,
+    };
+  }
+
   // ----------------- UPDATE PATIENT -------------------
   @Patch('update/:id')
   @UseGuards(DoctorGuard)

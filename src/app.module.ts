@@ -11,6 +11,10 @@ import { PatientModule } from './modules/patient/patient.module';
 import { TaskModule } from './modules/task/task.module';
 import { AppointmentModule } from './modules/appointment/appointment.module';
 import { SubscriptionModule } from './modules/subscription/subscription.module';
+import { PrescriptionModule } from './modules/prescription/prescription.module';
+import { LabModule } from './modules/lab/lab.module';
+import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
+
 
 @Module({
   imports: [
@@ -24,6 +28,9 @@ import { SubscriptionModule } from './modules/subscription/subscription.module';
     TaskModule,
     AppointmentModule,
     SubscriptionModule,
+    PrescriptionModule,
+    LabModule,
+    AiAgentModule,
   ],
   controllers: [AppController],
   providers: [AppService],
