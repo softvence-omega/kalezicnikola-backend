@@ -57,10 +57,17 @@ enum Plan {
   ENTERPRISE
 }
 
+enum PlanType {
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
+}
+
 enum SubscriptionStatus {
   ACTIVE
   PAST_DUE
   CANCELLED
+  PENDING
 }
 
 enum NotificationType {
@@ -315,4 +322,25 @@ enum PrescriptionTime {
   MORNING
   AFTERNOON
   NIGHT
+}
+
+// AI Agent
+enum CallIntent {
+  BOOK_APPOINTMENT
+  CHECK_AVAILABILITY
+  RESCHEDULE
+  CANCEL
+  INQUIRY
+  GENERAL
+  EMERGENCY
+}
+
+enum KnowledgeBaseCategory {
+  FAQ
+  POLICY
+  TREATMENT
+  PRICING
+  OFFICE_HOURS
+  INSURANCE
+  GENERAL
 }

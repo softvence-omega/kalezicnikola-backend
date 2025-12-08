@@ -37,7 +37,9 @@ model Patient {
   dataRequests  DataRequest[]
   diagnoses     Diagnosis[]
   consents      PatientConsent[]
-
+  
+  // AI Agent Relations
+  callTranscriptions CallTranscription[] @relation("PatientCallTranscriptions")
 
   @@map("patients")
 }
