@@ -1,18 +1,17 @@
 model SubscriptionPlan {
-  id          String   @id @default(uuid())
-  planType    PlanType @unique
-  name        String
-  price       Int
+  id            String   @id @default(uuid())
+  planType      PlanType @unique
+  name          String
+  price         Int
   stripePriceId String
-  minutes     Int
-  features    Json     // Array of features stored as JSON
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  minutes       Int
+  features      Json
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@map("subscription_plans")
 }
-
 
 model Subscription {
   id                   String              @id @default(uuid()) 
@@ -38,28 +37,28 @@ model Subscription {
 }
 
 model Invoice {
-  id              String    @id @default(uuid())    
-  stripeInvoiceId String?   @unique 
-  invoiceNo       String?  
-  amountDue       Int?      
-  amountPaid      Int?      
-  currency        String?  
-  status          String?  
-  invoicePdfUrl   String?   
-  createdAt       DateTime? @default(now())  
+  id              String    @id @default(uuid())
+  stripeInvoiceId String?   @unique
+  invoiceNo       String?
+  amountDue       Int?
+  amountPaid      Int?
+  currency        String?
+  status          String?
+  invoicePdfUrl   String?
+  createdAt       DateTime? @default(now())
   updatedAt       DateTime? @updatedAt
 
   @@map("invoices")
 }
 
 model NotificationQueue {
-  id        String              @id @default(uuid())             
+  id        String              @id @default(uuid())
   type      NotificationType?
-  recipient String?            
-  payload   Json?               
+  recipient String?
+  payload   Json?
   status    NotificationStatus?
-  sentAt    DateTime?          
-  createdAt DateTime?           @default(now()) 
+  sentAt    DateTime?
+  createdAt DateTime?           @default(now())
 
   @@map("notification_queues")
 }

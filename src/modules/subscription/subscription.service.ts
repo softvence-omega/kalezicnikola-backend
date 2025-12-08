@@ -541,6 +541,120 @@ export class SubscriptionService implements OnModuleInit {
     }
   }
 
+  // Get all user purchases/transactions
+  async getUserPurchases(userId: string) {
+    try {
+      // Get user's subscription history
+      const subscription = await this.prisma.subscription.findUnique({
+        where: { userId },
+        select: {
+          id: true,
+          planType: true,
+          status: true,
+          currentPeriodStart: true,
+          currentPeriodEnd: true,
+          createdAt: true,
+          stripeCustomerId: true,
+        },
+      });
+
+      // Get Stripe invoices
+      let stripeInvoices: any[] = [];
+      try {
+        let customerId = subscription?.stripeCustomerId;
+        
+        // If no customerId in subscription, search by metadata
+        if (!customerId) {
+          const customers = await this.stripe.customers.search({
+            query: `metadata['userId']:'${userId}'`,
+            limit: 1,
+          });
+          if (customers.data.length > 0) {
+            customerId = customers.data[0].id;
+          }
+        }
+
+        if (customerId) {
+          const customer = await this.stripe.customers.retrieve(customerId);
+          const invoices = await this.stripe.invoices.list({
+            customer: customerId,
+            limit: 100, // Get more history
+          });
+
+          stripeInvoices = invoices.data.map((invoice) => ({
+            date: new Date(invoice.created * 1000),
+            name: (customer as any).name || (customer as any).email || 'Customer',
+            transactionId: invoice.number || invoice.id,
+            status: invoice.status === 'paid' ? 'Paid' : invoice.status === 'open' ? 'Pending' : 'Failed',
+            payAmount: `${(invoice.amount_paid / 100).toFixed(2)} ${invoice.currency.toUpperCase()}`,
+            amount: invoice.amount_paid / 100,
+            currency: invoice.currency.toUpperCase(),
+            invoiceUrl: invoice.hosted_invoice_url,
+            planType: invoice.lines.data[0]?.description || 'Subscription',
+          }));
+        }
+      } catch (stripeError) {
+        console.error('Error fetching Stripe invoices:', stripeError.message);
+      }
+
+      // Get database invoices
+      const dbInvoices = await this.prisma.invoice.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      });
+
+      const dbInvoicesMapped = dbInvoices.map((invoice) => ({
+        date: invoice.createdAt || new Date(),
+        transactionId: invoice.invoiceNo || invoice.id,
+        status: invoice.status || 'Unknown',
+        payAmount: `${((invoice.amountPaid || 0) / 100).toFixed(2)} ${invoice.currency || 'USD'}`,
+        amount: (invoice.amountPaid || 0) / 100,
+        currency: invoice.currency || 'USD',
+        invoiceUrl: invoice.invoicePdfUrl,
+      }));
+
+      // If no invoices found but subscription exists, create a transaction from subscription
+      let subscriptionTransaction: any[] = [];
+      if (stripeInvoices.length === 0 && dbInvoices.length === 0 && subscription) {
+        const planDetails = await this.prisma.subscriptionPlan.findUnique({
+          where: { planType: subscription.planType as any },
+        });
+
+        if (planDetails) {
+          subscriptionTransaction = [{
+            date: subscription.createdAt || new Date(),
+            name: 'Subscription Purchase',
+            transactionId: subscription.id || 'N/A',
+            status: subscription.status === 'ACTIVE' ? 'Paid' : 'Pending',
+            payAmount: `${(planDetails.price / 100).toFixed(2)} USD`,
+            amount: planDetails.price / 100,
+            currency: 'USD',
+            planType: planDetails.name,
+          }];
+        }
+      }
+
+      // Combine and sort by date
+      const allTransactions = [...stripeInvoices, ...dbInvoicesMapped, ...subscriptionTransaction]
+        .sort((a, b) => {
+          const dateA = a.date ? new Date(a.date).getTime() : 0;
+          const dateB = b.date ? new Date(b.date).getTime() : 0;
+          return dateB - dateA;
+        });
+
+      console.log(`Found ${stripeInvoices.length} Stripe invoices, ${dbInvoices.length} DB invoices, ${subscriptionTransaction.length} subscription transactions`);
+
+      return {
+        currentSubscription: subscription,
+        transactions: allTransactions,
+        totalTransactions: allTransactions.length,
+      };
+    } catch (error) {
+      console.error('Error fetching user purchases:', error);
+      throw new BadRequestException(error.message);
+    }
+  }
+
   // Create checkout session
   async createCheckoutSession(userId: string, planType: string) {
     try {

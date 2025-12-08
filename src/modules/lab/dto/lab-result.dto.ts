@@ -1,5 +1,6 @@
 import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
-import { Flag } from '@prisma/client';
+import { Flag } from 'generated/prisma';
+
 
 export class LabResultDto {
   @IsNotEmpty()

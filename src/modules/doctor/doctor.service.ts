@@ -21,6 +21,60 @@ export class DoctorService {
     private config: ConfigService,
   ) {}
 
+  // ----------------- GET ALL DOCTORS -------------------
+  async getAllDoctors() {
+    const doctors = await this.prisma.doctor.findMany({
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        specialities: true,
+        experience: true,
+        photo: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return doctors;
+  }
+
+  // ----------------- SEARCH DOCTORS -------------------
+  async searchDoctors(query: string) {
+    const searchTerm = query.toLowerCase();
+
+    const doctors = await this.prisma.doctor.findMany({
+      where: {
+        OR: [
+          { firstName: { contains: searchTerm, mode: 'insensitive' } },
+          { lastName: { contains: searchTerm, mode: 'insensitive' } },
+          { email: { contains: searchTerm, mode: 'insensitive' } },
+          { phone: { contains: searchTerm, mode: 'insensitive' } },
+        ],
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        specialities: true,
+        experience: true,
+        photo: true,
+        createdAt: true,
+      },
+      orderBy: {
+        firstName: 'asc',
+      },
+    });
+
+    return doctors;
+  }
+
   // ----------------- GET MY PROFILE -------------------
   async getMyProfile(accessToken: string) {
     // Find session to get doctor ID

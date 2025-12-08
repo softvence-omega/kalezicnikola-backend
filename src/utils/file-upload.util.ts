@@ -23,3 +23,8 @@ export const imageFileFilter = (req: any, file: Express.Multer.File, cb: Functio
   }
   cb(null, true);
 };
+
+export const allFileFilter = (req: any, file: Express.Multer.File, cb: Function) => {
+  // Accept all file types
+  cb(null, true);
+};

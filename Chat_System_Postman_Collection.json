@@ -1,0 +1,636 @@
+{
+	"info": {
+		"_postman_id": "chat-system-collection-2024",
+		"name": "Chat System API",
+		"description": "Complete API collection for Admin-Doctor Chat System with WebSocket support",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Admin Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    const responseData = pm.response.json();",
+									"    const data = responseData.data || responseData;",
+									"    if (data.accessToken) {",
+									"        pm.environment.set('token', data.accessToken);",
+									"        pm.environment.set('userId', data.user.id);",
+									"        pm.environment.set('userRole', 'ADMIN');",
+									"        console.log('Admin token saved:', data.accessToken);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"tools.rockyhaque@gmail.com\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{url}}/auth/admin/login",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"auth",
+								"admin",
+								"login"
+							]
+						},
+						"description": "Login as Admin to get access token"
+					},
+					"response": []
+				},
+				{
+					"name": "Doctor Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    const responseData = pm.response.json();",
+									"    const data = responseData.data || responseData;",
+									"    if (data.accessToken) {",
+									"        pm.environment.set('token', data.accessToken);",
+									"        pm.environment.set('userId', data.user.id);",
+									"        pm.environment.set('userRole', 'DOCTOR');",
+									"        console.log('Doctor token saved:', data.accessToken);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"smit@doctor.com\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{url}}/auth/doctor/login",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"auth",
+								"doctor",
+								"login"
+							]
+						},
+						"description": "Login as Doctor to get access token"
+					},
+					"response": []
+				}
+			],
+			"description": "Authentication endpoints for Admin and Doctor login"
+		},
+		{
+			"name": "Chat User Management",
+			"item": [
+				{
+					"name": "Get or Create Chat User ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/chat/user-id/:accountId?role={{userRole}}",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"chat",
+								"user-id",
+								":accountId"
+							],
+							"query": [
+								{
+									"key": "role",
+									"value": "{{userRole}}",
+									"description": "ADMIN or DOCTOR"
+								}
+							],
+							"variable": [
+								{
+									"key": "accountId",
+									"value": "{{userId}}",
+									"description": "Account ID from login"
+								}
+							]
+						},
+						"description": "Get the chat system User ID for a given account ID. Creates if doesn't exist."
+					},
+					"response": []
+				}
+			],
+			"description": "Manage chat user IDs (maps account IDs to chat User table)"
+		},
+		{
+			"name": "Conversations",
+			"item": [
+				{
+					"name": "Create Conversation (Simplified)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    const responseData = pm.response.json();",
+									"    const data = responseData.data || responseData;",
+									"    if (data.id) {",
+									"        pm.environment.set('conversationId', data.id);",
+									"        console.log('Conversation ID saved:', data.id);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"subject\": \"Support Request - Payment Issue\"\n}"
+						},
+						"url": {
+							"raw": "{{url}}/chat/conversations",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"chat",
+								"conversations"
+							]
+						},
+						"description": "Create a new conversation. User info is automatically extracted from JWT token. Only subject is needed in body."
+					},
+					"response": []
+				},
+				{
+					"name": "Get My Conversations",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/chat/my-conversations",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"chat",
+								"my-conversations"
+							]
+						},
+						"description": "Get all conversations for the logged-in user. User info automatically extracted from JWT token."
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Conversations (Admin Only)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/chat/conversations",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"chat",
+								"conversations"
+							]
+						},
+						"description": "Get all conversations across all users (Admin only)"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Conversation by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/chat/conversations/:conversationId",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"chat",
+								"conversations",
+								":conversationId"
+							],
+							"variable": [
+								{
+									"key": "conversationId",
+									"value": "{{conversationId}}",
+									"description": "Conversation ID"
+								}
+							]
+						},
+						"description": "Get a specific conversation with all messages"
+					},
+					"response": []
+				},
+				{
+					"name": "Get User Conversations (Legacy)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/chat/conversations/user/:chatUserId",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"chat",
+								"conversations",
+								"user",
+								":chatUserId"
+							],
+							"variable": [
+								{
+									"key": "chatUserId",
+									"value": "",
+									"description": "Chat User ID (from User table, not account ID)"
+								}
+							]
+						},
+						"description": "Get conversations for a specific chat user ID. Use 'Get My Conversations' instead for simpler access."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Conversation Status",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"RESOLVED\"\n}"
+						},
+						"url": {
+							"raw": "{{url}}/chat/conversations/:conversationId",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"chat",
+								"conversations",
+								":conversationId"
+							],
+							"variable": [
+								{
+									"key": "conversationId",
+									"value": "{{conversationId}}",
+									"description": "Conversation ID"
+								}
+							]
+						},
+						"description": "Update conversation status. Allowed values: OPEN, IN_PROGRESS, RESOLVED, CLOSED"
+					},
+					"response": []
+				},
+				{
+					"name": "Search Conversations",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/chat/conversations/search?query=payment&status=OPEN",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"chat",
+								"conversations",
+								"search"
+							],
+							"query": [
+								{
+									"key": "query",
+									"value": "payment",
+									"description": "Search term"
+								},
+								{
+									"key": "status",
+									"value": "OPEN",
+									"description": "Filter by status (optional)"
+								}
+							]
+						},
+						"description": "Search conversations by message content or subject"
+					},
+					"response": []
+				}
+			],
+			"description": "Conversation management endpoints"
+		},
+		{
+			"name": "Messages",
+			"item": [
+				{
+					"name": "Upload File",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "conversationId",
+									"value": "{{conversationId}}",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{url}}/chat/upload",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"chat",
+								"upload"
+							]
+						},
+						"description": "Upload a file (image, PDF, document, etc.). Max size: 5MB. Returns fileUrl to use in send_message WebSocket event."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Conversation Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/chat/conversations/:conversationId/messages",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"chat",
+								"conversations",
+								":conversationId",
+								"messages"
+							],
+							"variable": [
+								{
+									"key": "conversationId",
+									"value": "{{conversationId}}",
+									"description": "Conversation ID"
+								}
+							]
+						},
+						"description": "Get all messages for a conversation (alternative to WebSocket join_conversation)"
+					},
+					"response": []
+				}
+			],
+			"description": "Message-related endpoints (file upload, message retrieval)"
+		},
+		{
+			"name": "Admin Features",
+			"item": [
+				{
+					"name": "Get All Doctors",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/doctor/list",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"doctor",
+								"list"
+							]
+						},
+						"description": "Get list of all doctors in the system (for admin to start conversations)"
+					},
+					"response": []
+				},
+				{
+					"name": "Assign Admin to Conversation",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"adminId\": \"admin-account-id-here\"\n}"
+						},
+						"url": {
+							"raw": "{{url}}/chat/conversations/:conversationId",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"chat",
+								"conversations",
+								":conversationId"
+							],
+							"variable": [
+								{
+									"key": "conversationId",
+									"value": "{{conversationId}}",
+									"description": "Conversation ID"
+								}
+							]
+						},
+						"description": "Assign an admin to handle a specific conversation"
+					},
+					"response": []
+				}
+			],
+			"description": "Admin-specific endpoints for managing doctors and conversations"
+		},
+		{
+			"name": "WebSocket Events (Reference)",
+			"item": [
+				{
+					"name": "WebSocket Connection Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{url}}/chat",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"chat"
+							]
+						},
+						"description": "WebSocket connection reference:\n\n**Connection URL:**\n```\nws://localhost:7000/chat?userId={chatUserId}&userRole={ADMIN|DOCTOR}\n```\n\n**Client Events (Emit):**\n- `join_conversation`: { conversationId }\n- `send_message`: { conversationId, message, imageUrl? }\n- `typing`: { conversationId, isTyping }\n- `mark_as_read`: { conversationId }\n- `user_online`: { userId }\n- `user_offline`: { userId }\n\n**Server Events (Listen):**\n- `new_message`: { message }\n- `user_typing`: { userId, isTyping }\n- `messages_read`: { conversationId, userId }\n- `unread_count`: { count }\n- `user_online`: { userId }\n- `user_offline`: { userId }\n\n**Example (JavaScript):**\n```javascript\nconst socket = io('http://localhost:7000/chat', {\n  query: {\n    userId: 'chat-user-id',\n    userRole: 'DOCTOR'\n  }\n});\n\nsocket.emit('join_conversation', { conversationId: 'conv-id' }, (response) => {\n  console.log(response.conversation.messages);\n});\n\nsocket.emit('send_message', {\n  conversationId: 'conv-id',\n  message: 'Hello!',\n  imageUrl: 'optional-file-url'\n});\n\nsocket.on('new_message', (data) => {\n  console.log('New message:', data.message);\n});\n```"
+					},
+					"response": []
+				}
+			],
+			"description": "WebSocket event reference (not executable in Postman, use Socket.IO client)"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "url",
+			"value": "http://localhost:7000/api/v1",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "userId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "userRole",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "conversationId",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

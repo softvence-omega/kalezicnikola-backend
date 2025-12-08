@@ -18,6 +18,7 @@ model Admin {
   sessions       Session[]
   auditLogs      AuditLog[]
   passwordResets PasswordReset[]
+  user           User?
 
   @@map("admins")
 }
@@ -56,6 +57,7 @@ model Doctor {
   diagnoses      Diagnosis[]     @relation("DoctorDiagnoses")
   auditLogs      AuditLog[]
   passwordResets PasswordReset[]
+  user           User?
 
   staff Staff[]
 
@@ -117,4 +119,26 @@ model PasswordReset {
   doctor Doctor? @relation(fields: [doctorId], references: [id])
 
   @@map("password_resets")
+}
+
+// Unified User model for chat
+model User {
+  id        String   @id @default(uuid())
+  adminId   String?  @unique
+  doctorId  String?  @unique
+  role      UserRole
+  
+  admin     Admin?   @relation(fields: [adminId], references: [id])
+  doctor    Doctor?  @relation(fields: [doctorId], references: [id])
+  
+  // Conversations where this user is the participant
+  conversations      AdminConversation[] @relation("UserConversations")
+  // Conversations where this user is the admin
+  adminConversations AdminConversation[] @relation("AdminConversations")
+  sentMessages       SupportMessage[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("users")
 }

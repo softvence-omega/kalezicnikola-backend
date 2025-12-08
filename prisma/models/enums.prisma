@@ -344,3 +344,11 @@ enum KnowledgeBaseCategory {
   INSURANCE
   GENERAL
 }
+
+// Chat/Support
+enum ConversationStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}

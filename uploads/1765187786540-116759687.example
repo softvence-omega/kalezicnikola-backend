@@ -1,0 +1,32 @@
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/luxury_travel_db"
+
+# JWT
+JWT_SECRET="your-super-secret-jwt-key-change-this-in-production"
+
+# Google OAuth
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+GOOGLE_CALLBACK_URL="http://localhost:3000/auth/google/callback"
+
+# Facebook OAuth
+FACEBOOK_APP_ID="your-facebook-app-id"
+FACEBOOK_APP_SECRET="your-facebook-app-secret"
+FACEBOOK_CALLBACK_URL="http://localhost:3000/auth/facebook/callback"
+
+# App
+PORT=3000
+NODE_ENV=development
+
+# Email Configuration
+# Option 1: Use Mailtrap for testing
+MAILTRAP_TOKEN=a8c6723be807f8386ab522582e81e646
+MAILTRAP_INBOX_ID=4232898
+
+# Option 2: Use Gmail for production
+# Comment out MAILTRAP_TOKEN and uncomment these to use Gmail
+# EMAIL_HOST=smtp.gmail.com
+# EMAIL_PORT=465
+# EMAIL_SECURE=true
+# EMAIL_USER=shariarhosain1315@gmail.com
+# EMAIL_PASS=ihgrauqvhsfuhxlh
