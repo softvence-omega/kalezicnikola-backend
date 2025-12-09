@@ -13,6 +13,8 @@ export class ChatService {
 
   // Helper to get User ID from admin/doctor ID
   private async getUserId(accountId: string, role: UserRole): Promise<string> {
+    console.log(`Getting user ID for accountId: ${accountId}, role: ${role}`);
+    
     const whereClause = role === UserRole.ADMIN 
       ? { adminId: accountId }
       : { doctorId: accountId };
@@ -20,13 +22,30 @@ export class ChatService {
     let user = await this.prisma.user.findFirst({ where: whereClause });
 
     if (!user) {
+      // Verify that the account actually exists before creating User
+      if (role === UserRole.ADMIN) {
+        const admin = await this.prisma.admin.findUnique({ where: { id: accountId } });
+        if (!admin) {
+          throw new Error(`Admin with ID ${accountId} does not exist`);
+        }
+      } else if (role === UserRole.DOCTOR) {
+        const doctor = await this.prisma.doctor.findUnique({ where: { id: accountId } });
+        if (!doctor) {
+          throw new Error(`Doctor with ID ${accountId} does not exist`);
+        }
+      }
+      
       // Create user if doesn't exist
+      console.log('User not found, creating new user...');
       user = await this.prisma.user.create({
         data: {
           ...whereClause,
           role,
         },
       });
+      console.log('Created user:', user.id);
+    } else {
+      console.log('Found existing user:', user.id);
     }
 
     return user.id;
@@ -39,6 +58,8 @@ export class ChatService {
 
   // Create or get existing conversation
   async createConversation(dto: CreateConversationDto) {
+    console.log('Creating conversation with DTO:', dto);
+    
     // Check if conversation already exists for this user
     const existing = await this.prisma.adminConversation.findFirst({
       where: {
@@ -61,11 +82,13 @@ export class ChatService {
     });
 
     if (existing) {
+      console.log('Found existing conversation:', existing.id);
       return existing;
     }
 
     // Create new conversation
-    return this.prisma.adminConversation.create({
+    console.log('Creating new conversation...');
+    const newConversation = await this.prisma.adminConversation.create({
       data: {
         userId: dto.userId!,
         userRole: dto.userRole!,
@@ -82,6 +105,9 @@ export class ChatService {
         },
       },
     });
+    
+    console.log('Created conversation:', newConversation.id);
+    return newConversation;
   }
 
   // Send message

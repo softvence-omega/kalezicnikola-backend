@@ -21,6 +21,7 @@ import {
 } from './dto';
 import { JwtAuthGuard } from 'src/common/guard/auth.guard';
 import { CurrentUser } from 'src/common/decorator/current-user.decorator';
+import { UserRole } from '../../../generated/prisma';
 
 @Controller('chat')
 export class ChatController {
@@ -31,11 +32,16 @@ export class ChatController {
     @Param('accountId') accountId: string,
     @Query('role') role: string,
   ) {
-    const userId = await this.chatService.getOrCreateUserId(
-      accountId,
-      role as 'ADMIN' | 'DOCTOR',
-    );
-    return { userId };
+    try {
+      const userId = await this.chatService.getOrCreateUserId(
+        accountId,
+        role as 'ADMIN' | 'DOCTOR',
+      );
+      return { userId };
+    } catch (error) {
+      console.error('Error getting user ID:', error);
+      throw new BadRequestException(error.message || 'Failed to get user ID');
+    }
   }
 
   @Post('conversations')
@@ -44,20 +50,59 @@ export class ChatController {
     @Body() dto: CreateConversationDto,
     @CurrentUser() user: any,
   ) {
-    // Extract userId and userRole from JWT token
-    const userId = await this.chatService.getOrCreateUserId(
-      user.id,
-      user.role as 'ADMIN' | 'DOCTOR',
-    );
-    
-    // Merge with DTO
-    const conversationDto = {
-      ...dto,
-      userId,
-      userRole: user.role,
-    };
-    
-    return this.chatService.createConversation(conversationDto);
+    try {
+      console.log('📥 Create conversation request:', { dto, user });
+      
+      // If adminId is provided in body, it means admin is starting chat with a doctor
+      // In this case, adminId from body is actually the doctor's chat user ID
+      // Check if user is admin by checking if they have admin fields (firstName, lastName) and no doctor-specific fields
+      const isAdmin = user.role?.toUpperCase() === 'ADMIN' || 
+                     user.userType?.toUpperCase() === 'ADMIN' || 
+                     user.type?.toUpperCase() === 'ADMIN' ||
+                     (user.firstName && user.lastName && !user.speciality); // Admin has firstName/lastName, doctors have speciality
+      
+      if (dto.adminId && isAdmin) {
+        // Admin creating conversation with doctor
+        // adminId in DTO is actually the doctor's chat user ID
+        console.log('🔀 Admin initiating chat with doctor. Doctor chat user ID:', dto.adminId);
+        
+        const adminChatUserId = await this.chatService.getOrCreateUserId(
+          user.id,
+          'ADMIN',
+        );
+        
+        console.log('✅ Admin chat user ID:', adminChatUserId);
+        
+        const conversationData = {
+          userId: dto.adminId,  // Doctor's chat user ID
+          userRole: UserRole.DOCTOR,
+          subject: dto.subject,
+          adminId: adminChatUserId,  // Admin's chat user ID
+        };
+        
+        console.log('📤 Creating conversation with data:', conversationData);
+        
+        return this.chatService.createConversation(conversationData);
+      }
+      
+      // Normal flow: user creating their own conversation
+      const userId = await this.chatService.getOrCreateUserId(
+        user.id,
+        user.role as 'ADMIN' | 'DOCTOR',
+      );
+      
+      // Merge with DTO
+      const conversationDto = {
+        ...dto,
+        userId,
+        userRole: user.role === 'ADMIN' ? UserRole.ADMIN : UserRole.DOCTOR,
+      };
+      
+      return this.chatService.createConversation(conversationDto);
+    } catch (error) {
+      console.error('Error creating conversation:', error);
+      throw new BadRequestException(error.message || 'Failed to create conversation');
+    }
   }
 
   @Get('conversations')

@@ -1904,14 +1904,23 @@
 
         async function startChatWithDoctor(doctorId, doctorName, doctorEmail) {
             try {
+                console.log('🔍 Starting chat with doctor:', { doctorId, doctorName, doctorEmail });
+                
                 // First, get the doctor's chat user ID
                 const apiUrl = getApiUrl();
-                const userResponse = await fetch(`${apiUrl}/chat/user-id/${doctorId}?role=DOCTOR`, {
+                const userIdUrl = `${apiUrl}/chat/user-id/${doctorId}?role=DOCTOR`;
+                console.log('📞 Fetching doctor chat user ID from:', userIdUrl);
+                
+                const userResponse = await fetch(userIdUrl, {
                     headers: { 'Authorization': `Bearer ${currentUser.token}` }
                 });
 
+                console.log('📨 Response status:', userResponse.status, userResponse.statusText);
+                
                 if (!userResponse.ok) {
-                    throw new Error('Could not find doctor in chat system');
+                    const errorData = await userResponse.json().catch(() => ({}));
+                    console.error('❌ Failed to get doctor user ID:', errorData);
+                    throw new Error(errorData.message || 'Could not find doctor in chat system');
                 }
 
                 const userDataResponse = await userResponse.json();
@@ -1929,7 +1938,7 @@
                     return;
                 }
 
-                // Create new conversation
+                // Create new conversation (userId/userRole auto-extracted from admin's JWT token)
                 const response = await fetch(`${apiUrl}/chat/conversations`, {
                     method: 'POST',
                     headers: {
@@ -1937,9 +1946,8 @@
                         'Authorization': `Bearer ${currentUser.token}`
                     },
                     body: JSON.stringify({
-                        userId: doctorChatUserId,
-                        userRole: 'DOCTOR',
-                        subject: `Chat with ${doctorName}`
+                        subject: `Chat with ${doctorName}`,
+                        adminId: doctorChatUserId  // Pass doctor's chat user ID as adminId for routing
                     })
                 });
 
