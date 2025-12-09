@@ -394,7 +394,7 @@ export class AiAgentService {
       data: {
         scheduleSlotId: dto.new_slot_id,
         appointmentDate: dto.new_date ? new Date(dto.new_date) : undefined,
-        status: 'RESCHEDULED', // Mark as rescheduled
+        // Keep status as SCHEDULED so it appears in active appointments
       },
       include: {
         scheduleSlot: true,
@@ -724,6 +724,31 @@ export class AiAgentService {
   }
 
   private async handleRescheduleIntent(payload: WebhookPayloadDto): Promise<WebhookResponseDto> {
+    // If all reschedule parameters provided, execute the reschedule
+    if (payload.booking_id && payload.slot_id && payload.appointment_date) {
+      try {
+        const result = await this.updateBooking({
+          booking_id: payload.booking_id,
+          new_slot_id: payload.slot_id,
+          new_date: payload.appointment_date,
+        });
+
+        return {
+          reply_text: `Your appointment has been successfully rescheduled for ${result.appointment.date} at ${result.appointment.time}.`,
+          action: 'reschedule_confirmed',
+          booking_id: result.booking_id,
+          success: true,
+          data: result.appointment,
+        };
+      } catch (error) {
+        return {
+          reply_text: error.message || 'I\'m sorry, that slot is no longer available. Let me find you another time.',
+          action: 'slot_unavailable',
+        };
+      }
+    }
+
+    // If booking_id missing, ask for it
     if (!payload.booking_id) {
       return {
         reply_text: 'I can help you reschedule. Can you provide your appointment confirmation number or the date of your current appointment?',
@@ -731,6 +756,7 @@ export class AiAgentService {
       };
     }
 
+    // Suggest alternative slots
     const slots = await this.suggestAlternativeSlots({
       doctor_id: payload.doctor_id,
       requested_slot: payload.requested_time || new Date().toISOString(),
@@ -758,17 +784,31 @@ export class AiAgentService {
   }
 
   private async handleCancelIntent(payload: WebhookPayloadDto): Promise<WebhookResponseDto> {
-    if (!payload.booking_id) {
-      return {
-        reply_text: 'I can help you cancel your appointment. Can you provide your appointment confirmation number or the date of your appointment?',
-        action: 'ask_booking_id',
-      };
+    // If booking_id is provided, execute the cancellation
+    if (payload.booking_id) {
+      try {
+        const result = await this.cancelBooking({
+          booking_id: payload.booking_id,
+        });
+
+        return {
+          reply_text: `Your appointment has been successfully cancelled. If you need to book a new appointment in the future, feel free to call back.`,
+          action: 'cancellation_confirmed',
+          booking_id: payload.booking_id,
+          success: true,
+        };
+      } catch (error) {
+        return {
+          reply_text: error.message || 'I\'m sorry, I couldn\'t find that appointment. Could you verify the booking ID?',
+          action: 'cancellation_failed',
+        };
+      }
     }
 
+    // If booking_id missing, ask for it
     return {
-      reply_text: 'I understand you want to cancel your appointment. Are you sure you want to proceed with the cancellation?',
-      action: 'confirm_cancellation',
-      booking_id: payload.booking_id,
+      reply_text: 'I can help you cancel your appointment. Can you provide your appointment confirmation number or the date of your appointment?',
+      action: 'ask_booking_id',
     };
   }
 
