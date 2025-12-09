@@ -415,23 +415,80 @@ export class AiAgentService {
   }
 
   // =============== CANCEL BOOKING ===============
-  async cancelBooking(dto: { booking_id: string }) {
-    const appointment = await this.prisma.appointment.findUnique({
-      where: { id: dto.booking_id },
-    });
+  async cancelBooking(dto: { booking_id?: string; phone_number?: string; appointment_date?: string }) {
+    let appointment;
+
+    // Try to find by booking_id first
+    if (dto.booking_id) {
+      appointment = await this.prisma.appointment.findUnique({
+        where: { id: dto.booking_id },
+      });
+    }
+
+    // Fallback: Find by phone number
+    if (!appointment && dto.phone_number) {
+      const patient = await this.prisma.patient.findFirst({
+        where: { phone: dto.phone_number },
+      });
+
+      if (patient) {
+        // Find all SCHEDULED appointments for this patient
+        const appointments = await this.prisma.appointment.findMany({
+          where: {
+            patientId: patient.id,
+            status: 'SCHEDULED',
+          },
+          orderBy: { appointmentDate: 'asc' },
+          include: { scheduleSlot: true },
+        });
+
+        // If date provided, filter by date
+        if (dto.appointment_date && appointments.length > 0) {
+          const searchDate = new Date(dto.appointment_date);
+          const filtered = appointments.filter(apt => {
+            if (!apt.appointmentDate) return false;
+            const aptDate = new Date(apt.appointmentDate);
+            return aptDate.toISOString().split('T')[0] === searchDate.toISOString().split('T')[0];
+          });
+
+          if (filtered.length > 1) {
+            throw new BadRequestException(
+              `Found ${filtered.length} appointments on this date. Please provide the booking ID.`
+            );
+          }
+          appointment = filtered[0];
+        } else if (appointments.length === 1) {
+          // Only one scheduled appointment, use it
+          appointment = appointments[0];
+        } else if (appointments.length > 1) {
+          throw new BadRequestException(
+            `Found ${appointments.length} scheduled appointments. Please provide the booking ID or appointment date.`
+          );
+        }
+      }
+    }
 
     if (!appointment) {
       throw new NotFoundException('Booking not found');
     }
 
-    await this.prisma.appointment.update({
-      where: { id: dto.booking_id },
+    if (appointment.status === 'CANCELLED') {
+      throw new BadRequestException('Appointment is already cancelled');
+    }
+
+    const updated = await this.prisma.appointment.update({
+      where: { id: appointment.id },
       data: { status: 'CANCELLED' },
     });
 
     return {
       success: true,
       message: 'Appointment cancelled successfully',
+      appointment: {
+        id: updated.id,
+        status: updated.status,
+        date: updated.appointmentDate,
+      },
     };
   }
 
@@ -784,28 +841,32 @@ export class AiAgentService {
   }
 
   private async handleCancelIntent(payload: WebhookPayloadDto): Promise<WebhookResponseDto> {
-    // If booking_id is provided, execute the cancellation
-    if (payload.booking_id) {
+    // Try to cancel with available information
+    if (payload.booking_id || payload.patient_info?.phone || payload.requested_date) {
       try {
         const result = await this.cancelBooking({
           booking_id: payload.booking_id,
+          phone_number: payload.patient_info?.phone,
+          appointment_date: payload.requested_date,
         });
 
         return {
           reply_text: `Your appointment has been successfully cancelled. If you need to book a new appointment in the future, feel free to call back.`,
           action: 'cancellation_confirmed',
-          booking_id: payload.booking_id,
+          booking_id: result.appointment.id,
           success: true,
+          data: result.appointment,
         };
       } catch (error) {
         return {
-          reply_text: error.message || 'I\'m sorry, I couldn\'t find that appointment. Could you verify the booking ID?',
+          reply_text: error.message || 'I\'m sorry, I couldn\'t find that appointment. Could you verify the booking ID or appointment date?',
           action: 'cancellation_failed',
+          success: false,
         };
       }
     }
 
-    // If booking_id missing, ask for it
+    // If no identifying information provided, ask for it
     return {
       reply_text: 'I can help you cancel your appointment. Can you provide your appointment confirmation number or the date of your appointment?',
       action: 'ask_booking_id',
