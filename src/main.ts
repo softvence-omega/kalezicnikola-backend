@@ -12,7 +12,16 @@ async function bootstrap() {
     rawBody: true,
     bodyParser: true,
   });
-  app.enableCors();
+  // Add CORS configuration
+  app.enableCors({
+    origin: [
+      'http://localhost:3000',
+      'https://kalezicnikola-frontend.vercel.app',
+    ],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    allowedHeaders: 'Content-Type, Authorization',
+    credentials: true,
+  });
 
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: '/api/v1/uploads/',
@@ -38,7 +47,6 @@ async function bootstrap() {
   const config = app.get(ConfigService);
   const port = config.get('port') || 3000;
   // const node_env = config.get('node_env') || 'development';
-
 
   await app.listen(port);
   console.log(`🚀 Application is running successfully! port number ${port}`);

@@ -295,6 +295,7 @@ export class AiAgentService {
             lastName: patient_info.lastName,
             phone: patient_info.phone,
             email: patient_info.email,
+            insuranceId: patient_info.insuranceId || null,
             dob: patient_info.dob ? new Date(patient_info.dob) : null,
             gender: patient_info.gender?.toUpperCase() as any,
             // Link to doctor if needed
@@ -327,6 +328,7 @@ export class AiAgentService {
         patientId: patientId,
         scheduleSlotId: slot_id,
         appointmentDate: new Date(appointment_date),
+        insuranceId: patient_info?.insuranceId || null,
         status: 'SCHEDULED',
         type: 'CHECKUP',
       },
@@ -392,6 +394,7 @@ export class AiAgentService {
       data: {
         scheduleSlotId: dto.new_slot_id,
         appointmentDate: dto.new_date ? new Date(dto.new_date) : undefined,
+        status: 'RESCHEDULED', // Mark as rescheduled
       },
       include: {
         scheduleSlot: true,
@@ -406,6 +409,7 @@ export class AiAgentService {
         id: updated.id,
         date: updated.appointmentDate,
         time: updated.scheduleSlot?.startTime,
+        status: updated.status,
       },
     };
   }
