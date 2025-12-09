@@ -454,10 +454,94 @@ export class AiAgentService {
 
   // =============== SAVE TRANSCRIPTION ===============
   async saveTranscription(dto: TranscriptionSaveDto) {
+    let patientId = dto.patient_id;
+    let appointmentId = dto.appointment_id;
+
+    // Handle Insurance ID smart formatting
+    let formattedInsuranceId = dto.insurance_id;
+    if (formattedInsuranceId) {
+      // Remove any whitespace
+      formattedInsuranceId = formattedInsuranceId.trim().toUpperCase();
+      // Add prefix if missing and it's just numbers or doesn't start with INS-
+      if (!formattedInsuranceId.startsWith('INS-')) {
+        formattedInsuranceId = `INS-${formattedInsuranceId}`;
+      }
+    }
+
+    // STEP 1: Try to extract patient info from transcription/summary if not provided
+    if (!patientId && dto.phone_number) {
+      // Try to find existing patient by phone
+      const existingPatient = await this.prisma.patient.findFirst({
+        where: {
+          phone: dto.phone_number,
+        },
+      });
+
+      if (existingPatient) {
+        patientId = existingPatient.id;
+        
+        // Update patient's insurance ID if provided and not already set
+        if (formattedInsuranceId && !existingPatient.insuranceId) {
+          await this.prisma.patient.update({
+            where: { id: patientId },
+            data: { insuranceId: formattedInsuranceId },
+          });
+        }
+      } else {
+        // Extract patient info from transcription/summary
+        const patientInfo = this.extractPatientInfoFromText(
+          dto.transcription || dto.summary || '',
+        );
+
+        if (patientInfo.firstName || patientInfo.email) {
+          // Create new patient
+          const newPatient = await this.prisma.patient.create({
+            data: {
+              firstName: patientInfo.firstName,
+              lastName: patientInfo.lastName,
+              phone: dto.phone_number,
+              email: patientInfo.email,
+              insuranceId: formattedInsuranceId, // Save insurance ID for new patient
+            },
+          });
+          patientId = newPatient.id;
+        }
+      }
+    } else if (patientId && formattedInsuranceId) {
+       // If patientId provided (e.g. from existing context), check if we need to update insurance
+       const patient = await this.prisma.patient.findUnique({ where: { id: patientId }});
+       if (patient && !patient.insuranceId) {
+          await this.prisma.patient.update({
+            where: { id: patientId },
+            data: { insuranceId: formattedInsuranceId },
+          });
+       }
+    }
+
+    // STEP 2: Try to find appointment if not provided
+    if (!appointmentId && patientId) {
+      // Look for recent appointment for this patient and doctor
+      const recentAppointment = await this.prisma.appointment.findFirst({
+        where: {
+          doctorId: dto.doctor_id,
+          patientId: patientId,
+          status: 'SCHEDULED',
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      if (recentAppointment) {
+        appointmentId = recentAppointment.id;
+      }
+    }
+
+    // STEP 3: Save transcription with linked patient and appointment
     const transcription = await this.prisma.callTranscription.create({
       data: {
         doctorId: dto.doctor_id,
-        patientId: dto.patient_id,
+        patientId: patientId,
         callSid: dto.call_sid,
         phoneNumber: dto.phone_number,
         duration: dto.duration,
@@ -466,19 +550,63 @@ export class AiAgentService {
         intent: dto.intent?.toUpperCase() as any,
         sentiment: dto.sentiment?.toUpperCase() as any,
         summary: dto.summary,
-        appointmentId: dto.appointment_id,
+        appointmentId: appointmentId,
         fallbackNumber: dto.fallback_number || this.fallbackNumber,
         wasTransferred: dto.was_transferred || false,
         callStartedAt: dto.call_started_at ? new Date(dto.call_started_at) : null,
         callEndedAt: dto.call_ended_at ? new Date(dto.call_ended_at) : null,
+        
+        // New fields
+        callStatus: dto.call_status ? (dto.call_status.toUpperCase() as any) : null,
+        reasonForCalling: dto.reason_for_calling,
+        insuranceId: formattedInsuranceId,
       },
     });
 
     return {
       success: true,
       transcription_id: transcription.id,
+      patient_id: patientId,
+      appointment_id: appointmentId,
       message: 'Call transcription saved successfully',
     };
+  }
+
+  // Helper method to extract patient info from conversation text
+  private extractPatientInfoFromText(text: string): {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+  } {
+    const result: { firstName?: string; lastName?: string; email?: string } = {};
+
+    // Extract email using regex
+    const emailMatch = text.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+    if (emailMatch) {
+      result.email = emailMatch[0];
+    }
+
+    // Extract name patterns like "I'm Rocky Hawk" or "my name is Rocky Hawk"
+    const namePatterns = [
+      /(?:I'm|I am|my name is|this is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+      /([A-Z][a-z]+\s+[A-Z][a-z]+)(?:,|\s+and)/,
+    ];
+
+    for (const pattern of namePatterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        const nameParts = match[1].trim().split(/\s+/);
+        if (nameParts.length >= 1) {
+          result.firstName = nameParts[0];
+        }
+        if (nameParts.length >= 2) {
+          result.lastName = nameParts.slice(1).join(' ');
+        }
+        break;
+      }
+    }
+
+    return result;
   }
 
   // =============== GET PATIENT HISTORY ===============

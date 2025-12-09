@@ -58,4 +58,16 @@ export class TranscriptionSaveDto {
 
   @IsOptional()
   was_transferred?: boolean;
+
+  @IsString()
+  @IsOptional()
+  call_status?: string;
+
+  @IsString()
+  @IsOptional()
+  reason_for_calling?: string;
+
+  @IsString()
+  @IsOptional()
+  insurance_id?: string;
 }
