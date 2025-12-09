@@ -764,31 +764,43 @@ export class SubscriptionService implements OnModuleInit {
         return statusMap[stripeStatus] || 'PENDING';
       };
 
-      // Create or update subscription in database
-      const subscription = await this.prisma.subscription.upsert({
-        where: { stripeSubscriptionId: stripeSubscription.id },
-        create: {
-          userId,
-          stripeCustomerId: session.customer as string,
-          stripeSubscriptionId: stripeSubscription.id,
-          planType: planType as any,
-          status: mapStripeStatus(stripeSubscription.status) as any,
-          currentPeriodStart: periodStart,
-          currentPeriodEnd: periodEnd,
-          minutesAllocated: planDetails.minutes,
-          minutesUsed: 0,
-        },
-        update: {
-          stripeCustomerId: session.customer as string,
-          stripeSubscriptionId: stripeSubscription.id,
-          planType: planType as any,
-          status: mapStripeStatus(stripeSubscription.status) as any,
-          currentPeriodStart: periodStart,
-          currentPeriodEnd: periodEnd,
-          minutesAllocated: planDetails.minutes,
-          minutesUsed: 0,
-        },
+      // Check if user already has a subscription
+      const existingSubscription = await this.prisma.subscription.findUnique({
+        where: { userId },
       });
+
+      let subscription;
+      if (existingSubscription) {
+        // Update existing subscription
+        subscription = await this.prisma.subscription.update({
+          where: { userId },
+          data: {
+            stripeCustomerId: session.customer as string,
+            stripeSubscriptionId: stripeSubscription.id,
+            planType: planType as any,
+            status: mapStripeStatus(stripeSubscription.status) as any,
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+            minutesAllocated: planDetails.minutes,
+            minutesUsed: 0,
+          },
+        });
+      } else {
+        // Create new subscription
+        subscription = await this.prisma.subscription.create({
+          data: {
+            userId,
+            stripeCustomerId: session.customer as string,
+            stripeSubscriptionId: stripeSubscription.id,
+            planType: planType as any,
+            status: mapStripeStatus(stripeSubscription.status) as any,
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+            minutesAllocated: planDetails.minutes,
+            minutesUsed: 0,
+          },
+        });
+      }
 
       return {
         success: true,
