@@ -60,9 +60,17 @@ export class DoctorController {
   // ----------------- UPDATE MY PROFILE -------------------
   @Patch('update-my-profile')
   @UseGuards(DoctorGuard)
+  @UseInterceptors(
+    FileInterceptor('photo', {
+      storage: fileStorage,
+      fileFilter: imageFileFilter,
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    }),
+  )
   async updateMyProfile(
     @Headers('authorization') authorization: string,
-    @Body() dto: UpdateDoctorProfileDto,
+    @Body() body: any,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
     if (!authorization) {
       throw new UnauthorizedException('Authorization header is required');
@@ -71,6 +79,40 @@ export class DoctorController {
     const token = authorization.split(' ')[1];
     if (!token) {
       throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    let dto: UpdateDoctorProfileDto;
+
+    // Handle JSON in 'data' field (multipart/form-data pattern)
+    if (body.data) {
+      try {
+        const parsedData = JSON.parse(body.data);
+        dto = plainToInstance(UpdateDoctorProfileDto, parsedData);
+      } catch (err) {
+        throw new BadRequestException("Invalid JSON format in 'data' field");
+      }
+    } else {
+      // Handle standard body (application/json or direct fields)
+      dto = plainToInstance(UpdateDoctorProfileDto, body);
+    }
+
+    // Attach file path if uploaded
+    if (file) {
+      dto.photo = `/api/v1/uploads/${file.filename}`;
+    }
+
+    // Manually validate the DTO since we bypassed global pipe for multipart
+    const errors = await validate(dto);
+    if (errors.length > 0) {
+      // Format errors similar to ValidationPipe
+      const formattedErrors = errors.map((err) => ({
+        property: err.property,
+        constraints: err.constraints,
+      }));
+      throw new BadRequestException({
+        message: 'Validation failed',
+        errors: formattedErrors,
+      });
     }
 
     const result = await this.doctorService.updateMyProfile(token, dto);
