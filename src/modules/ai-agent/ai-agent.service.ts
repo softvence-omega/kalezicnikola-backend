@@ -295,6 +295,7 @@ export class AiAgentService {
             lastName: patient_info.lastName,
             phone: patient_info.phone,
             email: patient_info.email,
+            insuranceId: patient_info.insuranceId || null,
             dob: patient_info.dob ? new Date(patient_info.dob) : null,
             gender: patient_info.gender?.toUpperCase() as any,
             // Link to doctor if needed
@@ -327,6 +328,7 @@ export class AiAgentService {
         patientId: patientId,
         scheduleSlotId: slot_id,
         appointmentDate: new Date(appointment_date),
+        insuranceId: patient_info?.insuranceId || null,
         status: 'SCHEDULED',
         type: 'CHECKUP',
       },
@@ -392,6 +394,7 @@ export class AiAgentService {
       data: {
         scheduleSlotId: dto.new_slot_id,
         appointmentDate: dto.new_date ? new Date(dto.new_date) : undefined,
+        // Keep status as SCHEDULED so it appears in active appointments
       },
       include: {
         scheduleSlot: true,
@@ -406,28 +409,86 @@ export class AiAgentService {
         id: updated.id,
         date: updated.appointmentDate,
         time: updated.scheduleSlot?.startTime,
+        status: updated.status,
       },
     };
   }
 
   // =============== CANCEL BOOKING ===============
-  async cancelBooking(dto: { booking_id: string }) {
-    const appointment = await this.prisma.appointment.findUnique({
-      where: { id: dto.booking_id },
-    });
+  async cancelBooking(dto: { booking_id?: string; phone_number?: string; appointment_date?: string }) {
+    let appointment;
+
+    // Try to find by booking_id first
+    if (dto.booking_id) {
+      appointment = await this.prisma.appointment.findUnique({
+        where: { id: dto.booking_id },
+      });
+    }
+
+    // Fallback: Find by phone number
+    if (!appointment && dto.phone_number) {
+      const patient = await this.prisma.patient.findFirst({
+        where: { phone: dto.phone_number },
+      });
+
+      if (patient) {
+        // Find all SCHEDULED appointments for this patient
+        const appointments = await this.prisma.appointment.findMany({
+          where: {
+            patientId: patient.id,
+            status: 'SCHEDULED',
+          },
+          orderBy: { appointmentDate: 'asc' },
+          include: { scheduleSlot: true },
+        });
+
+        // If date provided, filter by date
+        if (dto.appointment_date && appointments.length > 0) {
+          const searchDate = new Date(dto.appointment_date);
+          const filtered = appointments.filter(apt => {
+            if (!apt.appointmentDate) return false;
+            const aptDate = new Date(apt.appointmentDate);
+            return aptDate.toISOString().split('T')[0] === searchDate.toISOString().split('T')[0];
+          });
+
+          if (filtered.length > 1) {
+            throw new BadRequestException(
+              `Found ${filtered.length} appointments on this date. Please provide the booking ID.`
+            );
+          }
+          appointment = filtered[0];
+        } else if (appointments.length === 1) {
+          // Only one scheduled appointment, use it
+          appointment = appointments[0];
+        } else if (appointments.length > 1) {
+          throw new BadRequestException(
+            `Found ${appointments.length} scheduled appointments. Please provide the booking ID or appointment date.`
+          );
+        }
+      }
+    }
 
     if (!appointment) {
       throw new NotFoundException('Booking not found');
     }
 
-    await this.prisma.appointment.update({
-      where: { id: dto.booking_id },
+    if (appointment.status === 'CANCELLED') {
+      throw new BadRequestException('Appointment is already cancelled');
+    }
+
+    const updated = await this.prisma.appointment.update({
+      where: { id: appointment.id },
       data: { status: 'CANCELLED' },
     });
 
     return {
       success: true,
       message: 'Appointment cancelled successfully',
+      appointment: {
+        id: updated.id,
+        status: updated.status,
+        date: updated.appointmentDate,
+      },
     };
   }
 
@@ -720,6 +781,31 @@ export class AiAgentService {
   }
 
   private async handleRescheduleIntent(payload: WebhookPayloadDto): Promise<WebhookResponseDto> {
+    // If all reschedule parameters provided, execute the reschedule
+    if (payload.booking_id && payload.slot_id && payload.appointment_date) {
+      try {
+        const result = await this.updateBooking({
+          booking_id: payload.booking_id,
+          new_slot_id: payload.slot_id,
+          new_date: payload.appointment_date,
+        });
+
+        return {
+          reply_text: `Your appointment has been successfully rescheduled for ${result.appointment.date} at ${result.appointment.time}.`,
+          action: 'reschedule_confirmed',
+          booking_id: result.booking_id,
+          success: true,
+          data: result.appointment,
+        };
+      } catch (error) {
+        return {
+          reply_text: error.message || 'I\'m sorry, that slot is no longer available. Let me find you another time.',
+          action: 'slot_unavailable',
+        };
+      }
+    }
+
+    // If booking_id missing, ask for it
     if (!payload.booking_id) {
       return {
         reply_text: 'I can help you reschedule. Can you provide your appointment confirmation number or the date of your current appointment?',
@@ -727,6 +813,7 @@ export class AiAgentService {
       };
     }
 
+    // Suggest alternative slots
     const slots = await this.suggestAlternativeSlots({
       doctor_id: payload.doctor_id,
       requested_slot: payload.requested_time || new Date().toISOString(),
@@ -754,17 +841,38 @@ export class AiAgentService {
   }
 
   private async handleCancelIntent(payload: WebhookPayloadDto): Promise<WebhookResponseDto> {
-    if (!payload.booking_id) {
-      return {
-        reply_text: 'I can help you cancel your appointment. Can you provide your appointment confirmation number or the date of your appointment?',
-        action: 'ask_booking_id',
-      };
+    // Extract phone number from either location
+    const phoneNumber = payload.phone_number || payload.patient_info?.phone;
+    
+    // Try to cancel with available information
+    if (payload.booking_id || phoneNumber || payload.appointment_date || payload.requested_date) {
+      try {
+        const result = await this.cancelBooking({
+          booking_id: payload.booking_id,
+          phone_number: phoneNumber,
+          appointment_date: payload.appointment_date || payload.requested_date,
+        });
+
+        return {
+          reply_text: `Your appointment has been successfully cancelled. If you need to book a new appointment in the future, feel free to call back.`,
+          action: 'cancellation_confirmed',
+          booking_id: result.appointment.id,
+          success: true,
+          data: result.appointment,
+        };
+      } catch (error) {
+        return {
+          reply_text: error.message || 'I\'m sorry, I couldn\'t find that appointment. Could you verify the booking ID or appointment date?',
+          action: 'cancellation_failed',
+          success: false,
+        };
+      }
     }
 
+    // If no identifying information provided, ask for it
     return {
-      reply_text: 'I understand you want to cancel your appointment. Are you sure you want to proceed with the cancellation?',
-      action: 'confirm_cancellation',
-      booking_id: payload.booking_id,
+      reply_text: 'I can help you cancel your appointment. Can you provide your appointment confirmation number or the date of your appointment?',
+      action: 'ask_booking_id',
     };
   }
 

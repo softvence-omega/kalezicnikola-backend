@@ -5,6 +5,7 @@ import { WebhookPayloadDto } from './dto/webhook-payload.dto';
 import { KbQueryDto } from './dto/kb-query.dto';
 import { SlotQueryDto } from './dto/slot-query.dto';
 import { TranscriptionSaveDto } from './dto/transcription-save.dto';
+import { CancelBookingDto } from './dto/cancel-booking.dto';
 
 @Controller('ai-agent')
 export class AiAgentController {
@@ -52,7 +53,7 @@ export class AiAgentController {
 
   @Post('booking/cancel')
   @UseGuards(WebhookAuthGuard)
-  async cancelBooking(@Body() dto: { booking_id: string }) {
+  async cancelBooking(@Body() dto: CancelBookingDto) {
     return this.aiAgentService.cancelBooking(dto);
   }
 
