@@ -841,13 +841,16 @@ export class AiAgentService {
   }
 
   private async handleCancelIntent(payload: WebhookPayloadDto): Promise<WebhookResponseDto> {
+    // Extract phone number from either location
+    const phoneNumber = payload.phone_number || payload.patient_info?.phone;
+    
     // Try to cancel with available information
-    if (payload.booking_id || payload.patient_info?.phone || payload.requested_date) {
+    if (payload.booking_id || phoneNumber || payload.appointment_date || payload.requested_date) {
       try {
         const result = await this.cancelBooking({
           booking_id: payload.booking_id,
-          phone_number: payload.patient_info?.phone,
-          appointment_date: payload.requested_date,
+          phone_number: phoneNumber,
+          appointment_date: payload.appointment_date || payload.requested_date,
         });
 
         return {
