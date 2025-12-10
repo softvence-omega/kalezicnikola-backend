@@ -48,6 +48,7 @@ export class WebhookPayloadDto {
     email?: string;
     dob?: string;
     gender?: string;
+    insuranceId?: string;
   };
 
   @IsString()

@@ -199,23 +199,35 @@ export class AppointmentService {
     const total = await this.prisma.appointment.count({ where });
 
     // Get appointments
-    const appointments = await this.prisma.appointment.findMany({
-      where,
-      include: {
-        scheduleSlot: {
-          select: {
-            id: true,
-            startTime: true,
-            endTime: true,
-          },
+  const appointments = await this.prisma.appointment.findMany({
+    where,
+    include: {
+      scheduleSlot: {
+        select: {
+          id: true,
+          startTime: true,
+          endTime: true,
         },
       },
-      orderBy: {
-        [query.sortBy || 'createdAt']: query.sortOrder || 'desc',
+      patient: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          email: true,
+          insuranceId: true,
+          gender: true,
+          dob: true,
+        },
       },
-      skip,
-      take: limit,
-    });
+    },
+    orderBy: {
+      [query.sortBy || 'createdAt']: query.sortOrder || 'desc',
+    },
+    skip,
+    take: limit,
+  });
 
     const totalPages = Math.ceil(total / limit);
 

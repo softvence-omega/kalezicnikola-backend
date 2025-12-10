@@ -30,7 +30,7 @@ model Appointment {
   prescriptions Prescription[]
   labs          Lab[]
   // AI Agent Relations
-  callTranscription CallTranscription? @relation("AppointmentCallTranscription")
+  callTranscriptions CallTranscription[] @relation("AppointmentCallTranscription")
 
   @@map("appointments")
 }
@@ -212,8 +212,13 @@ model CallTranscription {
   sentiment     Sentiment?
   summary       String?   @db.Text
   
+  // Call outcome and details
+  callStatus       CallStatus? // Status of the call
+  reasonForCalling String?     // Why patient called
+  insuranceId      String?     // Patient's insurance ID (INS- prefix)
+  
   // Appointment context (if booking was made)
-  appointmentId String?   @unique
+  appointmentId String?
   
   // Fallback info
   fallbackNumber String?  // Physical assistant number if agent is busy
