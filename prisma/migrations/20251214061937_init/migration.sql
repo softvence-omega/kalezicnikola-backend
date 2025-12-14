@@ -127,6 +127,9 @@ CREATE TYPE "public"."CallIntent" AS ENUM ('BOOK_APPOINTMENT', 'CHECK_AVAILABILI
 -- CreateEnum
 CREATE TYPE "public"."KnowledgeBaseCategory" AS ENUM ('FAQ', 'POLICY', 'TREATMENT', 'PRICING', 'OFFICE_HOURS', 'INSURANCE', 'GENERAL');
 
+-- CreateEnum
+CREATE TYPE "public"."ConversationStatus" AS ENUM ('OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED');
+
 -- CreateTable
 CREATE TABLE "public"."subscription_plans" (
     "id" TEXT NOT NULL,
@@ -191,6 +194,35 @@ CREATE TABLE "public"."notification_queues" (
     "createdAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "notification_queues_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."admin_conversations" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "userRole" "public"."UserRole" NOT NULL,
+    "adminId" TEXT,
+    "status" "public"."ConversationStatus" NOT NULL DEFAULT 'OPEN',
+    "subject" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "admin_conversations_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."support_messages" (
+    "id" TEXT NOT NULL,
+    "conversationId" TEXT NOT NULL,
+    "senderId" TEXT NOT NULL,
+    "message" TEXT NOT NULL,
+    "imageUrl" TEXT,
+    "isRead" BOOLEAN NOT NULL DEFAULT false,
+    "attachments" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "support_messages_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -584,6 +616,7 @@ CREATE TABLE "public"."tasks" (
     "time" TEXT,
     "dueDate" TIMESTAMP(3),
     "patientId" TEXT,
+    "insuranceId" TEXT,
     "createdAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3),
     "deletedAt" TIMESTAMP(3),
@@ -683,6 +716,18 @@ CREATE TABLE "public"."password_resets" (
     CONSTRAINT "password_resets_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "public"."users" (
+    "id" TEXT NOT NULL,
+    "adminId" TEXT,
+    "doctorId" TEXT,
+    "role" "public"."UserRole" NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "subscription_plans_planType_key" ON "public"."subscription_plans"("planType");
 
@@ -699,6 +744,21 @@ CREATE UNIQUE INDEX "subscriptions_stripeSubscriptionId_key" ON "public"."subscr
 CREATE UNIQUE INDEX "invoices_stripeInvoiceId_key" ON "public"."invoices"("stripeInvoiceId");
 
 -- CreateIndex
+CREATE INDEX "admin_conversations_userId_idx" ON "public"."admin_conversations"("userId");
+
+-- CreateIndex
+CREATE INDEX "admin_conversations_adminId_idx" ON "public"."admin_conversations"("adminId");
+
+-- CreateIndex
+CREATE INDEX "admin_conversations_status_idx" ON "public"."admin_conversations"("status");
+
+-- CreateIndex
+CREATE INDEX "support_messages_conversationId_idx" ON "public"."support_messages"("conversationId");
+
+-- CreateIndex
+CREATE INDEX "support_messages_senderId_idx" ON "public"."support_messages"("senderId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "key_managements_version_key" ON "public"."key_managements"("version");
 
 -- CreateIndex
@@ -709,9 +769,6 @@ CREATE UNIQUE INDEX "prescriptions_prescriptionNo_key" ON "public"."prescription
 
 -- CreateIndex
 CREATE UNIQUE INDEX "call_transcriptions_callSid_key" ON "public"."call_transcriptions"("callSid");
-
--- CreateIndex
-CREATE UNIQUE INDEX "call_transcriptions_appointmentId_key" ON "public"."call_transcriptions"("appointmentId");
 
 -- CreateIndex
 CREATE INDEX "call_transcriptions_doctorId_createdAt_idx" ON "public"."call_transcriptions"("doctorId", "createdAt");
@@ -764,8 +821,26 @@ CREATE UNIQUE INDEX "sessions_refreshToken_key" ON "public"."sessions"("refreshT
 -- CreateIndex
 CREATE UNIQUE INDEX "password_resets_token_key" ON "public"."password_resets"("token");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "users_adminId_key" ON "public"."users"("adminId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "users_doctorId_key" ON "public"."users"("doctorId");
+
 -- AddForeignKey
 ALTER TABLE "public"."subscriptions" ADD CONSTRAINT "subscriptions_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."doctors"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."admin_conversations" ADD CONSTRAINT "admin_conversations_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."admin_conversations" ADD CONSTRAINT "admin_conversations_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "public"."users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."support_messages" ADD CONSTRAINT "support_messages_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "public"."admin_conversations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."support_messages" ADD CONSTRAINT "support_messages_senderId_fkey" FOREIGN KEY ("senderId") REFERENCES "public"."users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."patient_consents" ADD CONSTRAINT "patient_consents_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "public"."patients"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -871,3 +946,9 @@ ALTER TABLE "public"."password_resets" ADD CONSTRAINT "password_resets_adminId_f
 
 -- AddForeignKey
 ALTER TABLE "public"."password_resets" ADD CONSTRAINT "password_resets_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "public"."doctors"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."users" ADD CONSTRAINT "users_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "public"."admins"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."users" ADD CONSTRAINT "users_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "public"."doctors"("id") ON DELETE SET NULL ON UPDATE CASCADE;
