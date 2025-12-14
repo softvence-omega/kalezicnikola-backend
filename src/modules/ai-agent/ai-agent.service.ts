@@ -859,7 +859,8 @@ export class AiAgentService {
 
       return {
         reply_text: `I have availability on ${slotTexts}. Which time works best for you?`,
-        suggested_slots: slots.alternative_slots.slice(0, 3),
+        // Return ALL slots (up to 20) in the data payload so the LLM knows about them
+        suggested_slots: slots.alternative_slots.slice(0, 20),
         action: 'ask_slot',
       };
     }
