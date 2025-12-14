@@ -145,6 +145,17 @@ export class SubscriptionController {
     return this.subscriptionService.getInvoices(userId);
   }
 
+  @Get('purchases')
+  @ApiOperation({ summary: 'Get all user purchases/transactions' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns all purchases and transaction history for the user',
+  })
+  async getUserPurchases(@Request() req) {
+    const userId = req.user.id;
+    return this.subscriptionService.getUserPurchases(userId);
+  }
+
   @Post('checkout')
   @ApiOperation({ summary: 'Create Stripe checkout session' })
   @ApiResponse({
