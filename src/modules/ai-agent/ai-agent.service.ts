@@ -303,12 +303,12 @@ export class AiAgentService {
               slotId: slot.id,
             });
 
-            if (alternatives.length >= 5) break;
+            if (alternatives.length >= 20) break;
           }
         }
       }
 
-      if (alternatives.length >= 5) break;
+      if (alternatives.length >= 20) break;
     }
 
     return { alternative_slots: alternatives };
