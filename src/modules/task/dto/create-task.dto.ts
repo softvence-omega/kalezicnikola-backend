@@ -39,4 +39,8 @@ export class CreateTaskDto {
   @IsOptional()
   @IsUUID()
   patientId?: string;
+
+  @IsOptional()
+  @IsString()
+  insuranceId?: string;
 }
