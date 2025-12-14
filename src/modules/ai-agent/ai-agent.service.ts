@@ -155,7 +155,7 @@ export class AiAgentService {
       slotId: string;
       startTime: string;
       endTime: string;
-      appointment: { id: string; patientName: string };
+      appointment: { id: number; patientName: string };
     }> = [];
 
     for (const slot of schedule.slots) {
@@ -225,9 +225,38 @@ export class AiAgentService {
         : new Date();
 
     // Validate the date
+    const currentYear = new Date().getFullYear();
+    
     if (isNaN(requestedDate.getTime())) {
-      // If invalid date, use current date
-      requestedDate.setTime(Date.now());
+      // Try parsing with current year appended if initial parse failed
+      const retryDate = new Date(`${requested_slot} ${currentYear}`);
+      
+      if (!isNaN(retryDate.getTime())) {
+        requestedDate.setTime(retryDate.getTime());
+      } else {
+        throw new BadRequestException('Invalid date format');
+      }
+    } else {
+      // If date parsed but year is significantly in the past (e.g., default 2001 behavior),
+      // try to use the current year with the original input string
+      if (requestedDate.getFullYear() < currentYear) {
+         const retryDate = new Date(`${requested_slot} ${currentYear}`);
+         // Only use retryDate if it's valid
+         if (!isNaN(retryDate.getTime())) {
+             requestedDate.setTime(retryDate.getTime());
+         }
+      }
+    }
+
+    // Ensure start date is not in the past
+    const now = new Date();
+    const today = new Date();
+    now.setHours(0, 0, 0, 0); // Start of today
+
+    if (requestedDate < now) {
+      // If requested date is explicitly in the past (and valid), default to today
+      // This covers logic where "last Monday" might parse to a past date
+      requestedDate.setTime(now.getTime());
     }
 
     const alternatives: Array<{ date: string; time: string; slotId: string }> =
@@ -289,6 +318,18 @@ export class AiAgentService {
   async createBooking(dto: any) {
     const { doctor_id, patient_id, slot_id, appointment_date, patient_info } =
       dto;
+
+    // Validate appointment date is in the future or today
+    const apptDate = new Date(appointment_date);
+    const now = new Date();
+    // Compare dates only (set time to 00:00:00)
+    now.setHours(0, 0, 0, 0);
+    const checkDate = new Date(apptDate);
+    checkDate.setHours(0, 0, 0, 0);
+
+    if (checkDate < now) {
+      throw new BadRequestException('Cannot book an appointment in the past.');
+    }
 
     let patientId = patient_id;
     let isNewPatient = false;
@@ -398,7 +439,7 @@ export class AiAgentService {
     new_date?: string;
   }) {
     const appointment = await this.prisma.appointment.findUnique({
-      where: { id: dto.booking_id },
+      where: { id: Number(dto.booking_id) },
     });
 
     if (!appointment) {
@@ -407,13 +448,26 @@ export class AiAgentService {
 
     // If changing slot, verify availability
     if (dto.new_slot_id && dto.new_date) {
+      // Validate new date is in future
+      const newDate = new Date(dto.new_date);
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const checkDate = new Date(newDate);
+      checkDate.setHours(0, 0, 0, 0);
+
+      if (checkDate < now) {
+        throw new BadRequestException(
+          'Cannot reschedule to a date in the past.',
+        );
+      }
+
       const existingAppointment = await this.prisma.appointment.findFirst({
         where: {
           doctorId: appointment.doctorId,
           scheduleSlotId: dto.new_slot_id,
           appointmentDate: new Date(dto.new_date),
           status: 'SCHEDULED',
-          id: { not: dto.booking_id },
+          id: { not: Number(dto.booking_id) },
         },
       });
 
@@ -423,7 +477,7 @@ export class AiAgentService {
     }
 
     const updated = await this.prisma.appointment.update({
-      where: { id: dto.booking_id },
+      where: { id: Number(dto.booking_id) },
       data: {
         scheduleSlotId: dto.new_slot_id,
         appointmentDate: dto.new_date ? new Date(dto.new_date) : undefined,
@@ -458,7 +512,7 @@ export class AiAgentService {
     // Try to find by booking_id first
     if (dto.booking_id) {
       appointment = await this.prisma.appointment.findUnique({
-        where: { id: dto.booking_id },
+        where: { id: Number(dto.booking_id) },
       });
     }
 
@@ -535,7 +589,7 @@ export class AiAgentService {
   // =============== GET BOOKING ===============
   async getBooking(bookingId: string) {
     const appointment = await this.prisma.appointment.findUnique({
-      where: { id: bookingId },
+      where: { id: Number(bookingId) },
       include: {
         doctor: {
           select: { firstName: true, lastName: true, specialities: true },
@@ -560,7 +614,7 @@ export class AiAgentService {
   // =============== SAVE TRANSCRIPTION ===============
   async saveTranscription(dto: TranscriptionSaveDto) {
     let patientId = dto.patient_id;
-    let appointmentId = dto.appointment_id;
+    let appointmentId = dto.appointment_id ? Number(dto.appointment_id) : undefined;
 
     // Insurance ID: optional, digits only (no INS prefix)
     let insuranceId: string | undefined = dto.insurance_id;
@@ -700,16 +754,21 @@ export class AiAgentService {
       result.email = emailMatch[0];
     }
 
-    // Extract name patterns like "I'm Rocky Hawk" or "my name is Rocky Hawk"
+    // Extract name patterns
+    // Support: "My full name is...", "I am...", "This is...", "First name and last name is..."
     const namePatterns = [
-      /(?:I'm|I am|my name is|this is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+      /(?:my\s+full\s+name\s+is|my\s+name\s+is|i'm|i\s+am|this\s+is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
+      /first\s+name\s+and\s+last\s+name\s+is\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
       /([A-Z][a-z]+\s+[A-Z][a-z]+)(?:,|\s+and)/,
     ];
 
     for (const pattern of namePatterns) {
       const match = text.match(pattern);
       if (match && match[1]) {
-        const nameParts = match[1].trim().split(/\s+/);
+        // clean up the name
+        const fullName = match[1].trim();
+        const nameParts = fullName.split(/\s+/);
+        
         if (nameParts.length >= 1) {
           result.firstName = nameParts[0];
         }
@@ -772,18 +831,24 @@ export class AiAgentService {
           data: booking.appointment,
         };
       } catch (error) {
-        // If booking fails (slot taken, etc.), suggest alternatives
+        // If booking fails, return specific error message if available
+        const errorMessage =
+          error instanceof BadRequestException
+            ? error.message
+            : "I'm sorry, that slot is no longer available. Let me find you another time.";
+
         return {
-          reply_text: `I'm sorry, that slot is no longer available. Let me find you another time.`,
+          reply_text: errorMessage,
           action: 'slot_unavailable',
         };
       }
     }
 
     // Otherwise, suggest available slots
+  try {
     const slots = await this.suggestAlternativeSlots({
       doctor_id: payload.doctor_id,
-      requested_slot: payload.requested_time || new Date().toISOString(),
+      requested_slot: payload.requested_time || payload.requested_date || new Date().toISOString(),
     });
 
     if (slots.alternative_slots.length > 0) {
@@ -798,8 +863,16 @@ export class AiAgentService {
         action: 'ask_slot',
       };
     }
+  } catch (error) {
+    if (error instanceof BadRequestException && error.message === 'Invalid date format') {
+      return {
+        reply_text: "I didn't quite catch the date properly. Could you please repeat the date you'd like to book?",
+        action: 'ask_date',
+      };
+    }
+  }
 
-    return {
+  return {
       reply_text:
         "I apologize, but we don't have availability in the near future. Would you like me to check next week, or connect you with our assistant?",
       action: 'no_availability',
@@ -860,10 +933,13 @@ export class AiAgentService {
           data: result.appointment,
         };
       } catch (error) {
+        const errorMessage =
+          error instanceof BadRequestException || error.message
+            ? error.message
+            : "I'm sorry, that slot is no longer available. Let me find you another time.";
+
         return {
-          reply_text:
-            error.message ||
-            "I'm sorry, that slot is no longer available. Let me find you another time.",
+          reply_text: errorMessage,
           action: 'slot_unavailable',
         };
       }

@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   ValidateNested,
+  IsInt,
 } from 'class-validator';
 import { LabResultDto } from './lab-result.dto';
 
@@ -15,8 +16,8 @@ export class CreateLabDto {
   patientId: string;
 
   @IsNotEmpty()
-  @IsString()
-  appointmentId: string;
+  @IsInt()
+  appointmentId: number;
 
   @IsOptional()
   @IsDateString()

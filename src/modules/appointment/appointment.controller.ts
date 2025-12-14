@@ -11,6 +11,7 @@ import {
   Headers,
   UnauthorizedException,
   UseGuards,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { AppointmentService } from './appointment.service';
 import { DoctorGuard } from 'src/common/guard/doctor.guard';
@@ -135,7 +136,7 @@ export class AppointmentController {
   @UseGuards(DoctorGuard)
   async getSingleAppointment(
     @Headers('authorization') authorization: string,
-    @Param('id') appointmentId: string,
+    @Param('id', ParseIntPipe) appointmentId: number,
   ) {
     if (!authorization) {
       throw new UnauthorizedException('Authorization header is required');
@@ -163,7 +164,7 @@ export class AppointmentController {
   @UseGuards(DoctorGuard)
   async updateAppointment(
     @Headers('authorization') authorization: string,
-    @Param('id') appointmentId: string,
+    @Param('id', ParseIntPipe) appointmentId: number,
     @Body() dto: UpdateAppointmentDto,
   ) {
     if (!authorization) {
@@ -193,7 +194,7 @@ export class AppointmentController {
   @UseGuards(DoctorGuard)
   async deleteAppointment(
     @Headers('authorization') authorization: string,
-    @Param('id') appointmentId: string,
+    @Param('id', ParseIntPipe) appointmentId: number,
   ) {
     if (!authorization) {
       throw new UnauthorizedException('Authorization header is required');
