@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { WebhookPayloadDto } from './dto/webhook-payload.dto';
@@ -21,7 +25,9 @@ export class AiAgentService {
   }
 
   // =============== MAIN WEBHOOK PROCESSOR ===============
-  async processWebhook(payload: WebhookPayloadDto): Promise<WebhookResponseDto> {
+  async processWebhook(
+    payload: WebhookPayloadDto,
+  ): Promise<WebhookResponseDto> {
     const { intent, doctor_id, agent_busy } = payload;
 
     // If agent is busy, provide fallback number
@@ -48,7 +54,8 @@ export class AiAgentService {
         return this.handleInquiryIntent(payload);
       default:
         return {
-          reply_text: 'I can help you with booking appointments, checking availability, or answering questions about our services. How can I assist you today?',
+          reply_text:
+            'I can help you with booking appointments, checking availability, or answering questions about our services. How can I assist you today?',
           action: 'ask_intent',
         };
     }
@@ -66,17 +73,20 @@ export class AiAgentService {
 
     if (kbEntries.length === 0) {
       return {
-        answer: 'I don\'t have specific information about that at the moment. Would you like me to connect you with our team?',
+        answer:
+          "I don't have specific information about that at the moment. Would you like me to connect you with our team?",
         category: null,
       };
     }
 
     // Simple keyword matching (can be enhanced with vector search later)
     const queryLower = dto.query.toLowerCase();
-    const matches = kbEntries.filter(entry => {
+    const matches = kbEntries.filter((entry) => {
       const questionMatch = entry.question.toLowerCase().includes(queryLower);
       const answerMatch = entry.answer.toLowerCase().includes(queryLower);
-      const keywordMatch = entry.keywords.some(kw => queryLower.includes(kw.toLowerCase()));
+      const keywordMatch = entry.keywords.some((kw) =>
+        queryLower.includes(kw.toLowerCase()),
+      );
       return questionMatch || answerMatch || keywordMatch;
     });
 
@@ -110,7 +120,9 @@ export class AiAgentService {
     }
 
     const queryDate = date ? new Date(date) : new Date();
-    const dayOfWeek = queryDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
+    const dayOfWeek = queryDate
+      .toLocaleDateString('en-US', { weekday: 'long' })
+      .toUpperCase();
 
     // Get schedule for the day
     const schedule = await this.prisma.doctorWeeklySchedule.findFirst({
@@ -134,8 +146,17 @@ export class AiAgentService {
       };
     }
 
-    const availableSlots: Array<{ slotId: string; startTime: string; endTime: string }> = [];
-    const unavailableSlots: Array<{ slotId: string; startTime: string; endTime: string; appointment: { id: string; patientName: string } }> = [];
+    const availableSlots: Array<{
+      slotId: string;
+      startTime: string;
+      endTime: string;
+    }> = [];
+    const unavailableSlots: Array<{
+      slotId: string;
+      startTime: string;
+      endTime: string;
+      appointment: { id: string; patientName: string };
+    }> = [];
 
     for (const slot of schedule.slots) {
       if (scheduleSlotId && slot.id !== scheduleSlotId) continue;
@@ -169,7 +190,8 @@ export class AiAgentService {
           endTime: slot.endTime,
           appointment: {
             id: existingAppointment.id,
-            patientName: `${existingAppointment.patient?.firstName || ''} ${existingAppointment.patient?.lastName || ''}`.trim(),
+            patientName:
+              `${existingAppointment.patient?.firstName || ''} ${existingAppointment.patient?.lastName || ''}`.trim(),
           },
         });
       } else {
@@ -197,24 +219,28 @@ export class AiAgentService {
     const { doctor_id, requested_slot } = dto;
 
     // Use current date if requested_slot is empty or invalid
-    const requestedDate = (requested_slot && requested_slot.trim() !== '') 
-      ? new Date(requested_slot) 
-      : new Date();
-    
+    const requestedDate =
+      requested_slot && requested_slot.trim() !== ''
+        ? new Date(requested_slot)
+        : new Date();
+
     // Validate the date
     if (isNaN(requestedDate.getTime())) {
       // If invalid date, use current date
       requestedDate.setTime(Date.now());
     }
 
-    const alternatives: Array<{ date: string; time: string; slotId: string }> = [];
+    const alternatives: Array<{ date: string; time: string; slotId: string }> =
+      [];
 
     // Get next 7 days of schedules
     for (let i = 0; i < 7; i++) {
       const checkDate = new Date(requestedDate);
       checkDate.setDate(checkDate.getDate() + i);
 
-      const dayOfWeek = checkDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
+      const dayOfWeek = checkDate
+        .toLocaleDateString('en-US', { weekday: 'long' })
+        .toUpperCase();
 
       // Get schedule for this day
       const schedule = await this.prisma.doctorWeeklySchedule.findFirst({
@@ -261,7 +287,8 @@ export class AiAgentService {
 
   // =============== CREATE BOOKING ===============
   async createBooking(dto: any) {
-    const { doctor_id, patient_id, slot_id, appointment_date, patient_info } = dto;
+    const { doctor_id, patient_id, slot_id, appointment_date, patient_info } =
+      dto;
 
     let patientId = patient_id;
     let isNewPatient = false;
@@ -269,9 +296,11 @@ export class AiAgentService {
     // HYBRID APPROACH: Handle both existing and new patients
     if (!patientId) {
       // No patient_id provided - need to find or create patient
-      
+
       if (!patient_info || !patient_info.phone) {
-        throw new BadRequestException('Patient phone number is required for booking');
+        throw new BadRequestException(
+          'Patient phone number is required for booking',
+        );
       }
 
       // STEP 1: Try to find existing patient by phone number
@@ -349,7 +378,7 @@ export class AiAgentService {
     return {
       success: true,
       booking_id: appointment.id,
-      message: isNewPatient 
+      message: isNewPatient
         ? 'New patient registered and appointment booked successfully'
         : 'Appointment booked successfully',
       is_new_patient: isNewPatient,
@@ -363,7 +392,11 @@ export class AiAgentService {
   }
 
   // =============== UPDATE BOOKING ===============
-  async updateBooking(dto: { booking_id: string; new_slot_id?: string; new_date?: string }) {
+  async updateBooking(dto: {
+    booking_id: string;
+    new_slot_id?: string;
+    new_date?: string;
+  }) {
     const appointment = await this.prisma.appointment.findUnique({
       where: { id: dto.booking_id },
     });
@@ -415,7 +448,11 @@ export class AiAgentService {
   }
 
   // =============== CANCEL BOOKING ===============
-  async cancelBooking(dto: { booking_id?: string; phone_number?: string; appointment_date?: string }) {
+  async cancelBooking(dto: {
+    booking_id?: string;
+    phone_number?: string;
+    appointment_date?: string;
+  }) {
     let appointment;
 
     // Try to find by booking_id first
@@ -445,15 +482,18 @@ export class AiAgentService {
         // If date provided, filter by date
         if (dto.appointment_date && appointments.length > 0) {
           const searchDate = new Date(dto.appointment_date);
-          const filtered = appointments.filter(apt => {
+          const filtered = appointments.filter((apt) => {
             if (!apt.appointmentDate) return false;
             const aptDate = new Date(apt.appointmentDate);
-            return aptDate.toISOString().split('T')[0] === searchDate.toISOString().split('T')[0];
+            return (
+              aptDate.toISOString().split('T')[0] ===
+              searchDate.toISOString().split('T')[0]
+            );
           });
 
           if (filtered.length > 1) {
             throw new BadRequestException(
-              `Found ${filtered.length} appointments on this date. Please provide the booking ID.`
+              `Found ${filtered.length} appointments on this date. Please provide the booking ID.`,
             );
           }
           appointment = filtered[0];
@@ -462,7 +502,7 @@ export class AiAgentService {
           appointment = appointments[0];
         } else if (appointments.length > 1) {
           throw new BadRequestException(
-            `Found ${appointments.length} scheduled appointments. Please provide the booking ID or appointment date.`
+            `Found ${appointments.length} scheduled appointments. Please provide the booking ID or appointment date.`,
           );
         }
       }
@@ -497,8 +537,12 @@ export class AiAgentService {
     const appointment = await this.prisma.appointment.findUnique({
       where: { id: bookingId },
       include: {
-        doctor: { select: { firstName: true, lastName: true, specialities: true } },
-        patient: { select: { firstName: true, lastName: true, phone: true, email: true } },
+        doctor: {
+          select: { firstName: true, lastName: true, specialities: true },
+        },
+        patient: {
+          select: { firstName: true, lastName: true, phone: true, email: true },
+        },
         scheduleSlot: true,
       },
     });
@@ -518,15 +562,17 @@ export class AiAgentService {
     let patientId = dto.patient_id;
     let appointmentId = dto.appointment_id;
 
-    // Handle Insurance ID smart formatting
-    let formattedInsuranceId = dto.insurance_id;
-    if (formattedInsuranceId) {
-      // Remove any whitespace
-      formattedInsuranceId = formattedInsuranceId.trim().toUpperCase();
-      // Add prefix if missing and it's just numbers or doesn't start with INS-
-      if (!formattedInsuranceId.startsWith('INS-')) {
-        formattedInsuranceId = `INS-${formattedInsuranceId}`;
-      }
+    // Insurance ID: optional, digits only (no INS prefix)
+    let insuranceId: string | undefined = dto.insurance_id;
+
+    if (insuranceId) {
+      // Remove whitespace just in case
+      insuranceId = insuranceId.trim();
+
+      // Optional extra safety: keep only digits
+      insuranceId = insuranceId.replace(/\D/g, '');
+
+      // At this point DTO already guarantees length === 10
     }
 
     // STEP 1: Try to extract patient info from transcription/summary if not provided
@@ -540,12 +586,12 @@ export class AiAgentService {
 
       if (existingPatient) {
         patientId = existingPatient.id;
-        
+
         // Update patient's insurance ID if provided and not already set
-        if (formattedInsuranceId && !existingPatient.insuranceId) {
+        if (insuranceId && !existingPatient.insuranceId) {
           await this.prisma.patient.update({
             where: { id: patientId },
-            data: { insuranceId: formattedInsuranceId },
+            data: { insuranceId: insuranceId },
           });
         }
       } else {
@@ -562,21 +608,23 @@ export class AiAgentService {
               lastName: patientInfo.lastName,
               phone: dto.phone_number,
               email: patientInfo.email,
-              insuranceId: formattedInsuranceId, // Save insurance ID for new patient
+              insuranceId: insuranceId, // Save insurance ID for new patient
             },
           });
           patientId = newPatient.id;
         }
       }
-    } else if (patientId && formattedInsuranceId) {
-       // If patientId provided (e.g. from existing context), check if we need to update insurance
-       const patient = await this.prisma.patient.findUnique({ where: { id: patientId }});
-       if (patient && !patient.insuranceId) {
-          await this.prisma.patient.update({
-            where: { id: patientId },
-            data: { insuranceId: formattedInsuranceId },
-          });
-       }
+    } else if (patientId && insuranceId) {
+      // If patientId provided (e.g. from existing context), check if we need to update insurance
+      const patient = await this.prisma.patient.findUnique({
+        where: { id: patientId },
+      });
+      if (patient && !patient.insuranceId) {
+        await this.prisma.patient.update({
+          where: { id: patientId },
+          data: { insuranceId: insuranceId },
+        });
+      }
     }
 
     // STEP 2: Try to find appointment if not provided
@@ -614,13 +662,17 @@ export class AiAgentService {
         appointmentId: appointmentId,
         fallbackNumber: dto.fallback_number || this.fallbackNumber,
         wasTransferred: dto.was_transferred || false,
-        callStartedAt: dto.call_started_at ? new Date(dto.call_started_at) : null,
+        callStartedAt: dto.call_started_at
+          ? new Date(dto.call_started_at)
+          : null,
         callEndedAt: dto.call_ended_at ? new Date(dto.call_ended_at) : null,
-        
+
         // New fields
-        callStatus: dto.call_status ? (dto.call_status.toUpperCase() as any) : null,
+        callStatus: dto.call_status
+          ? (dto.call_status.toUpperCase() as any)
+          : null,
         reasonForCalling: dto.reason_for_calling,
-        insuranceId: formattedInsuranceId,
+        insuranceId: insuranceId,
       },
     });
 
@@ -639,7 +691,8 @@ export class AiAgentService {
     lastName?: string;
     email?: string;
   } {
-    const result: { firstName?: string; lastName?: string; email?: string } = {};
+    const result: { firstName?: string; lastName?: string; email?: string } =
+      {};
 
     // Extract email using regex
     const emailMatch = text.match(/[\w\.-]+@[\w\.-]+\.\w+/);
@@ -694,7 +747,9 @@ export class AiAgentService {
   }
 
   // =============== INTENT HANDLERS ===============
-  private async handleBookingIntent(payload: WebhookPayloadDto): Promise<WebhookResponseDto> {
+  private async handleBookingIntent(
+    payload: WebhookPayloadDto,
+  ): Promise<WebhookResponseDto> {
     // If slot_id and appointment_date are provided, book directly
     if (payload.slot_id && payload.appointment_date) {
       try {
@@ -734,7 +789,7 @@ export class AiAgentService {
     if (slots.alternative_slots.length > 0) {
       const slotTexts = slots.alternative_slots
         .slice(0, 3)
-        .map(s => `${s.date} at ${s.time}`)
+        .map((s) => `${s.date} at ${s.time}`)
         .join(', or ');
 
       return {
@@ -745,13 +800,16 @@ export class AiAgentService {
     }
 
     return {
-      reply_text: 'I apologize, but we don\'t have availability in the near future. Would you like me to check next week, or connect you with our assistant?',
+      reply_text:
+        "I apologize, but we don't have availability in the near future. Would you like me to check next week, or connect you with our assistant?",
       action: 'no_availability',
       fallback_number: this.fallbackNumber,
     };
   }
 
-  private async handleAvailabilityIntent(payload: WebhookPayloadDto): Promise<WebhookResponseDto> {
+  private async handleAvailabilityIntent(
+    payload: WebhookPayloadDto,
+  ): Promise<WebhookResponseDto> {
     const availability = await this.getAvailableSlots({
       doctor_id: payload.doctor_id,
       date: payload.requested_date || new Date().toISOString().split('T')[0],
@@ -760,13 +818,14 @@ export class AiAgentService {
     if (availability.summary.available > 0) {
       const slotList = availability.availableSlots
         .slice(0, 3)
-        .map(s => `${s.startTime} to ${s.endTime}`)
+        .map((s) => `${s.startTime} to ${s.endTime}`)
         .join(', ');
 
       return {
         reply_text: `Yes, we have ${availability.summary.available} slots available. Available times include: ${slotList}. Would you like to book one of these?`,
-        suggested_slots: availability.availableSlots.slice(0, 3).map(s => ({
-          date: payload.requested_date || new Date().toISOString().split('T')[0],
+        suggested_slots: availability.availableSlots.slice(0, 3).map((s) => ({
+          date:
+            payload.requested_date || new Date().toISOString().split('T')[0],
           time: s.startTime,
           slotId: s.slotId,
         })),
@@ -775,12 +834,15 @@ export class AiAgentService {
     }
 
     return {
-      reply_text: 'Unfortunately, we\'re fully booked on that date. Would you like me to suggest alternative dates?',
+      reply_text:
+        "Unfortunately, we're fully booked on that date. Would you like me to suggest alternative dates?",
       action: 'suggest_alternatives',
     };
   }
 
-  private async handleRescheduleIntent(payload: WebhookPayloadDto): Promise<WebhookResponseDto> {
+  private async handleRescheduleIntent(
+    payload: WebhookPayloadDto,
+  ): Promise<WebhookResponseDto> {
     // If all reschedule parameters provided, execute the reschedule
     if (payload.booking_id && payload.slot_id && payload.appointment_date) {
       try {
@@ -799,7 +861,9 @@ export class AiAgentService {
         };
       } catch (error) {
         return {
-          reply_text: error.message || 'I\'m sorry, that slot is no longer available. Let me find you another time.',
+          reply_text:
+            error.message ||
+            "I'm sorry, that slot is no longer available. Let me find you another time.",
           action: 'slot_unavailable',
         };
       }
@@ -808,7 +872,8 @@ export class AiAgentService {
     // If booking_id missing, ask for it
     if (!payload.booking_id) {
       return {
-        reply_text: 'I can help you reschedule. Can you provide your appointment confirmation number or the date of your current appointment?',
+        reply_text:
+          'I can help you reschedule. Can you provide your appointment confirmation number or the date of your current appointment?',
         action: 'ask_booking_id',
       };
     }
@@ -822,7 +887,7 @@ export class AiAgentService {
     if (slots.alternative_slots.length > 0) {
       const slotTexts = slots.alternative_slots
         .slice(0, 3)
-        .map(s => `${s.date} at ${s.time}`)
+        .map((s) => `${s.date} at ${s.time}`)
         .join(', or ');
 
       return {
@@ -834,18 +899,26 @@ export class AiAgentService {
     }
 
     return {
-      reply_text: 'I don\'t have immediate availability. Would you like me to connect you with our assistant to find a suitable time?',
+      reply_text:
+        "I don't have immediate availability. Would you like me to connect you with our assistant to find a suitable time?",
       action: 'transfer_to_assistant',
       fallback_number: this.fallbackNumber,
     };
   }
 
-  private async handleCancelIntent(payload: WebhookPayloadDto): Promise<WebhookResponseDto> {
+  private async handleCancelIntent(
+    payload: WebhookPayloadDto,
+  ): Promise<WebhookResponseDto> {
     // Extract phone number from either location
     const phoneNumber = payload.phone_number || payload.patient_info?.phone;
-    
+
     // Try to cancel with available information
-    if (payload.booking_id || phoneNumber || payload.appointment_date || payload.requested_date) {
+    if (
+      payload.booking_id ||
+      phoneNumber ||
+      payload.appointment_date ||
+      payload.requested_date
+    ) {
       try {
         const result = await this.cancelBooking({
           booking_id: payload.booking_id,
@@ -862,7 +935,9 @@ export class AiAgentService {
         };
       } catch (error) {
         return {
-          reply_text: error.message || 'I\'m sorry, I couldn\'t find that appointment. Could you verify the booking ID or appointment date?',
+          reply_text:
+            error.message ||
+            "I'm sorry, I couldn't find that appointment. Could you verify the booking ID or appointment date?",
           action: 'cancellation_failed',
           success: false,
         };
@@ -871,12 +946,15 @@ export class AiAgentService {
 
     // If no identifying information provided, ask for it
     return {
-      reply_text: 'I can help you cancel your appointment. Can you provide your appointment confirmation number or the date of your appointment?',
+      reply_text:
+        'I can help you cancel your appointment. Can you provide your appointment confirmation number or the date of your appointment?',
       action: 'ask_booking_id',
     };
   }
 
-  private async handleInquiryIntent(payload: WebhookPayloadDto): Promise<WebhookResponseDto> {
+  private async handleInquiryIntent(
+    payload: WebhookPayloadDto,
+  ): Promise<WebhookResponseDto> {
     const kbResponse = await this.queryKnowledgeBase({
       doctor_id: payload.doctor_id,
       query: payload.query || '',
