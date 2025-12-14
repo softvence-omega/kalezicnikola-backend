@@ -6,6 +6,8 @@ import {
   IsOptional,
   Matches,
   IsEnum,
+  IsNumberString,
+  Length,
 } from 'class-validator';
 import {
   BloodGroup,
@@ -40,10 +42,8 @@ export class CreatePatientDto {
   email?: string;
 
   @IsOptional()
-  @IsString()
-  @Matches(/^INS-\d+$/, {
-    message: 'Insurance ID must start with INS- followed by digits',
-  })
+  @IsNumberString()
+  @Length(10, 10, { message: 'Insurance ID must be exactly 10 digits' })
   insuranceId?: string;
 
   @IsOptional()

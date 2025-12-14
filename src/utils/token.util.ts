@@ -55,18 +55,18 @@ export class TokenUtil {
     try {
       // First decode without verification to see the payload
       const decoded = this.jwtService.decode(token) as any;
-      console.log('🔍 Token Debug Info:');
-      console.log('  - Current time:', new Date().toISOString(), '(', Math.floor(Date.now() / 1000), ')');
-      console.log('  - Token exp:', decoded?.exp ? new Date(decoded.exp * 1000).toISOString() : 'N/A', '(', decoded?.exp, ')');
-      console.log('  - Token iat:', decoded?.iat ? new Date(decoded.iat * 1000).toISOString() : 'N/A', '(', decoded?.iat, ')');
+      // console.log('🔍 Token Debug Info:');
+      // console.log('  - Current time:', new Date().toISOString(), '(', Math.floor(Date.now() / 1000), ')');
+      // console.log('  - Token exp:', decoded?.exp ? new Date(decoded.exp * 1000).toISOString() : 'N/A', '(', decoded?.exp, ')');
+      // console.log('  - Token iat:', decoded?.iat ? new Date(decoded.iat * 1000).toISOString() : 'N/A', '(', decoded?.iat, ')');
       
       // Explicit expiration check
       const currentTimestamp = Math.floor(Date.now() / 1000);
       const isExpired = decoded?.exp && currentTimestamp > decoded.exp;
-      console.log('  - Is expired?', isExpired, '(current:', currentTimestamp, 'exp:', decoded?.exp, ')');
+      // console.log('  - Is expired?', isExpired, '(current:', currentTimestamp, 'exp:', decoded?.exp, ')');
       
       if (isExpired) {
-        console.log('  - ❌ Token is expired');
+        // console.log('  - ❌ Token is expired');
         throw new UnauthorizedException('Access token has expired');
       }
       
@@ -75,10 +75,10 @@ export class TokenUtil {
         ignoreExpiration: false, // Explicitly set to false
       });
       
-      console.log('  - ✅ Token verified successfully');
+      // console.log('  - ✅ Token verified successfully');
       return verified;
     } catch (error) {
-      console.log('  - ❌ Token verification failed:', error.message);
+      // console.log('  - ❌ Token verification failed:', error.message);
       if (error instanceof UnauthorizedException) {
         throw error;
       }

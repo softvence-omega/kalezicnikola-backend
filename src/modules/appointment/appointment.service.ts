@@ -451,7 +451,7 @@ export class AppointmentService {
   }
 
   // ----------------- GET SINGLE APPOINTMENT -------------------
-  async getSingleAppointment(accessToken: string, appointmentId: string) {
+  async getSingleAppointment(accessToken: string, appointmentId: number) {
     // Verify doctor is authenticated
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
@@ -514,7 +514,7 @@ export class AppointmentService {
   // ----------------- UPDATE APPOINTMENT -------------------
   async updateAppointment(
     accessToken: string,
-    appointmentId: string,
+    appointmentId: number,
     dto: UpdateAppointmentDto,
   ) {
     // Verify doctor is authenticated
@@ -697,7 +697,7 @@ export class AppointmentService {
   }
 
   // ----------------- DELETE APPOINTMENT -------------------
-  async deleteAppointment(accessToken: string, appointmentId: string) {
+  async deleteAppointment(accessToken: string, appointmentId: number) {
     // Verify doctor is authenticated
     const session = await this.prisma.session.findUnique({
       where: { accessToken },

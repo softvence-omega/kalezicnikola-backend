@@ -6,7 +6,7 @@ export class WebhookResponseDto {
     slotId: string;
   }>;
   action: string; // "ask_slot", "confirm_booking", "provide_info", "transfer_to_assistant", etc.
-  booking_id?: string;
+  booking_id?: string | number;
   is_new_patient?: boolean; // Indicates if patient was newly registered
   success?: boolean;
   data?: any;

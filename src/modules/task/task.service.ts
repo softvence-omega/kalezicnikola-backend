@@ -50,6 +50,7 @@ export class TaskService {
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         time: dto.time,
         patientId: dto.patientId,
+        insuranceId: dto.insuranceId,
       },
       include: {
         patient: {
@@ -177,6 +178,7 @@ export class TaskService {
             firstName: true,
             lastName: true,
             photo: true,
+            phone: true,
           },
         },
       },
@@ -237,6 +239,7 @@ export class TaskService {
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         time: dto.time,
         patientId: dto.patientId,
+        insuranceId: dto.insuranceId,
       },
       include: {
         patient: {
