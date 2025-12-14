@@ -35,7 +35,7 @@ export class ChatController {
     try {
       const userId = await this.chatService.getOrCreateUserId(
         accountId,
-        role as 'ADMIN' | 'DOCTOR',
+        role.toUpperCase() as 'ADMIN' | 'DOCTOR',
       );
       return { userId };
     } catch (error) {
@@ -58,8 +58,7 @@ export class ChatController {
       // Check if user is admin by checking if they have admin fields (firstName, lastName) and no doctor-specific fields
       const isAdmin = user.role?.toUpperCase() === 'ADMIN' || 
                      user.userType?.toUpperCase() === 'ADMIN' || 
-                     user.type?.toUpperCase() === 'ADMIN' ||
-                     (user.firstName && user.lastName && !user.speciality); // Admin has firstName/lastName, doctors have speciality
+                     user.type?.toUpperCase() === 'ADMIN';
       
       if (dto.adminId && isAdmin) {
         // Admin creating conversation with doctor
@@ -88,14 +87,18 @@ export class ChatController {
       // Normal flow: user creating their own conversation
       const userId = await this.chatService.getOrCreateUserId(
         user.id,
-        user.role as 'ADMIN' | 'DOCTOR',
+        user.role?.toUpperCase() as 'ADMIN' | 'DOCTOR',
       );
       
       // Merge with DTO
       const conversationDto = {
         ...dto,
         userId,
-        userRole: user.role === 'ADMIN' ? UserRole.ADMIN : UserRole.DOCTOR,
+        // If adminId is provided (Doctor contacting Admin), resolve it to Chat User ID
+        adminId: dto.adminId 
+          ? await this.chatService.getOrCreateUserId(dto.adminId, 'ADMIN')
+          : undefined,
+        userRole: user.role?.toUpperCase() === 'ADMIN' ? UserRole.ADMIN : UserRole.DOCTOR,
       };
       
       return this.chatService.createConversation(conversationDto);
@@ -115,9 +118,9 @@ export class ChatController {
   async getMyConversations(@CurrentUser() user: any) {
     // Get chat user ID from JWT token
     const userId = await this.chatService.getOrCreateUserId(
-      user.id,
-      user.role as 'ADMIN' | 'DOCTOR',
-    );
+        user.id,
+        user.role?.toUpperCase() as 'ADMIN' | 'DOCTOR',
+      );
     return this.chatService.getUserConversations(userId);
   }
 

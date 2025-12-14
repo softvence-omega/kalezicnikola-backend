@@ -74,8 +74,24 @@ export class ChatService {
         },
         admin: {
           include: {
-            admin: true,
-            doctor: true,
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
           },
         },
       },
@@ -99,8 +115,24 @@ export class ChatService {
         messages: true,
         admin: {
           include: {
-            admin: true,
-            doctor: true,
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
           },
         },
       },
@@ -123,8 +155,24 @@ export class ChatService {
       include: {
         sender: {
           include: {
-            admin: true,
-            doctor: true,
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
           },
         },
         conversation: true,
@@ -147,8 +195,24 @@ export class ChatService {
       include: {
         user: {
           include: {
-            admin: true,
-            doctor: true,
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
           },
         },
         messages: {
@@ -157,8 +221,24 @@ export class ChatService {
         },
         admin: {
           include: {
-            admin: true,
-            doctor: true,
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
           },
         },
       },
@@ -173,8 +253,24 @@ export class ChatService {
       include: {
         user: {
           include: {
-            admin: true,
-            doctor: true,
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
           },
         },
         messages: {
@@ -182,16 +278,48 @@ export class ChatService {
           include: {
             sender: {
               include: {
-                admin: true,
-                doctor: true,
+                admin: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    photo: true,
+                    email: true,
+                  },
+                },
+                doctor: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    photo: true,
+                    email: true,
+                  },
+                },
               },
             },
           },
         },
         admin: {
           include: {
-            admin: true,
-            doctor: true,
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
           },
         },
       },
@@ -201,7 +329,9 @@ export class ChatService {
   // Get user conversations
   async getUserConversations(userId: string) {
     return this.prisma.adminConversation.findMany({
-      where: { userId },
+      where: {
+        OR: [{ userId }, { adminId: userId }],
+      },
       include: {
         messages: {
           orderBy: { createdAt: 'desc' },
@@ -209,14 +339,46 @@ export class ChatService {
         },
         user: {
           include: {
-            admin: true,
-            doctor: true,
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
           },
         },
         admin: {
           include: {
-            admin: true,
-            doctor: true,
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
           },
         },
       },
@@ -233,8 +395,24 @@ export class ChatService {
         messages: true,
         admin: {
           include: {
-            admin: true,
-            doctor: true,
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                photo: true,
+                email: true,
+              },
+            },
           },
         },
       },
