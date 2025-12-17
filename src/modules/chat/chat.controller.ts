@@ -90,6 +90,13 @@ export class ChatController {
         user.role?.toUpperCase() as 'ADMIN' | 'DOCTOR',
       );
       
+      const userRole = user.role?.toUpperCase() === 'ADMIN' ? UserRole.ADMIN : UserRole.DOCTOR;
+      
+      // Validate: Doctors must provide adminId to create conversation
+      if (userRole === UserRole.DOCTOR && !dto.adminId) {
+        throw new BadRequestException('adminId is required for doctors creating conversations');
+      }
+      
       // Merge with DTO
       const conversationDto = {
         ...dto,
@@ -98,7 +105,7 @@ export class ChatController {
         adminId: dto.adminId 
           ? await this.chatService.getOrCreateUserId(dto.adminId, 'ADMIN')
           : undefined,
-        userRole: user.role?.toUpperCase() === 'ADMIN' ? UserRole.ADMIN : UserRole.DOCTOR,
+        userRole,
       };
       
       return this.chatService.createConversation(conversationDto);
@@ -116,12 +123,29 @@ export class ChatController {
   @Get('my-conversations')
   @UseGuards(JwtAuthGuard)
   async getMyConversations(@CurrentUser() user: any) {
-    // Get chat user ID from JWT token
-    const userId = await this.chatService.getOrCreateUserId(
-        user.id,
-        user.role?.toUpperCase() as 'ADMIN' | 'DOCTOR',
-      );
-    return this.chatService.getUserConversations(userId);
+    try {
+      console.log('🔍 getMyConversations - Full user object:', JSON.stringify(user, null, 2));
+      
+      // Get chat user ID from JWT token
+      // Handle different JWT token structures - role might be at root or in nested user object
+      const userRole = (user.role || user.userType || user.type)?.toUpperCase() as 'ADMIN' | 'DOCTOR';
+      
+      console.log('📋 Detected role:', userRole);
+      console.log('📋 User ID:', user.id);
+      
+      if (!userRole || (userRole !== 'ADMIN' && userRole !== 'DOCTOR')) {
+        throw new BadRequestException(`Invalid or missing role in token. Detected role: ${userRole}`);
+      }
+      
+      const userId = await this.chatService.getOrCreateUserId(user.id, userRole);
+      
+      console.log('✅ Chat user ID:', userId);
+      
+      return this.chatService.getUserConversations(userId);
+    } catch (error) {
+      console.error('❌ Error in getMyConversations:', error);
+      throw error;
+    }
   }
 
   @Get('conversations/user/:userId')

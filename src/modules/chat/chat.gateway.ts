@@ -84,6 +84,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return { success: false, error: 'User not authenticated' };
       }
       
+      console.log('📨 Sending message from userId:', client.userId, 'Role:', client.userRole);
+      
       const message = await this.chatService.sendMessage(client.userId, data);
 
       // Get conversation to find recipient
@@ -95,30 +97,43 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return { success: false, error: 'Conversation not found' };
       }
 
-      // Emit to conversation room
-      this.server.to(`conversation:${data.conversationId}`).emit('new_message', {
+      const messagePayload = {
         message,
         conversation,
-      });
+      };
 
-      // Also emit to admin room if message from doctor
+      console.log('📤 Broadcasting message to conversation:', data.conversationId);
+      console.log('👥 Participants - Doctor:', conversation.userId, 'Admin:', conversation.adminId);
+
+      // Emit to conversation room (for users who joined the room)
+      this.server.to(`conversation:${data.conversationId}`).emit('new_message', messagePayload);
+
+      // ALWAYS emit to sender's room (so they see their own message)
+      this.server.to(`user:${client.userId}`).emit('new_message', messagePayload);
+
+      // Determine recipient and emit to their room
+      let recipientId: string | null = null;
+      
       if (client.userRole === 'DOCTOR' && conversation.adminId) {
-        this.server.to(`user:${conversation.adminId}`).emit('new_message', {
-          message,
-          conversation,
-        });
+        // Doctor sending to Admin
+        recipientId = conversation.adminId;
+      } else if (client.userRole === 'ADMIN' && conversation.userId) {
+        // Admin sending to Doctor
+        recipientId = conversation.userId;
       }
 
-      // Emit to doctor if message from admin
-      if (client.userRole === 'ADMIN') {
-        this.server.to(`user:${conversation.userId}`).emit('new_message', {
-          message,
-          conversation,
-        });
+      if (recipientId) {
+        console.log('📬 Sending to recipient userId:', recipientId);
+        this.server.to(`user:${recipientId}`).emit('new_message', messagePayload);
+      } else {
+        console.warn('⚠️ No recipient found for message');
       }
+
+      console.log('✅ Message broadcast complete');
 
       return { success: true, message };
     } catch (error) {
+      console.error('❌ Error sending message:', error);
       return { success: false, error: error.message };
     }
   }
