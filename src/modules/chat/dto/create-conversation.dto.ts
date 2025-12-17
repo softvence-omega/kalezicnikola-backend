@@ -16,5 +16,5 @@ export class CreateConversationDto {
 
   @IsString()
   @IsOptional()
-  adminId?: string;
+  adminId?: string | null; // null = available to all admins (pool model)
 }

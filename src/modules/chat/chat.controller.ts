@@ -92,19 +92,18 @@ export class ChatController {
       
       const userRole = user.role?.toUpperCase() === 'ADMIN' ? UserRole.ADMIN : UserRole.DOCTOR;
       
-      // Validate: Doctors must provide adminId to create conversation
-      if (userRole === UserRole.DOCTOR && !dto.adminId) {
-        throw new BadRequestException('adminId is required for doctors creating conversations');
-      }
+      // POOL MODEL: adminId is optional for doctors
+      // - If adminId provided: conversation with specific admin
+      // - If adminId null: conversation available to all admins (team pool)
       
       // Merge with DTO
       const conversationDto = {
         ...dto,
         userId,
-        // If adminId is provided (Doctor contacting Admin), resolve it to Chat User ID
+        // If adminId is provided, resolve it to Chat User ID
         adminId: dto.adminId 
           ? await this.chatService.getOrCreateUserId(dto.adminId, 'ADMIN')
-          : undefined,
+          : null, // null = available to all admins
         userRole,
       };
       
@@ -126,22 +125,27 @@ export class ChatController {
     try {
       console.log('🔍 getMyConversations - Full user object:', JSON.stringify(user, null, 2));
       
-      // Get chat user ID from JWT token
-      // Handle different JWT token structures - role might be at root or in nested user object
-      const userRole = (user.role || user.userType || user.type)?.toUpperCase() as 'ADMIN' | 'DOCTOR';
+      // ROLE DETECTION:
+      // JWT contains admin/doctor table data, not User table data
+      // Infer role from payload structure:
+      // - Doctors have: licenceNo, specialities, experience (medical fields)
+      // - Admins don't have these fields
+      let userRole: 'ADMIN' | 'DOCTOR';
       
-      console.log('📋 Detected role:', userRole);
-      console.log('📋 User ID:', user.id);
-      
-      if (!userRole || (userRole !== 'ADMIN' && userRole !== 'DOCTOR')) {
-        throw new BadRequestException(`Invalid or missing role in token. Detected role: ${userRole}`);
+      if ('licenceNo' in user || 'specialities' in user || 'experience' in user) {
+        userRole = 'DOCTOR';
+      } else {
+        userRole = 'ADMIN';
       }
       
-      const userId = await this.chatService.getOrCreateUserId(user.id, userRole);
+      console.log('📋 Detected role:', userRole);
+      console.log('📋 Account ID:', user.id);
       
-      console.log('✅ Chat user ID:', userId);
+      const chatUserId = await this.chatService.getOrCreateUserId(user.id, userRole);
       
-      return this.chatService.getUserConversations(userId);
+      console.log('✅ Chat user ID:', chatUserId);
+      
+      return this.chatService.getUserConversations(chatUserId);
     } catch (error) {
       console.error('❌ Error in getMyConversations:', error);
       throw error;

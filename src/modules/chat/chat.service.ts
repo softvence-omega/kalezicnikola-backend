@@ -60,63 +60,24 @@ export class ChatService {
   async createConversation(dto: CreateConversationDto) {
     console.log('Creating conversation with DTO:', dto);
     
-    // Check if OPEN conversation already exists for this doctor-admin pair
-    // This allows doctors to have separate conversations with different admins
-    // but prevents duplicate OPEN conversations with the same admin
-    const existing = await this.prisma.adminConversation.findFirst({
-      where: {
-        userId: dto.userId,
-        userRole: dto.userRole,
-        adminId: dto.adminId, // ✅ Check specific doctor-admin pair
-        status: ConversationStatus.OPEN, // ✅ Only check OPEN conversations
-      },
-      include: {
-        messages: {
-          orderBy: { createdAt: 'desc' },
-          take: 10,
-        },
-        admin: {
-          include: {
-            admin: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                photo: true,
-                email: true,
-              },
-            },
-            doctor: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                photo: true,
-                email: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (existing) {
-      console.log('Found existing OPEN conversation for this doctor-admin pair:', existing.id);
-      return existing;
-    }
-
+    // TEAM-BASED POOL MODEL:
+    // - Doctors can create multiple OPEN conversations (different topics)
+    // - adminId can be null (no specific admin assigned)
+    // - All admins can see and reply to conversations
+    // - No uniqueness constraint - always create new conversation
+    
     // Create new conversation
-    console.log('Creating new conversation...');
+    console.log('Creating new conversation in pool model...');
     const newConversation = await this.prisma.adminConversation.create({
       data: {
         userId: dto.userId!,
         userRole: dto.userRole!,
         subject: dto.subject,
-        adminId: dto.adminId,
+        adminId: dto.adminId || null, // null = available to all admins
       },
       include: {
         messages: true,
-        admin: {
+        admin: dto.adminId ? {
           include: {
             admin: {
               select: {
@@ -137,7 +98,7 @@ export class ChatService {
               },
             },
           },
-        },
+        } : undefined,
       },
     });
     
@@ -331,10 +292,25 @@ export class ChatService {
 
   // Get user conversations
   async getUserConversations(userId: string) {
+    // First, determine if this user is an admin or doctor
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    if (!user) {
+      throw new Error(`User with ID ${userId} not found`);
+    }
+
+    // POOL MODEL:
+    // - Admins see ALL conversations (not filtered by adminId)
+    // - Doctors see only their own conversations
+    const whereClause = user.role === 'ADMIN'
+      ? {} // Admins see everything
+      : { userId }; // Doctors see only their conversations
+
     return this.prisma.adminConversation.findMany({
-      where: {
-        OR: [{ userId }, { adminId: userId }],
-      },
+      where: whereClause,
       include: {
         messages: {
           orderBy: { createdAt: 'desc' },
