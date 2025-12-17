@@ -60,12 +60,15 @@ export class ChatService {
   async createConversation(dto: CreateConversationDto) {
     console.log('Creating conversation with DTO:', dto);
     
-    // Check if conversation already exists for this user
+    // Check if OPEN conversation already exists for this doctor-admin pair
+    // This allows doctors to have separate conversations with different admins
+    // but prevents duplicate OPEN conversations with the same admin
     const existing = await this.prisma.adminConversation.findFirst({
       where: {
         userId: dto.userId,
         userRole: dto.userRole,
-        status: { not: ConversationStatus.CLOSED },
+        adminId: dto.adminId, // ✅ Check specific doctor-admin pair
+        status: ConversationStatus.OPEN, // ✅ Only check OPEN conversations
       },
       include: {
         messages: {
@@ -98,7 +101,7 @@ export class ChatService {
     });
 
     if (existing) {
-      console.log('Found existing conversation:', existing.id);
+      console.log('Found existing OPEN conversation for this doctor-admin pair:', existing.id);
       return existing;
     }
 
