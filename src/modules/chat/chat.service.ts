@@ -493,4 +493,111 @@ export class ChatService {
       },
     });
   }
+
+  // Check if user is online (requires gateway integration)
+  isUserOnline(userId: string): boolean {
+    // This will be connected to the WebSocket gateway
+    // For now, return false - will be enhanced with gateway injection
+    return false;
+  }
+
+  // Get conversation participants with their online status
+  async getConversationParticipants(conversationId: string) {
+    const conversation = await this.prisma.adminConversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        user: {
+          include: {
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                photo: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                photo: true,
+              },
+            },
+          },
+        },
+        admin: {
+          include: {
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                photo: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                photo: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    // Get unread count for each participant
+    const userUnreadCount = await this.prisma.supportMessage.count({
+      where: {
+        conversationId,
+        senderId: { not: conversation.userId },
+        isRead: false,
+      },
+    });
+
+    const adminUnreadCount = conversation.adminId
+      ? await this.prisma.supportMessage.count({
+          where: {
+            conversationId,
+            senderId: { not: conversation.adminId },
+            isRead: false,
+          },
+        })
+      : 0;
+
+    return {
+      conversationId,
+      participants: [
+        {
+          chatUserId: conversation.userId,
+          role: conversation.userRole,
+          user: conversation.user,
+          isOnline: this.isUserOnline(conversation.userId),
+          unreadCount: userUnreadCount,
+        },
+        ...(conversation.adminId
+          ? [
+              {
+                chatUserId: conversation.adminId,
+                role: 'ADMIN',
+                user: conversation.admin,
+                isOnline: this.isUserOnline(conversation.adminId),
+                unreadCount: adminUnreadCount,
+              },
+            ]
+          : []),
+      ],
+    };
+  }
 }

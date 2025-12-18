@@ -274,4 +274,15 @@ export class ChatController {
       mimeType: file.mimetype,
     };
   }
+
+  @Get('online/:userId')
+  async isUserOnline(@Param('userId') userId: string) {
+    const isOnline = this.chatService.isUserOnline(userId);
+    return { userId, isOnline };
+  }
+
+  @Get('conversations/:id/participants')
+  async getConversationParticipants(@Param('id') conversationId: string) {
+    return this.chatService.getConversationParticipants(conversationId);
+  }
 }
