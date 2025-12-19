@@ -226,11 +226,11 @@ export class AiAgentService {
 
     // Validate the date
     const currentYear = new Date().getFullYear();
-    
+
     if (isNaN(requestedDate.getTime())) {
       // Try parsing with current year appended if initial parse failed
       const retryDate = new Date(`${requested_slot} ${currentYear}`);
-      
+
       if (!isNaN(retryDate.getTime())) {
         requestedDate.setTime(retryDate.getTime());
       } else {
@@ -240,11 +240,11 @@ export class AiAgentService {
       // If date parsed but year is significantly in the past (e.g., default 2001 behavior),
       // try to use the current year with the original input string
       if (requestedDate.getFullYear() < currentYear) {
-         const retryDate = new Date(`${requested_slot} ${currentYear}`);
-         // Only use retryDate if it's valid
-         if (!isNaN(retryDate.getTime())) {
-             requestedDate.setTime(retryDate.getTime());
-         }
+        const retryDate = new Date(`${requested_slot} ${currentYear}`);
+        // Only use retryDate if it's valid
+        if (!isNaN(retryDate.getTime())) {
+          requestedDate.setTime(retryDate.getTime());
+        }
       }
     }
 
@@ -432,14 +432,90 @@ export class AiAgentService {
     };
   }
 
+  // Helper to parse booking ID (handles "123", "#123", "123rd", "seventeen", "eighteenth")
+  private parseBookingId(id: string): number | null {
+    if (!id) return null;
+
+    const lowerId = id.toLowerCase().trim();
+
+    // 1. Try extracting digits directly (handles "18th", "#18", "No. 18")
+    const digitMatch = lowerId.match(/(\d+)/);
+    if (digitMatch) {
+      return Number(digitMatch[1]);
+    }
+
+    // 2. Handle number words and ordinals
+    const wordMap: Record<string, number> = {
+      // Cardinals
+      one: 1,
+      two: 2,
+      three: 3,
+      four: 4,
+      five: 5,
+      six: 6,
+      seven: 7,
+      eight: 8,
+      nine: 9,
+      ten: 10,
+      eleven: 11,
+      twelve: 12,
+      thirteen: 13,
+      fourteen: 14,
+      fifteen: 15,
+      sixteen: 16,
+      seventeen: 17,
+      eighteen: 18,
+      nineteen: 19,
+      twenty: 20,
+      // Ordinals
+      first: 1,
+      second: 2,
+      third: 3,
+      fourth: 4,
+      fifth: 5,
+      sixth: 6,
+      seventh: 7,
+      eighth: 8,
+      ninth: 9,
+      tenth: 10,
+      eleventh: 11,
+      twelfth: 12,
+      thirteenth: 13,
+      fourteenth: 14,
+      fifteenth: 15,
+      sixteenth: 16,
+      seventeenth: 17,
+      eighteenth: 18,
+      nineteenth: 19,
+      twentieth: 20,
+    };
+
+    if (wordMap[lowerId]) return wordMap[lowerId];
+
+    // Check for "number X" format with words
+    if (lowerId.startsWith('number ')) {
+      const part = lowerId.replace('number ', '').trim();
+      if (wordMap[part]) return wordMap[part];
+    }
+
+    return null;
+  }
+
   // =============== UPDATE BOOKING ===============
   async updateBooking(dto: {
     booking_id: string;
     new_slot_id?: string;
     new_date?: string;
   }) {
+    const bookingId = this.parseBookingId(dto.booking_id);
+    if (!bookingId) {
+      throw new BadRequestException(
+        'Invalid booking ID provided. Please provide a numeric ID.',
+      );
+    }
+
     const appointment = await this.prisma.appointment.findUnique({
-      where: { id: Number(dto.booking_id) },
+      where: { id: bookingId },
     });
 
     if (!appointment) {
@@ -467,7 +543,7 @@ export class AiAgentService {
           scheduleSlotId: dto.new_slot_id,
           appointmentDate: new Date(dto.new_date),
           status: 'SCHEDULED',
-          id: { not: Number(dto.booking_id) },
+          id: { not: bookingId },
         },
       });
 
@@ -477,7 +553,7 @@ export class AiAgentService {
     }
 
     const updated = await this.prisma.appointment.update({
-      where: { id: Number(dto.booking_id) },
+      where: { id: bookingId },
       data: {
         scheduleSlotId: dto.new_slot_id,
         appointmentDate: dto.new_date ? new Date(dto.new_date) : undefined,
@@ -511,9 +587,12 @@ export class AiAgentService {
 
     // Try to find by booking_id first
     if (dto.booking_id) {
-      appointment = await this.prisma.appointment.findUnique({
-        where: { id: Number(dto.booking_id) },
-      });
+      const bookingId = this.parseBookingId(dto.booking_id);
+      if (bookingId) {
+        appointment = await this.prisma.appointment.findUnique({
+          where: { id: bookingId },
+        });
+      }
     }
 
     // Fallback: Find by phone number
@@ -550,7 +629,7 @@ export class AiAgentService {
               `Found ${filtered.length} appointments on this date. Please provide the booking ID.`,
             );
           }
-          appointment = filtered[0];
+          if (filtered.length > 0) appointment = filtered[0];
         } else if (appointments.length === 1) {
           // Only one scheduled appointment, use it
           appointment = appointments[0];
@@ -588,8 +667,13 @@ export class AiAgentService {
 
   // =============== GET BOOKING ===============
   async getBooking(bookingId: string) {
+    const id = this.parseBookingId(bookingId);
+    if (!id) {
+      throw new NotFoundException('Invalid booking ID format');
+    }
+
     const appointment = await this.prisma.appointment.findUnique({
-      where: { id: Number(bookingId) },
+      where: { id: id },
       include: {
         doctor: {
           select: { firstName: true, lastName: true, specialities: true },
@@ -614,7 +698,9 @@ export class AiAgentService {
   // =============== SAVE TRANSCRIPTION ===============
   async saveTranscription(dto: TranscriptionSaveDto) {
     let patientId = dto.patient_id;
-    let appointmentId = dto.appointment_id ? Number(dto.appointment_id) : undefined;
+    let appointmentId = dto.appointment_id
+      ? Number(dto.appointment_id)
+      : undefined;
 
     // Insurance ID: optional, digits only (no INS prefix)
     let insuranceId: string | undefined = dto.insurance_id;
@@ -700,6 +786,17 @@ export class AiAgentService {
       }
     }
 
+    // STEP 2.5: Calculate duration if not provided but timestamps are available
+    let callDuration = dto.duration;
+    if (!callDuration && dto.call_started_at && dto.call_ended_at) {
+      const startTime = new Date(dto.call_started_at).getTime();
+      const endTime = new Date(dto.call_ended_at).getTime();
+      callDuration = Math.floor((endTime - startTime) / 1000); // Convert ms to seconds
+      console.log(
+        `Calculated call duration: ${callDuration} seconds (from ${dto.call_started_at} to ${dto.call_ended_at})`,
+      );
+    }
+
     // STEP 3: Save transcription with linked patient and appointment
     const transcription = await this.prisma.callTranscription.create({
       data: {
@@ -707,7 +804,7 @@ export class AiAgentService {
         patientId: patientId,
         callSid: dto.call_sid,
         phoneNumber: dto.phone_number,
-        duration: dto.duration,
+        duration: callDuration,
         audioUrl: dto.audio_url,
         transcription: dto.transcription,
         intent: dto.intent?.toUpperCase() as any,
@@ -768,7 +865,7 @@ export class AiAgentService {
         // clean up the name
         const fullName = match[1].trim();
         const nameParts = fullName.split(/\s+/);
-        
+
         if (nameParts.length >= 1) {
           result.firstName = nameParts[0];
         }
@@ -845,35 +942,42 @@ export class AiAgentService {
     }
 
     // Otherwise, suggest available slots
-  try {
-    const slots = await this.suggestAlternativeSlots({
-      doctor_id: payload.doctor_id,
-      requested_slot: payload.requested_time || payload.requested_date || new Date().toISOString(),
-    });
+    try {
+      const slots = await this.suggestAlternativeSlots({
+        doctor_id: payload.doctor_id,
+        requested_slot:
+          payload.requested_time ||
+          payload.requested_date ||
+          new Date().toISOString(),
+      });
 
-    if (slots.alternative_slots.length > 0) {
-      const slotTexts = slots.alternative_slots
-        .slice(0, 3)
-        .map((s) => `${s.date} at ${s.time}`)
-        .join(', or ');
+      if (slots.alternative_slots.length > 0) {
+        const slotTexts = slots.alternative_slots
+          .slice(0, 3)
+          .map((s) => `${s.date} at ${s.time}`)
+          .join(', or ');
 
-      return {
-        reply_text: `I have availability on ${slotTexts}. Which time works best for you?`,
-        // Return ALL slots (up to 20) in the data payload so the LLM knows about them
-        suggested_slots: slots.alternative_slots.slice(0, 20),
-        action: 'ask_slot',
-      };
+        return {
+          reply_text: `I have availability on ${slotTexts}. Which time works best for you?`,
+          // Return ALL slots (up to 20) in the data payload so the LLM knows about them
+          suggested_slots: slots.alternative_slots.slice(0, 20),
+          action: 'ask_slot',
+        };
+      }
+    } catch (error) {
+      if (
+        error instanceof BadRequestException &&
+        error.message === 'Invalid date format'
+      ) {
+        return {
+          reply_text:
+            "I didn't quite catch the date properly. Could you please repeat the date you'd like to book?",
+          action: 'ask_date',
+        };
+      }
     }
-  } catch (error) {
-    if (error instanceof BadRequestException && error.message === 'Invalid date format') {
-      return {
-        reply_text: "I didn't quite catch the date properly. Could you please repeat the date you'd like to book?",
-        action: 'ask_date',
-      };
-    }
-  }
 
-  return {
+    return {
       reply_text:
         "I apologize, but we don't have availability in the near future. Would you like me to check next week, or connect you with our assistant?",
       action: 'no_availability',

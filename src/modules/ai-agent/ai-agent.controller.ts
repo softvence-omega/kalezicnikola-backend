@@ -1,4 +1,12 @@
-import { Controller, Post, Get, Body, Query, UseGuards, Param } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Query,
+  UseGuards,
+  Param,
+} from '@nestjs/common';
 import { AiAgentService } from './ai-agent.service';
 import { WebhookAuthGuard } from './guards/webhook-auth.guard';
 import { WebhookPayloadDto } from './dto/webhook-payload.dto';
@@ -15,6 +23,9 @@ export class AiAgentController {
   @Post('webhook')
   @UseGuards(WebhookAuthGuard)
   async handleWebhook(@Body() payload: WebhookPayloadDto) {
+    console.log('=== ELEVENLABS WEBHOOK PAYLOAD ===');
+    console.log(JSON.stringify(payload, null, 2));
+    console.log('=================================');
     return this.aiAgentService.processWebhook(payload);
   }
 
@@ -47,7 +58,14 @@ export class AiAgentController {
 
   @Post('booking/update')
   @UseGuards(WebhookAuthGuard)
-  async updateBooking(@Body() dto: { booking_id: string; new_slot_id?: string; new_date?: string }) {
+  async updateBooking(
+    @Body()
+    dto: {
+      booking_id: string;
+      new_slot_id?: string;
+      new_date?: string;
+    },
+  ) {
     return this.aiAgentService.updateBooking(dto);
   }
 
@@ -67,6 +85,9 @@ export class AiAgentController {
   @Post('transcription/save')
   @UseGuards(WebhookAuthGuard)
   async saveTranscription(@Body() dto: TranscriptionSaveDto) {
+    console.log('=== SAVE TRANSCRIPTION PAYLOAD ===');
+    console.log(JSON.stringify(dto, null, 2));
+    console.log('==================================');
     return this.aiAgentService.saveTranscription(dto);
   }
 
