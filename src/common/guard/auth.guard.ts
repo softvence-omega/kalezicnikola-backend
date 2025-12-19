@@ -52,7 +52,9 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     // Attach user and role to request
-    request.user = session.admin || session.doctor;
+    const userObject = session.admin || session.doctor;
+    // Attach role to user object so @CurrentUser() decorator can access it
+    request.user = { ...userObject, role: payload.role };
     request.role = payload.role;
     request.session = session;
 

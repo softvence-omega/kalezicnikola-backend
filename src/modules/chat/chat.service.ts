@@ -14,27 +14,32 @@ export class ChatService {
   // Helper to get User ID from admin/doctor ID
   private async getUserId(accountId: string, role: UserRole): Promise<string> {
     console.log(`Getting user ID for accountId: ${accountId}, role: ${role}`);
-    
-    const whereClause = role === UserRole.ADMIN 
-      ? { adminId: accountId }
-      : { doctorId: accountId };
+
+    const whereClause =
+      role === UserRole.ADMIN
+        ? { adminId: accountId }
+        : { doctorId: accountId };
 
     let user = await this.prisma.user.findFirst({ where: whereClause });
 
     if (!user) {
       // Verify that the account actually exists before creating User
       if (role === UserRole.ADMIN) {
-        const admin = await this.prisma.admin.findUnique({ where: { id: accountId } });
+        const admin = await this.prisma.admin.findUnique({
+          where: { id: accountId },
+        });
         if (!admin) {
           throw new Error(`Admin with ID ${accountId} does not exist`);
         }
       } else if (role === UserRole.DOCTOR) {
-        const doctor = await this.prisma.doctor.findUnique({ where: { id: accountId } });
+        const doctor = await this.prisma.doctor.findUnique({
+          where: { id: accountId },
+        });
         if (!doctor) {
           throw new Error(`Doctor with ID ${accountId} does not exist`);
         }
       }
-      
+
       // Create user if doesn't exist
       console.log('User not found, creating new user...');
       user = await this.prisma.user.create({
@@ -52,95 +57,72 @@ export class ChatService {
   }
 
   // Public method to get or create User ID
-  async getOrCreateUserId(accountId: string, role: 'ADMIN' | 'DOCTOR'): Promise<string> {
-    return this.getUserId(accountId, role === 'ADMIN' ? UserRole.ADMIN : UserRole.DOCTOR);
+  async getOrCreateUserId(
+    accountId: string,
+    role: 'ADMIN' | 'DOCTOR',
+  ): Promise<string> {
+    // Validate inputs
+    if (!accountId) {
+      throw new Error('accountId is required');
+    }
+    if (!role || (role !== 'ADMIN' && role !== 'DOCTOR')) {
+      throw new Error(`Invalid role: ${role}. Must be 'ADMIN' or 'DOCTOR'`);
+    }
+
+    return this.getUserId(
+      accountId,
+      role === 'ADMIN' ? UserRole.ADMIN : UserRole.DOCTOR,
+    );
   }
 
   // Create or get existing conversation
   async createConversation(dto: CreateConversationDto) {
     console.log('Creating conversation with DTO:', dto);
-    
-    // Check if OPEN conversation already exists for this doctor-admin pair
-    // This allows doctors to have separate conversations with different admins
-    // but prevents duplicate OPEN conversations with the same admin
-    const existing = await this.prisma.adminConversation.findFirst({
-      where: {
-        userId: dto.userId,
-        userRole: dto.userRole,
-        adminId: dto.adminId, // ✅ Check specific doctor-admin pair
-        status: ConversationStatus.OPEN, // ✅ Only check OPEN conversations
-      },
-      include: {
-        messages: {
-          orderBy: { createdAt: 'desc' },
-          take: 10,
-        },
-        admin: {
-          include: {
-            admin: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                photo: true,
-                email: true,
-              },
-            },
-            doctor: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                photo: true,
-                email: true,
-              },
-            },
-          },
-        },
-      },
-    });
 
-    if (existing) {
-      console.log('Found existing OPEN conversation for this doctor-admin pair:', existing.id);
-      return existing;
-    }
+    // TEAM-BASED POOL MODEL:
+    // - Doctors can create multiple OPEN conversations (different topics)
+    // - adminId can be null (no specific admin assigned)
+    // - All admins can see and reply to conversations
+    // - No uniqueness constraint - always create new conversation
 
     // Create new conversation
-    console.log('Creating new conversation...');
+    console.log('Creating new conversation in pool model...');
     const newConversation = await this.prisma.adminConversation.create({
       data: {
         userId: dto.userId!,
         userRole: dto.userRole!,
         subject: dto.subject,
-        adminId: dto.adminId,
+        adminId: dto.adminId || null, // null = available to all admins
       },
       include: {
         messages: true,
-        admin: {
-          include: {
-            admin: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                photo: true,
-                email: true,
+        admin: dto.adminId
+          ? {
+              include: {
+                admin: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    photo: true,
+                    email: true,
+                  },
+                },
+                doctor: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    photo: true,
+                    email: true,
+                  },
+                },
               },
-            },
-            doctor: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                photo: true,
-                email: true,
-              },
-            },
-          },
-        },
+            }
+          : undefined,
       },
     });
-    
+
     console.log('Created conversation:', newConversation.id);
     return newConversation;
   }
@@ -329,12 +311,70 @@ export class ChatService {
     });
   }
 
+  // Get only messages from a conversation
+  async getConversationMessages(conversationId: string) {
+    const messages = await this.prisma.supportMessage.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        message: true,
+        imageUrl: true,
+        attachments: true,
+        isRead: true,
+        createdAt: true,
+        sender: {
+          select: {
+            id: true,
+            role: true,
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                photo: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                photo: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return messages;
+  }
+
   // Get user conversations
   async getUserConversations(userId: string) {
+    // First, determine if this user is an admin or doctor
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    if (!user) {
+      throw new Error(`User with ID ${userId} not found`);
+    }
+
+    // POOL MODEL:
+    // - Admins see ALL conversations (not filtered by adminId)
+    // - Doctors see only their own conversations
+    const whereClause =
+      user.role === 'ADMIN'
+        ? {} // Admins see everything
+        : { userId }; // Doctors see only their conversations
+
     return this.prisma.adminConversation.findMany({
-      where: {
-        OR: [{ userId }, { adminId: userId }],
-      },
+      where: whereClause,
       include: {
         messages: {
           orderBy: { createdAt: 'desc' },
@@ -452,5 +492,112 @@ export class ChatService {
         isRead: false,
       },
     });
+  }
+
+  // Check if user is online (requires gateway integration)
+  isUserOnline(userId: string): boolean {
+    // This will be connected to the WebSocket gateway
+    // For now, return false - will be enhanced with gateway injection
+    return false;
+  }
+
+  // Get conversation participants with their online status
+  async getConversationParticipants(conversationId: string) {
+    const conversation = await this.prisma.adminConversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        user: {
+          include: {
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                photo: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                photo: true,
+              },
+            },
+          },
+        },
+        admin: {
+          include: {
+            admin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                photo: true,
+              },
+            },
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                photo: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    // Get unread count for each participant
+    const userUnreadCount = await this.prisma.supportMessage.count({
+      where: {
+        conversationId,
+        senderId: { not: conversation.userId },
+        isRead: false,
+      },
+    });
+
+    const adminUnreadCount = conversation.adminId
+      ? await this.prisma.supportMessage.count({
+          where: {
+            conversationId,
+            senderId: { not: conversation.adminId },
+            isRead: false,
+          },
+        })
+      : 0;
+
+    return {
+      conversationId,
+      participants: [
+        {
+          chatUserId: conversation.userId,
+          role: conversation.userRole,
+          user: conversation.user,
+          isOnline: this.isUserOnline(conversation.userId),
+          unreadCount: userUnreadCount,
+        },
+        ...(conversation.adminId
+          ? [
+              {
+                chatUserId: conversation.adminId,
+                role: 'ADMIN',
+                user: conversation.admin,
+                isOnline: this.isUserOnline(conversation.adminId),
+                unreadCount: adminUnreadCount,
+              },
+            ]
+          : []),
+      ],
+    };
   }
 }
