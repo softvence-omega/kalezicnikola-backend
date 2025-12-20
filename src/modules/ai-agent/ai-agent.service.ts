@@ -864,14 +864,11 @@ export class AiAgentService {
     // 1. Normalize Data (Handle nested "data" wrapper from ElevenLabs)
     const realData = dto.data || dto;
     const incomingCallSid = realData.conversation_id;
-    // Construct Audio URL manually if missing (use correct endpoint for EU residency)
-    const isEuKey = this.elevenLabsApiKey?.includes('_residency_eu');
-    const baseUrl = isEuKey
-      ? 'https://api.eu.residency.elevenlabs.io'
-      : 'https://api.elevenlabs.io';
-    const audioUrl =
-      realData.recording_url ||
-      `${baseUrl}/v1/convai/conversations/${incomingCallSid}/audio`;
+    // Construct proxy Audio URL (easier for frontend to use)
+    // Use environment variable or fallback to localhost for development
+    const backendBaseUrl =
+      this.config.get<string>('BACKEND_URL') || 'https://backend.docline.ai';
+    const audioUrl = `${backendBaseUrl}/api/v1/ai-agent/audio/${incomingCallSid}`;
 
     // Map duration correctly (logs show 'call_duration_secs')
     let duration =
