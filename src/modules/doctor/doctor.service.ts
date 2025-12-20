@@ -1312,12 +1312,33 @@ export class DoctorService {
       throw new UnauthorizedException('Invalid session or doctor not found');
     }
 
-    const { page = 1, limit = 20, patientId, intent } = query;
+    const {
+      page = 1,
+      limit = 20,
+      patientId,
+      intent,
+      startDate,
+      endDate,
+    } = query;
     const skip = (page - 1) * limit;
 
     const where: any = { doctorId: session.doctorId };
     if (patientId) where.patientId = patientId;
     if (intent) where.intent = intent;
+
+    // Add date filtering (optional)
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        // Set to end of day to include the entire end date
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999);
+        where.createdAt.lte = endDateTime;
+      }
+    }
 
     const [calls, total] = await Promise.all([
       this.prisma.callTranscription.findMany({
@@ -1326,7 +1347,14 @@ export class DoctorService {
         take: +limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          patient: { select: { firstName: true, lastName: true, phone: true, insuranceId: true } },
+          patient: {
+            select: {
+              firstName: true,
+              lastName: true,
+              phone: true,
+              insuranceId: true,
+            },
+          },
           appointment: {
             select: { id: true, appointmentDate: true, status: true },
           },

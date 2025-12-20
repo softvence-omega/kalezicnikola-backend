@@ -641,7 +641,6 @@ export class DoctorController {
     };
   }
 
-  // ==================== CALL HISTORY ====================
 
   // ----------------- GET CALL HISTORY -------------------
   @Get('calls/history')
