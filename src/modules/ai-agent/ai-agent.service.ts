@@ -12,10 +12,13 @@ import { SlotQueryDto } from './dto/slot-query.dto';
 import { TranscriptionSaveDto } from './dto/transcription-save.dto';
 import { ElevenLabsPostCallDto } from './dto/elevenlabs-post-call.dto';
 
+import axios from 'axios';
+
 @Injectable()
 export class AiAgentService {
   private readonly twilioNumber: string;
   private readonly fallbackNumber: string;
+  private readonly elevenLabsApiKey: string;
 
   constructor(
     private prisma: PrismaService,
@@ -23,6 +26,8 @@ export class AiAgentService {
   ) {
     this.twilioNumber = '+15095091987'; // Twilio number from client
     this.fallbackNumber = '+8801742460399'; // Physical assistant number
+    this.elevenLabsApiKey =
+      this.config.get<string>('ELEVENLABS_WEBHOOK_API_KEY') || '';
   }
 
   // =============== MAIN WEBHOOK PROCESSOR ===============
@@ -859,10 +864,14 @@ export class AiAgentService {
     // 1. Normalize Data (Handle nested "data" wrapper from ElevenLabs)
     const realData = dto.data || dto;
     const incomingCallSid = realData.conversation_id;
-    // Construct Audio URL manually if missing (Standard ElevenLabs format)
+    // Construct Audio URL manually if missing (use correct endpoint for EU residency)
+    const isEuKey = this.elevenLabsApiKey?.includes('_residency_eu');
+    const baseUrl = isEuKey
+      ? 'https://api.eu.residency.elevenlabs.io'
+      : 'https://api.elevenlabs.io';
     const audioUrl =
       realData.recording_url ||
-      `https://api.elevenlabs.io/v1/convai/conversation/get_audio/${incomingCallSid}`;
+      `${baseUrl}/v1/convai/conversations/${incomingCallSid}/audio`;
 
     // Map duration correctly (logs show 'call_duration_secs')
     let duration =
@@ -979,6 +988,31 @@ export class AiAgentService {
 
     console.log(`Created NEW CallTranscription for SID ${incomingCallSid}`);
     return { success: true, message: 'Created new transcription' };
+  }
+
+  async getCallAudio(conversationId: string) {
+    // Detect EU residency key and use correct endpoint
+    const isEuKey = this.elevenLabsApiKey?.includes('_residency_eu');
+    const baseUrl = isEuKey
+      ? 'https://api.eu.residency.elevenlabs.io'
+      : 'https://api.elevenlabs.io';
+    const url = `${baseUrl}/v1/convai/conversations/${conversationId}/audio`;
+
+    try {
+      const response = await axios.get(url, {
+        headers: {
+          'xi-api-key': this.elevenLabsApiKey,
+        },
+        responseType: 'stream',
+      });
+      return response.data;
+    } catch (error) {
+      console.error(
+        'Error fetching audio from ElevenLabs:',
+        error.response?.data || error.message,
+      );
+      throw error;
+    }
   }
 
   // Helper method to extract patient info from conversation text

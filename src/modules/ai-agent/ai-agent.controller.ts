@@ -7,7 +7,9 @@ import {
   UseGuards,
   Param,
   Headers,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { AiAgentService } from './ai-agent.service';
 import { WebhookAuthGuard } from './guards/webhook-auth.guard';
 import { WebhookPayloadDto } from './dto/webhook-payload.dto';
@@ -112,5 +114,23 @@ export class AiAgentController {
   @UseGuards(WebhookAuthGuard)
   async getPatientHistory(@Param('patientId') patientId: string) {
     return this.aiAgentService.getPatientHistory(patientId);
+  }
+  @Get('audio/:conversationId')
+  async getCallAudio(
+    @Param('conversationId') conversationId: string,
+    @Res() res: Response,
+  ) {
+    try {
+      const audioStream =
+        await this.aiAgentService.getCallAudio(conversationId);
+      res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Disposition': `inline; filename="${conversationId}.mp3"`,
+      });
+      audioStream.pipe(res);
+    } catch (error) {
+      console.error('Error proxying audio:', error);
+      res.status(404).json({ message: 'Audio not found' });
+    }
   }
 }
