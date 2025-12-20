@@ -1,20 +1,45 @@
-import { Controller, Post, Get, Body, Query, UseGuards, Param } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Query,
+  UseGuards,
+  Param,
+  Headers,
+  Res,
+} from '@nestjs/common';
+import { Response } from 'express';
 import { AiAgentService } from './ai-agent.service';
 import { WebhookAuthGuard } from './guards/webhook-auth.guard';
 import { WebhookPayloadDto } from './dto/webhook-payload.dto';
 import { KbQueryDto } from './dto/kb-query.dto';
 import { SlotQueryDto } from './dto/slot-query.dto';
 import { TranscriptionSaveDto } from './dto/transcription-save.dto';
+import { ElevenLabsPostCallDto } from './dto/elevenlabs-post-call.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
 
 @Controller('ai-agent')
 export class AiAgentController {
   constructor(private aiAgentService: AiAgentService) {}
 
+  // =============== POST-CALL WEBHOOK ===============
+  @Post('webhook/post-call')
+  // @UseGuards(WebhookAuthGuard) // Optional: decided if auth is needed or if headers will match
+  async handlePostCallWebhook(
+    @Body() payload: ElevenLabsPostCallDto,
+    @Query('doctor_id') doctorId?: string,
+  ) {
+    return this.aiAgentService.processPostCallWebhook(payload, doctorId);
+  }
+
   // =============== MAIN WEBHOOK ENDPOINT ===============
   @Post('webhook')
   @UseGuards(WebhookAuthGuard)
   async handleWebhook(@Body() payload: WebhookPayloadDto) {
+    console.log('=== ELEVENLABS WEBHOOK PAYLOAD ===');
+    console.log(JSON.stringify(payload, null, 2));
+    console.log('=================================');
     return this.aiAgentService.processWebhook(payload);
   }
 
@@ -47,7 +72,14 @@ export class AiAgentController {
 
   @Post('booking/update')
   @UseGuards(WebhookAuthGuard)
-  async updateBooking(@Body() dto: { booking_id: string; new_slot_id?: string; new_date?: string }) {
+  async updateBooking(
+    @Body()
+    dto: {
+      booking_id: string;
+      new_slot_id?: string;
+      new_date?: string;
+    },
+  ) {
     return this.aiAgentService.updateBooking(dto);
   }
 
@@ -66,7 +98,15 @@ export class AiAgentController {
   // =============== CALL TRANSCRIPTION ===============
   @Post('transcription/save')
   @UseGuards(WebhookAuthGuard)
-  async saveTranscription(@Body() dto: TranscriptionSaveDto) {
+  async saveTranscription(
+    @Body() dto: TranscriptionSaveDto,
+    @Headers() headers: any,
+  ) {
+    console.log('=== SAVE TRANSCRIPTION HEADERS ===');
+    console.log(JSON.stringify(headers, null, 2));
+    console.log('=== SAVE TRANSCRIPTION PAYLOAD ===');
+    console.log(JSON.stringify(dto, null, 2));
+    console.log('==================================');
     return this.aiAgentService.saveTranscription(dto);
   }
 
@@ -74,5 +114,23 @@ export class AiAgentController {
   @UseGuards(WebhookAuthGuard)
   async getPatientHistory(@Param('patientId') patientId: string) {
     return this.aiAgentService.getPatientHistory(patientId);
+  }
+  @Get('audio/:conversationId')
+  async getCallAudio(
+    @Param('conversationId') conversationId: string,
+    @Res() res: Response,
+  ) {
+    try {
+      const audioStream =
+        await this.aiAgentService.getCallAudio(conversationId);
+      res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Disposition': `inline; filename="${conversationId}.mp3"`,
+      });
+      audioStream.pipe(res);
+    } catch (error) {
+      console.error('Error proxying audio:', error);
+      res.status(404).json({ message: 'Audio not found' });
+    }
   }
 }

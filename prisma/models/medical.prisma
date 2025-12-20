@@ -1,5 +1,5 @@
 model Appointment {
-  id          String  @id @default(uuid())
+  id          Int     @id @default(autoincrement())
   patientId   String?
   insuranceId String?
   doctorId    String?
@@ -110,7 +110,7 @@ model Lab {
   id              String    @id @default(uuid())
   patientId       String?
   doctorId        String?
-  appointmentId   String?
+  appointmentId   Int?
   testDate        DateTime?
   additionalNotes String?
 
@@ -145,7 +145,7 @@ model Prescription {
   id            String  @id @default(uuid())
   patientId     String?
   doctorId      String?
-  appointmentId String?
+  appointmentId Int?
 
   prescriptionNo String?             @unique
   status         PrescriptionStatus? @default(ACTIVE)
@@ -215,10 +215,10 @@ model CallTranscription {
   // Call outcome and details
   callStatus       CallStatus? // Status of the call
   reasonForCalling String?     // Why patient called
-  insuranceId      String?     // Patient's insurance ID (INS- prefix)
+  insuranceId      String?     
   
   // Appointment context (if booking was made)
-  appointmentId String?
+  appointmentId Int?
   
   // Fallback info
   fallbackNumber String?  // Physical assistant number if agent is busy

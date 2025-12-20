@@ -14,10 +14,17 @@ import { SubscriptionModule } from './modules/subscription/subscription.module';
 import { PrescriptionModule } from './modules/prescription/prescription.module';
 import { LabModule } from './modules/lab/lab.module';
 import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
+import { ChatModule } from './modules/chat/chat.module';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 
 
 @Module({
   imports: [
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..'),
+      serveRoot: '/',
+    }),
     ConfigurationModule,
     PrismaModule,
     AuthModule,
@@ -31,6 +38,7 @@ import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
     PrescriptionModule,
     LabModule,
     AiAgentModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],

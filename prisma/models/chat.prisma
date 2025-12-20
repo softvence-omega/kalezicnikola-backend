@@ -1,0 +1,39 @@
+// Chat Models
+
+model AdminConversation {
+  id        String   @id @default(uuid())
+  userId    String   // Doctor or Patient ID (references User table)
+  user      User     @relation("UserConversations", fields: [userId], references: [id])
+  userRole  UserRole // DOCTOR or PATIENT
+  adminId   String?  // Admin assigned to this conversation
+  admin     User?    @relation("AdminConversations", fields: [adminId], references: [id])
+  status    ConversationStatus @default(OPEN)
+  subject   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  messages  SupportMessage[]
+  
+  @@index([userId])
+  @@index([adminId])
+  @@index([status])
+  @@map("admin_conversations")
+}
+
+model SupportMessage {
+  id             String              @id @default(uuid())
+  conversationId String
+  conversation   AdminConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User                @relation(fields: [senderId], references: [id])
+  message        String              @db.Text
+  imageUrl       String?             // Single image URL for chat messages
+  isRead         Boolean             @default(false)
+  attachments    Json?               // Array of file URLs (for future use)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  
+  @@index([conversationId])
+  @@index([senderId])
+  @@map("support_messages")
+}

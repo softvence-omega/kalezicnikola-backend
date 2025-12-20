@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsArray,
   ValidateNested,
+  IsInt,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PrescriptionStatus } from 'generated/prisma';
@@ -16,8 +17,8 @@ export class CreatePrescriptionDto {
   patientId: string;
 
   @IsNotEmpty()
-  @IsString()
-  appointmentId: string;
+  @IsInt()
+  appointmentId: number;
 
   @IsOptional()
   @IsEnum(PrescriptionStatus, {

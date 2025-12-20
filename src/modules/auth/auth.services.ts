@@ -118,6 +118,16 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
+    // Create or update User record for chat system
+    await this.prisma.user.upsert({
+      where: { adminId: admin.id },
+      create: {
+        adminId: admin.id,
+        role: 'ADMIN',
+      },
+      update: {},
+    });
+
     return {
       accessToken,
       refreshToken,
@@ -164,6 +174,16 @@ export class AuthService {
     await this.prisma.doctor.update({
       where: { id: doctor.id },
       data: { lastLoginAt: new Date() },
+    });
+
+    // Create or update User record for chat system
+    await this.prisma.user.upsert({
+      where: { doctorId: doctor.id },
+      create: {
+        doctorId: doctor.id,
+        role: 'DOCTOR',
+      },
+      update: {},
     });
 
     return {

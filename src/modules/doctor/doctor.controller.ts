@@ -35,6 +35,55 @@ import { fileStorage, imageFileFilter } from 'src/utils/file-upload.util';
 export class DoctorController {
   constructor(private doctorService: DoctorService) {}
 
+  // ----------------- GET ALL DOCTORS (Admin) -------------------
+  @Get('list')
+  async getAllDoctors(@Headers('authorization') authorization: string) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.getAllDoctors();
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Doctors retrieved successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- SEARCH DOCTORS (Admin) -------------------
+  @Get('search')
+  async searchDoctors(
+    @Headers('authorization') authorization: string,
+    @Query('query') query: string,
+  ) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    if (!query || query.trim().length === 0) {
+      throw new BadRequestException('Search query is required');
+    }
+
+    const result = await this.doctorService.searchDoctors(query);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Search completed successfully',
+      data: result,
+    };
+  }
+
   // ----------------- GET MY PROFILE -------------------
   @Get('my-profile')
   @UseGuards(DoctorGuard)
