@@ -1355,6 +1355,7 @@ export class DoctorService {
               insuranceId: true,
             },
           },
+          patient: { select: { firstName: true, lastName: true, phone: true, insuranceId: true } },
           appointment: {
             select: { id: true, appointmentDate: true, status: true },
           },
