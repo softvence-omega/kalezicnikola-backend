@@ -48,7 +48,7 @@ export class AppointmentService {
     // 3. Verify insuranceId matches patient's actual insuranceId
     if (dto.insuranceId !== patient.insuranceId) {
       throw new BadRequestException(
-        'Insurance ID does not match patient\'s insurance ID',
+        "Insurance ID does not match patient's insurance ID",
       );
     }
 
@@ -73,9 +73,11 @@ export class AppointmentService {
 
     // 6. Extract day of week from appointmentDate and verify it matches the schedule's day
     const appointmentDate = new Date(dto.appointmentDate);
-    const dayOfWeek = appointmentDate.toLocaleDateString('en-US', {
-      weekday: 'long',
-    }).toUpperCase();
+    const dayOfWeek = appointmentDate
+      .toLocaleDateString('en-US', {
+        weekday: 'long',
+      })
+      .toUpperCase();
 
     if (dayOfWeek !== scheduleSlot.schedule.day) {
       throw new BadRequestException(
@@ -185,7 +187,18 @@ export class AppointmentService {
       where.status = query.status;
     }
 
-    if (query.startDate || query.endDate) {
+    // Filter by specific appointment date (takes precedence over range)
+    if (query.appointmentDate) {
+      const date = new Date(query.appointmentDate);
+      const startOfDay = new Date(date.setHours(0, 0, 0, 0));
+      const endOfDay = new Date(date.setHours(23, 59, 59, 999));
+
+      where.appointmentDate = {
+        gte: startOfDay,
+        lte: endOfDay,
+      };
+    } else if (query.startDate || query.endDate) {
+      // Filter by date range only if appointmentDate is not provided
       where.appointmentDate = {};
       if (query.startDate) {
         where.appointmentDate.gte = new Date(query.startDate);
@@ -199,35 +212,35 @@ export class AppointmentService {
     const total = await this.prisma.appointment.count({ where });
 
     // Get appointments
-  const appointments = await this.prisma.appointment.findMany({
-    where,
-    include: {
-      scheduleSlot: {
-        select: {
-          id: true,
-          startTime: true,
-          endTime: true,
+    const appointments = await this.prisma.appointment.findMany({
+      where,
+      include: {
+        scheduleSlot: {
+          select: {
+            id: true,
+            startTime: true,
+            endTime: true,
+          },
+        },
+        patient: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            email: true,
+            insuranceId: true,
+            gender: true,
+            dob: true,
+          },
         },
       },
-      patient: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          phone: true,
-          email: true,
-          insuranceId: true,
-          gender: true,
-          dob: true,
-        },
+      orderBy: {
+        [query.sortBy || 'createdAt']: query.sortOrder || 'desc',
       },
-    },
-    orderBy: {
-      [query.sortBy || 'createdAt']: query.sortOrder || 'desc',
-    },
-    skip,
-    take: limit,
-  });
+      skip,
+      take: limit,
+    });
 
     const totalPages = Math.ceil(total / limit);
 
@@ -579,7 +592,7 @@ export class AppointmentService {
 
       if (dto.insuranceId !== patientToCheck?.insuranceId) {
         throw new BadRequestException(
-          'Insurance ID does not match patient\'s insurance ID',
+          "Insurance ID does not match patient's insurance ID",
         );
       }
       updateData.insuranceId = dto.insuranceId;
@@ -638,7 +651,8 @@ export class AppointmentService {
         const conflictingAppointment = await this.prisma.appointment.findFirst({
           where: {
             doctorId,
-            scheduleSlotId: dto.scheduleSlotId || existingAppointment.scheduleSlotId,
+            scheduleSlotId:
+              dto.scheduleSlotId || existingAppointment.scheduleSlotId,
             appointmentDate: appointmentDate,
             status: 'SCHEDULED',
             id: { not: appointmentId }, // Exclude current appointment
