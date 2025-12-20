@@ -948,11 +948,10 @@ export class AiAgentService {
           audioUrl: audioUrl,
           duration: duration ? Math.round(duration) : undefined, // Ensure integer
           callSid: incomingCallSid, // UPDATE to the real ID so next time it matches!
-          // Only update transcript/summary if missing
+          // Only update transcript if missing
           transcription: existing.transcription ? undefined : transcriptionText,
-          summary: existing.summary
-            ? undefined
-            : realData.analysis?.transcript_summary,
+          // ALWAYS update summary with ElevenLabs summary when available (overwrite existing)
+          summary: realData.analysis?.transcript_summary || existing.summary,
         },
       });
       console.log(
