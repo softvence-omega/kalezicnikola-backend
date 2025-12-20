@@ -1399,4 +1399,87 @@ export class DoctorService {
 
     return { data: call };
   }
+
+  // ==================== DASHBOARD STATISTICS ====================
+
+  // ----------------- GET DASHBOARD STATS -------------------
+  async getDashboardStats(accessToken: string) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Get today's range (UTC)
+    const today = new Date();
+    const startOfDay = new Date(today);
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const endOfDay = new Date(today);
+    endOfDay.setUTCHours(23, 59, 59, 999);
+
+    const commonWhere = {
+      doctorId,
+      createdAt: {
+        gte: startOfDay,
+        lte: endOfDay,
+      },
+    };
+
+    // 1. Today Incoming Calls
+    const todayIncomingCalls = await this.prisma.callTranscription.count({
+      where: commonWhere,
+    });
+
+    // 2. Successful Calls
+    const successfulCalls = await this.prisma.callTranscription.count({
+      where: {
+        ...commonWhere,
+        callStatus: 'SUCCESSFUL',
+      },
+    });
+
+    // 3. Average Call Duration
+    const durationAggregate = await this.prisma.callTranscription.aggregate({
+      where: commonWhere,
+      _avg: {
+        duration: true,
+      },
+    });
+    const averageCallDuration = durationAggregate._avg.duration || 0;
+
+    // 4. Tasks (Appointments scheduled for today)
+    const tasks = await this.prisma.appointment.count({
+      where: {
+        doctorId,
+        appointmentDate: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+        status: 'SCHEDULED',
+      },
+    });
+
+    // 5. Requires a call back (Missed or Unsuccessful)
+    const requiresCallback = await this.prisma.callTranscription.count({
+      where: {
+        ...commonWhere,
+        callStatus: {
+          in: ['MISSED', 'UNSUCCESSFUL'],
+        },
+      },
+    });
+
+    return {
+      todayIncomingCalls,
+      successfulCalls,
+      averageCallDuration: Math.round(averageCallDuration), // in seconds
+      tasks,
+      requiresCallback,
+    };
+  }
 }
