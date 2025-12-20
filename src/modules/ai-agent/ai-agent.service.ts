@@ -701,6 +701,56 @@ export class AiAgentService {
     };
   }
 
+  private determineCallStatus(
+    dto: TranscriptionSaveDto,
+    resolvedAppointmentId?: number,
+  ): 'SUCCESSFUL' | 'UNSUCCESSFUL' | 'TRANSFERRED' | 'MISSED' {
+    if (dto.call_status) {
+      const status = dto.call_status.toUpperCase();
+      if (
+        ['SUCCESSFUL', 'UNSUCCESSFUL', 'TRANSFERRED', 'MISSED'].includes(status)
+      ) {
+        return status as any;
+      }
+    }
+
+    if (dto.was_transferred) {
+      return 'TRANSFERRED';
+    }
+
+    if (dto.appointment_id || resolvedAppointmentId) {
+      return 'SUCCESSFUL';
+    }
+
+    if (
+      dto.intent?.toUpperCase() === 'BOOK_APPOINTMENT' &&
+      !dto.appointment_id &&
+      !resolvedAppointmentId
+    ) {
+      // Check for transfer keywords before declaring unsuccessful
+      const textToCheck = (
+        (dto.summary || '') +
+        ' ' +
+        (dto.transcription || '')
+      ).toLowerCase();
+      if (
+        textToCheck.includes('transfer') ||
+        textToCheck.includes('human') ||
+        textToCheck.includes('assistant') ||
+        textToCheck.includes('connect you')
+      ) {
+        return 'TRANSFERRED';
+      }
+      return 'UNSUCCESSFUL';
+    }
+
+    if (dto.duration && dto.duration < 10 && !dto.transcription) {
+      return 'MISSED';
+    }
+
+    return 'SUCCESSFUL';
+  }
+
   // =============== SAVE TRANSCRIPTION ===============
   async saveTranscription(dto: TranscriptionSaveDto) {
     let patientId = dto.patient_id;
@@ -840,9 +890,7 @@ export class AiAgentService {
         callEndedAt: dto.call_ended_at ? new Date(dto.call_ended_at) : null,
 
         // New fields
-        callStatus: dto.call_status
-          ? (dto.call_status.toUpperCase() as any)
-          : null,
+        callStatus: this.determineCallStatus(dto, appointmentId),
         reasonForCalling: dto.reason_for_calling,
         insuranceId: insuranceId,
       },
@@ -968,17 +1016,35 @@ export class AiAgentService {
       return { success: false, message: 'Missing Doctor ID' };
     }
 
+    // Use determineCallStatus logic for fallback too
+    let detectedIntent = 'GENERAL';
+    const summaryTitle =
+      realData.analysis?.call_summary_title?.toUpperCase() || '';
+    if (summaryTitle.includes('BOOK')) detectedIntent = 'BOOK_APPOINTMENT';
+    else if (summaryTitle.includes('INQUIRY')) detectedIntent = 'INQUIRY';
+    else if (summaryTitle.includes('AVAILABILITY'))
+      detectedIntent = 'CHECK_AVAILABILITY';
+
+    const tempDto: any = {
+      duration: duration ? Math.round(duration) : 0,
+      transcription: transcriptionText,
+      summary: realData.analysis?.transcript_summary,
+      intent: detectedIntent,
+    };
+
     await this.prisma.callTranscription.create({
       data: {
         doctorId: finalDoctorId,
         callSid: incomingCallSid,
-        duration: duration ? Math.round(duration) : 0,
+        duration: tempDto.duration,
         audioUrl: audioUrl,
-        transcription: transcriptionText,
-        summary: realData.analysis?.transcript_summary,
-        callStatus: 'SUCCESSFUL',
-        intent: 'OTHERS' as any, // Default intent if unknown
-        sentiment: 'NEUTRAL',
+        transcription: tempDto.transcription,
+        summary: tempDto.summary,
+        callStatus: this.determineCallStatus(tempDto),
+        intent: detectedIntent as any,
+        sentiment:
+          (realData.analysis?.call_sentiment?.toUpperCase() as any) ||
+          'NEUTRAL',
       },
     });
 

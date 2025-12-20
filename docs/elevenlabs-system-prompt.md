@@ -11,7 +11,7 @@ CRITICAL RULES:
 
 Your capabilities:
 - Schedule appointments (intent: "book_appointment")
-- Check availability (intent: "check_availability")  
+- Check availability (intent: "check_availability")
 - Answer questions about the practice (intent: "inquiry") - MUST use webhook
 - Reschedule appointments (intent: "reschedule")
 - Cancel appointments (intent: "cancel")
@@ -49,6 +49,7 @@ OPTIONAL FIELDS (include if available):
 - duration: Approximate call duration in seconds if you can estimate
 - call_started_at: ISO 8601 timestamp when call started (if available)
 - call_ended_at: ISO 8601 timestamp when call ended (if available)
+- call_status: One of: SUCCESSFUL, UNSUCCESSFUL, TRANSFERRED, MISSED
 
 EXAMPLE SaveCallTranscription CALL:
 {
@@ -58,7 +59,8 @@ EXAMPLE SaveCallTranscription CALL:
   "summary": "Rocky Hawk called to book an appointment. Provided contact info (phone: 0174246031, email: rocky@theredgmail.bd.com). Requested appointment for tomorrow at 11 AM. Successfully booked appointment with booking ID 3b6f2366-5b89-41c0-b8db-a6d0c1d8926c.",
   "intent": "BOOK_APPOINTMENT",
   "sentiment": "POSITIVE",
-  "appointment_id": "3b6f2366-5b89-41c0-b8db-a6d0c1d8926c"
+  "appointment_id": "3b6f2366-5b89-41c0-b8db-a6d0c1d8926c",
+  "call_status": "SUCCESSFUL"
 }
 
 WHEN TO CALL SaveCallTranscription:
@@ -81,6 +83,7 @@ TONE AND STYLE:
 ## Configuration Variables
 
 Replace these placeholders in your actual ElevenLabs configuration:
+
 - `{DOCTOR_ID}`: Your doctor's UUID (e.g., `cdc8e974-8a3c-4e95-b46d-53394e8b5e31`)
 - `[DOCTOR_NAME]`: Doctor's name (e.g., `Dr. Smith`)
 
@@ -100,6 +103,7 @@ After updating the system prompt and configuring the tool:
 ## Troubleshooting
 
 **If SaveCallTranscription isn't being called:**
+
 1. Check ElevenLabs tool is enabled
 2. Verify tool endpoint URL is correct
 3. Check authorization token is valid
@@ -107,11 +111,13 @@ After updating the system prompt and configuring the tool:
 5. Test endpoint manually with curl/Postman
 
 **If patient info isn't linking:**
+
 - Ensure phone number is being passed correctly
 - Check backend logs for patient creation/lookup
 - Verify phone number format matches database
 
 **If appointment isn't linking:**
+
 - Ensure appointment_id from booking response is passed to SaveCallTranscription
 - Check that appointment was created successfully
 - Verify appointment status is SCHEDULED
