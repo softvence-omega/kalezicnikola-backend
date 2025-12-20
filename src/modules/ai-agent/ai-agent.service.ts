@@ -859,7 +859,11 @@ export class AiAgentService {
     // 1. Normalize Data (Handle nested "data" wrapper from ElevenLabs)
     const realData = dto.data || dto;
     const incomingCallSid = realData.conversation_id;
-    const audioUrl = realData.recording_url;
+    // Construct Audio URL manually if missing (Standard ElevenLabs format)
+    const audioUrl =
+      realData.recording_url ||
+      `https://api.elevenlabs.io/v1/convai/conversation/get_audio/${incomingCallSid}`;
+
     // Map duration correctly (logs show 'call_duration_secs')
     let duration =
       realData.duration_seconds ||
