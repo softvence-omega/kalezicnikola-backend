@@ -36,20 +36,39 @@ export class AppointmentService {
 
     const doctorId = session.doctorId;
 
-    // 2. Verify patient exists
-    const patient = await this.prisma.patient.findUnique({
-      where: { id: dto.patientId },
+    // 2. Lookup patient by insuranceId
+    let patient = await this.prisma.patient.findUnique({
+      where: { insuranceId: dto.insuranceId },
     });
 
+    // 3. If patient not found, create a new one
     if (!patient) {
-      throw new NotFoundException('Patient not found');
-    }
+      // Validate required fields for new patient
+      if (
+        !dto.firstName ||
+        !dto.lastName ||
+        !dto.phone ||
+        !dto.dob ||
+        !dto.gender ||
+        !dto.bloodGroup
+      ) {
+        throw new BadRequestException(
+          'Patient does not exist with this insurance ID. Please provide patient details (firstName, lastName, phone, dob, gender, bloodGroup) to create a new patient.',
+        );
+      }
 
-    // 3. Verify insuranceId matches patient's actual insuranceId
-    if (dto.insuranceId !== patient.insuranceId) {
-      throw new BadRequestException(
-        "Insurance ID does not match patient's insurance ID",
-      );
+      patient = await this.prisma.patient.create({
+        data: {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          email: dto.email,
+          phone: dto.phone,
+          insuranceId: dto.insuranceId,
+          dob: new Date(dto.dob),
+          gender: dto.gender,
+          bloodGroup: dto.bloodGroup,
+        },
+      });
     }
 
     // 4. Verify scheduleSlotId exists and is a valid DoctorScheduleSlot
@@ -115,7 +134,7 @@ export class AppointmentService {
     const appointment = await this.prisma.appointment.create({
       data: {
         doctorId,
-        patientId: dto.patientId,
+        patientId: patient.id,
         scheduleSlotId: dto.scheduleSlotId,
         appointmentDate: new Date(dto.appointmentDate),
         insuranceId: dto.insuranceId,
