@@ -36,6 +36,10 @@ export class GetAllAppointmentsDto {
 
   @IsOptional()
   @IsDateString()
+  appointmentDate?: string;
+
+  @IsOptional()
+  @IsDateString()
   startDate?: string;
 
   @IsOptional()
