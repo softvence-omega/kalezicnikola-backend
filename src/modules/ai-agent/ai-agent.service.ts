@@ -10,6 +10,7 @@ import { WebhookResponseDto } from './dto/webhook-response.dto';
 import { KbQueryDto } from './dto/kb-query.dto';
 import { SlotQueryDto } from './dto/slot-query.dto';
 import { TranscriptionSaveDto } from './dto/transcription-save.dto';
+import { ElevenLabsPostCallDto } from './dto/elevenlabs-post-call.dto';
 
 @Injectable()
 export class AiAgentService {
@@ -798,11 +799,26 @@ export class AiAgentService {
     }
 
     // STEP 3: Save transcription with linked patient and appointment
+    // If callSid is the literal template string (ElevenLabs UI issue) or null, generate a temp one
+    const isInvalidSid =
+      !dto.call_sid ||
+      dto.call_sid === '{{conversation_id}}' ||
+      dto.call_sid === '{{call_id}}';
+    const callSid = isInvalidSid
+      ? `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      : dto.call_sid;
+
+    if (isInvalidSid) {
+      console.warn(
+        `Received invalid callSid: "${dto.call_sid}". Using temporary ID: ${callSid}`,
+      );
+    }
+
     const transcription = await this.prisma.callTranscription.create({
       data: {
         doctorId: dto.doctor_id,
         patientId: patientId,
-        callSid: dto.call_sid,
+        callSid: callSid,
         phoneNumber: dto.phone_number,
         duration: callDuration,
         audioUrl: dto.audio_url,
@@ -834,6 +850,131 @@ export class AiAgentService {
       appointment_id: appointmentId,
       message: 'Call transcription saved successfully',
     };
+  }
+
+  // =============== POST-CALL WEBHOOK ===============
+  async processPostCallWebhook(dto: ElevenLabsPostCallDto, doctorId?: string) {
+    console.log('Post-call webhook received:', JSON.stringify(dto, null, 2));
+
+    // 1. Normalize Data (Handle nested "data" wrapper from ElevenLabs)
+    const realData = dto.data || dto;
+    const incomingCallSid = realData.conversation_id;
+    const audioUrl = realData.recording_url;
+    // Map duration correctly (logs show 'call_duration_secs')
+    let duration =
+      realData.duration_seconds ||
+      realData.metadata?.duration_seconds ||
+      realData.metadata?.call_duration_secs ||
+      realData.call_duration_secs;
+
+    // Format transcript if available
+    let transcriptionText = '';
+    if (Array.isArray(realData.transcript)) {
+      transcriptionText = realData.transcript
+        .map((t) => `${t.role}: ${t.message}`)
+        .join('\n');
+    }
+
+    // 2. Identify the Record (Smart Linking)
+    let existing = await this.prisma.callTranscription.findUnique({
+      where: { callSid: incomingCallSid },
+    });
+
+    // If not found by ID, try finding by Phone Number extracted from tool calls
+    // (This handles cases where the Tool saved with a "temp_" ID because config was broken)
+    if (!existing && realData.transcript) {
+      try {
+        const toolCall = realData.transcript.find((t) =>
+          t.tool_calls?.some(
+            (tc) =>
+              tc.tool_name?.includes('Webhook') ||
+              tc.tool_name?.includes('saveTranscription'),
+          ),
+        );
+
+        if (toolCall) {
+          const tc = toolCall.tool_calls.find(
+            (tc) =>
+              tc.tool_name?.includes('Webhook') ||
+              tc.tool_name?.includes('saveTranscription'),
+          );
+          if (tc && tc.params_as_json) {
+            const params = JSON.parse(tc.params_as_json);
+            // Extract phone from nested patient_info or flat phone_number
+            const phone =
+              params.patient_info?.phone || params.phone_number || params.phone;
+
+            if (phone) {
+              console.log(`Attempting to link call via phone number: ${phone}`);
+              // Find most recent temp record for this phone (last 15 mins)
+              const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+              existing = await this.prisma.callTranscription.findFirst({
+                where: {
+                  phoneNumber: phone,
+                  callSid: { startsWith: 'temp_' },
+                  createdAt: { gt: fifteenMinsAgo },
+                },
+                orderBy: { createdAt: 'desc' },
+              });
+
+              if (existing) {
+                console.log(
+                  `Found linked record via phone! ID: ${existing.id}, TempSID: ${existing.callSid}`,
+                );
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error in smart linking logic:', err);
+      }
+    }
+
+    if (existing) {
+      // If we have an existing record, update it with real ID, audioUrl and duration
+      await this.prisma.callTranscription.update({
+        where: { id: existing.id },
+        data: {
+          audioUrl: audioUrl,
+          duration: duration ? Math.round(duration) : undefined, // Ensure integer
+          callSid: incomingCallSid, // UPDATE to the real ID so next time it matches!
+          // Only update transcript/summary if missing
+          transcription: existing.transcription ? undefined : transcriptionText,
+          summary: existing.summary
+            ? undefined
+            : realData.analysis?.transcript_summary,
+        },
+      });
+      console.log(
+        `Updated CallTranscription ${existing.id} with audio and duration.`,
+      );
+      return { success: true, message: 'Updated existing transcription' };
+    }
+
+    // If still no record, create a new one (Fallback)
+    const finalDoctorId = doctorId || dto.doctor_id;
+
+    if (!finalDoctorId) {
+      console.warn('Cannot create new transcription: Missing Doctor ID');
+      return { success: false, message: 'Missing Doctor ID' };
+    }
+
+    await this.prisma.callTranscription.create({
+      data: {
+        doctorId: finalDoctorId,
+        callSid: incomingCallSid,
+        duration: duration ? Math.round(duration) : 0,
+        audioUrl: audioUrl,
+        transcription: transcriptionText,
+        summary: realData.analysis?.transcript_summary,
+        callStatus: 'SUCCESSFUL',
+        intent: 'OTHERS' as any, // Default intent if unknown
+        sentiment: 'NEUTRAL',
+      },
+    });
+
+    console.log(`Created NEW CallTranscription for SID ${incomingCallSid}`);
+    return { success: true, message: 'Created new transcription' };
   }
 
   // Helper method to extract patient info from conversation text
