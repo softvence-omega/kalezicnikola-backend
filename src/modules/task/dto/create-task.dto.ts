@@ -5,7 +5,7 @@ import {
   IsDateString,
   IsUUID,
 } from 'class-validator';
-import { Priority, TaskStatus } from 'generated/prisma';
+import { Flag, TaskStatus } from 'generated/prisma';
 
 export class CreateTaskDto {
   @IsOptional()
@@ -23,10 +23,8 @@ export class CreateTaskDto {
   status?: TaskStatus;
 
   @IsOptional()
-  @IsEnum(Priority, {
-    message: 'Priority must be LOW, MEDIUM, or HIGH',
-  })
-  priority?: Priority;
+  @IsEnum(Flag)
+  priority?: Flag;
 
   @IsOptional()
   @IsDateString()
