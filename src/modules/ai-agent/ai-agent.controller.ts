@@ -18,6 +18,7 @@ import { SlotQueryDto } from './dto/slot-query.dto';
 import { TranscriptionSaveDto } from './dto/transcription-save.dto';
 import { ElevenLabsPostCallDto } from './dto/elevenlabs-post-call.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
+import { AgentCreateTaskDto } from './dto/agent-create-task.dto';
 
 @Controller('ai-agent')
 export class AiAgentController {
@@ -108,6 +109,13 @@ export class AiAgentController {
     console.log(JSON.stringify(dto, null, 2));
     console.log('==================================');
     return this.aiAgentService.saveTranscription(dto);
+  }
+
+  // =============== TASK MANAGEMENT ===============
+  @Post('task/create')
+  @UseGuards(WebhookAuthGuard)
+  async createAgentTask(@Body() dto: AgentCreateTaskDto) {
+    return this.aiAgentService.createAgentTask(dto);
   }
 
   @Get('patient/:patientId/history')

@@ -11,6 +11,7 @@ import { KbQueryDto } from './dto/kb-query.dto';
 import { SlotQueryDto } from './dto/slot-query.dto';
 import { TranscriptionSaveDto } from './dto/transcription-save.dto';
 import { ElevenLabsPostCallDto } from './dto/elevenlabs-post-call.dto';
+import { AgentCreateTaskDto } from './dto/agent-create-task.dto';
 
 import axios from 'axios';
 
@@ -1410,6 +1411,41 @@ export class AiAgentService {
         category: kbResponse.category,
         question: kbResponse.question,
       },
+    };
+  }
+
+  // =============== CREATE AGENT TASK ===============
+  async createAgentTask(dto: AgentCreateTaskDto) {
+    const { doctor_id, title, description, phone_number, insurance_id } = dto;
+
+    let patientId: string | null = null;
+
+    // Try to find patient by phone number if provided
+    if (phone_number) {
+      const patient = await this.prisma.patient.findFirst({
+        where: { phone: phone_number },
+      });
+      if (patient) {
+        patientId = patient.id;
+      }
+    }
+
+    // Create the task with status TODO
+    const task = await this.prisma.task.create({
+      data: {
+        doctorId: doctor_id,
+        title,
+        description,
+        status: 'TODO',
+        patientId,
+        insuranceId: insurance_id,
+      },
+    });
+
+    return {
+      success: true,
+      data: task,
+      message: 'Task created successfully',
     };
   }
 }
