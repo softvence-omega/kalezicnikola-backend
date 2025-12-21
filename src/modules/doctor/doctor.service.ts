@@ -1355,7 +1355,6 @@ export class DoctorService {
               insuranceId: true,
             },
           },
-          patient: { select: { firstName: true, lastName: true, phone: true, insuranceId: true } },
           appointment: {
             select: { id: true, appointmentDate: true, status: true },
           },
@@ -1431,42 +1430,66 @@ export class DoctorService {
       },
     };
 
-    // 1. Today Incoming Calls
+    const overallWhere = { doctorId };
+
+    // 1. Incoming Calls
     const todayIncomingCalls = await this.prisma.callTranscription.count({
       where: commonWhere,
     });
+    const overallIncomingCalls = await this.prisma.callTranscription.count({
+      where: overallWhere,
+    });
 
     // 2. Successful Calls
-    const successfulCalls = await this.prisma.callTranscription.count({
+    const todaySuccessfulCalls = await this.prisma.callTranscription.count({
       where: {
         ...commonWhere,
         callStatus: 'SUCCESSFUL',
       },
     });
-
-    // 3. Average Call Duration
-    const durationAggregate = await this.prisma.callTranscription.aggregate({
-      where: commonWhere,
-      _avg: {
-        duration: true,
+    const overallSuccessfulCalls = await this.prisma.callTranscription.count({
+      where: {
+        ...overallWhere,
+        callStatus: 'SUCCESSFUL',
       },
     });
-    const averageCallDuration = durationAggregate._avg.duration || 0;
 
-    // 4. Tasks (Appointments scheduled for today)
-    const tasks = await this.prisma.appointment.count({
+    // 3. Average Call Duration
+    const durationAggregateToday =
+      await this.prisma.callTranscription.aggregate({
+        where: commonWhere,
+        _avg: {
+          duration: true,
+        },
+      });
+    const durationAggregateOverall =
+      await this.prisma.callTranscription.aggregate({
+        where: overallWhere,
+        _avg: {
+          duration: true,
+        },
+      });
+
+    // 4. Tasks (Task model with status TODO)
+    const todayTasks = await this.prisma.task.count({
       where: {
         doctorId,
-        appointmentDate: {
-          gte: startOfDay,
-          lte: endOfDay,
-        },
-        status: 'SCHEDULED',
+        status: 'TODO',
+        OR: [
+          { dueDate: { gte: startOfDay, lte: endOfDay } },
+          { createdAt: { gte: startOfDay, lte: endOfDay } },
+        ],
+      },
+    });
+    const overallTasks = await this.prisma.task.count({
+      where: {
+        doctorId,
+        status: 'TODO',
       },
     });
 
     // 5. Requires a call back (Missed or Unsuccessful)
-    const requiresCallback = await this.prisma.callTranscription.count({
+    const todayRequiresCallback = await this.prisma.callTranscription.count({
       where: {
         ...commonWhere,
         callStatus: {
@@ -1474,13 +1497,34 @@ export class DoctorService {
         },
       },
     });
+    const overallRequiresCallback = await this.prisma.callTranscription.count({
+      where: {
+        ...overallWhere,
+        callStatus: {
+          in: ['MISSED', 'UNSUCCESSFUL'],
+        },
+      },
+    });
 
     return {
-      todayIncomingCalls,
-      successfulCalls,
-      averageCallDuration: Math.round(averageCallDuration), // in seconds
-      tasks,
-      requiresCallback,
+      today: {
+        incomingCalls: todayIncomingCalls,
+        successfulCalls: todaySuccessfulCalls,
+        averageCallDuration: Math.round(
+          durationAggregateToday._avg.duration || 0,
+        ),
+        tasks: todayTasks,
+        requiresCallback: todayRequiresCallback,
+      },
+      overall: {
+        incomingCalls: overallIncomingCalls,
+        successfulCalls: overallSuccessfulCalls,
+        averageCallDuration: Math.round(
+          durationAggregateOverall._avg.duration || 0,
+        ),
+        tasks: overallTasks,
+        requiresCallback: overallRequiresCallback,
+      },
     };
   }
 }

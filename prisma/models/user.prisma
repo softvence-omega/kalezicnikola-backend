@@ -69,10 +69,11 @@ model Doctor {
   doctorSecuritySettings     DoctorSecuritySettings?
 
   // Subscription Relation
-  subscription Subscription?
+  subscription       Subscription?
   // AI Agent Relations
-  callTranscriptions CallTranscription[] @relation("DoctorCallTranscriptions")
+  callTranscriptions CallTranscription[]   @relation("DoctorCallTranscriptions")
   knowledgeBase      DoctorKnowledgeBase[] @relation("DoctorKnowledgeBase")
+  tasks              Task[]
 
   @@map("doctors")
 }
@@ -123,22 +124,22 @@ model PasswordReset {
 
 // Unified User model for chat
 model User {
-  id        String   @id @default(uuid())
-  adminId   String?  @unique
-  doctorId  String?  @unique
-  role      UserRole
-  
-  admin     Admin?   @relation(fields: [adminId], references: [id])
-  doctor    Doctor?  @relation(fields: [doctorId], references: [id])
-  
+  id       String   @id @default(uuid())
+  adminId  String?  @unique
+  doctorId String?  @unique
+  role     UserRole
+
+  admin  Admin?  @relation(fields: [adminId], references: [id])
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
+
   // Conversations where this user is the participant
   conversations      AdminConversation[] @relation("UserConversations")
   // Conversations where this user is the admin
   adminConversations AdminConversation[] @relation("AdminConversations")
   sentMessages       SupportMessage[]
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   @@map("users")
 }
