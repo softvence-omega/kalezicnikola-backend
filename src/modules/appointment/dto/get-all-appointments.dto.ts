@@ -24,15 +24,15 @@ export class GetAllAppointmentsDto {
 
   @IsOptional()
   @IsString()
-  doctorId?: string;
-
-  @IsOptional()
-  @IsString()
   patientId?: string;
 
   @IsOptional()
   @IsEnum(AppointmentStatus)
   status?: AppointmentStatus;
+
+  @IsOptional()
+  @IsDateString()
+  appointmentDate?: string;
 
   @IsOptional()
   @IsDateString()

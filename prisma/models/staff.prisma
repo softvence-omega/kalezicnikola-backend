@@ -1,16 +1,16 @@
 model Staff {
-  id               String         @id @default(uuid())
-  doctorId         String?
+  id       String  @id @default(uuid())
+  doctorId String?
 
   // personal details
-  employmentId     String        @unique
+  employmentId     String         @unique
   firstName        String
   lastName         String
   dob              DateTime
   gender           Gender
   photo            String?
-  email            String @unique
-  phone            String @unique
+  email            String         @unique
+  phone            String         @unique
   presentAddress   String
   permanentAddress String?
   maritalStatus    MaritalStatus?
@@ -20,43 +20,45 @@ model Staff {
   nationality      String
   nationalIdNumber String?
 
-// employment details
-  department     Department?
-  position       String?
-  description    String?
-  joinDate       DateTime?
-  employmentType EmploymentType?
-  workSchedule   String?
-  weeklyHours    Int?
+  // employment details
+  department       Department?
+  position         String?
+  description      String?
+  joinDate         DateTime?
+  employmentType   EmploymentType?
+  workSchedule     String?
+  weeklyHours      Int?
   employmentStatus StaffStatus?
 
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt
 
   // Relations
-  doctor         Doctor?              @relation(fields: [doctorId], references: [id])
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
 
   @@map("staffs")
 }
-
 
 model Task {
   id          String      @id @default(uuid())
   title       String?
   description String?
   status      TaskStatus?
-  priority    Priority?
+  priority    Flag?
   time        String?
   dueDate     DateTime?
 
-  patientId String?
+  patientId   String?
   insuranceId String?
-  
+  doctorId    String?
+  phone       String?
+
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt
   deletedAt DateTime?
 
-  patient        Patient? @relation(fields: [patientId], references: [id])
+  patient Patient? @relation(fields: [patientId], references: [id])
+  doctor  Doctor?  @relation(fields: [doctorId], references: [id])
 
   @@map("tasks")
 }

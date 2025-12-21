@@ -10,12 +10,16 @@ import { GlobalExceptionFilter } from './common/interceptors/filters/http-except
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
-    bodyParser: true,
   });
+
+  // Increase body size limit for ElevenLabs webhooks
+  app.useBodyParser('json', { limit: '10mb' });
+  app.useBodyParser('urlencoded', { limit: '10mb', extended: true });
   // Add CORS configuration
   app.enableCors({
     origin: [
       'http://localhost:3000',
+      'https://docline.ai',
       'https://kalezicnikola-frontend.vercel.app',
     ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',

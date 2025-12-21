@@ -256,7 +256,10 @@ export class DoctorController {
       throw new UnauthorizedException('Invalid authorization format');
     }
 
-    const result = await this.doctorService.checkEmploymentIdAvailability(token, employmentId);
+    const result = await this.doctorService.checkEmploymentIdAvailability(
+      token,
+      employmentId,
+    );
 
     return {
       statusCode: HttpStatus.OK,
@@ -480,7 +483,10 @@ export class DoctorController {
       throw new UnauthorizedException('Invalid authorization format');
     }
 
-    const result = await this.doctorService.getSingleSchedule(token, scheduleSlotId);
+    const result = await this.doctorService.getSingleSchedule(
+      token,
+      scheduleSlotId,
+    );
 
     return {
       statusCode: HttpStatus.OK,
@@ -506,7 +512,11 @@ export class DoctorController {
       throw new UnauthorizedException('Invalid authorization format');
     }
 
-    const result = await this.doctorService.updateSchedule(token, scheduleSlotId, dto);
+    const result = await this.doctorService.updateSchedule(
+      token,
+      scheduleSlotId,
+      dto,
+    );
 
     return {
       statusCode: HttpStatus.OK,
@@ -531,7 +541,10 @@ export class DoctorController {
       throw new UnauthorizedException('Invalid authorization format');
     }
 
-    const result = await this.doctorService.deleteSchedule(token, scheduleSlotId);
+    const result = await this.doctorService.deleteSchedule(
+      token,
+      scheduleSlotId,
+    );
 
     return {
       statusCode: HttpStatus.OK,
@@ -641,8 +654,6 @@ export class DoctorController {
     };
   }
 
-  // ==================== CALL HISTORY ====================
-
   // ----------------- GET CALL HISTORY -------------------
   @Get('calls/history')
   @UseGuards(DoctorGuard)
@@ -693,4 +704,25 @@ export class DoctorController {
     };
   }
 
+  // ----------------- GET DASHBOARD STATS -------------------
+  @Get('dashboard-stats')
+  @UseGuards(DoctorGuard)
+  async getDashboardStats(@Headers('authorization') authorization: string) {
+    if (!authorization) {
+      throw new UnauthorizedException('Authorization header is required');
+    }
+
+    const token = authorization.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization format');
+    }
+
+    const result = await this.doctorService.getDashboardStats(token);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Dashboard statistics retrieved successfully',
+      data: result,
+    };
+  }
 }

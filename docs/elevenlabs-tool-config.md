@@ -1,20 +1,25 @@
 # ElevenLabs Tool Configuration for Call Transcription
 
 ## Tool Name
+
 `SaveCallTranscription`
 
 ## Description
+
 Saves the complete call transcription, patient information, and conversation summary to the database. This tool MUST be called at the end of every conversation.
 
 ## HTTP Method
+
 `POST`
 
 ## Endpoint URL
+
 ```
 https://your-domain.com/api/v1/ai-agent/transcription/save
 ```
 
 ## Headers
+
 ```json
 {
   "Content-Type": "application/json",
@@ -23,6 +28,7 @@ https://your-domain.com/api/v1/ai-agent/transcription/save
 ```
 
 ## Request Body Schema (JSON)
+
 ```json
 {
   "type": "object",
@@ -57,9 +63,13 @@ https://your-domain.com/api/v1/ai-agent/transcription/save
       "type": "string",
       "description": "Patient ID if known from previous calls (optional)"
     },
-    "appointment_id": {
       "type": "string",
-      "description": "Appointment ID if booking was made during call (optional)"
+      "description": "Appointment ID if booking was made during call. IMPORTANT: Must be passed if available."
+    },
+    "call_status": {
+      "type": "string",
+      "enum": ["SUCCESSFUL", "UNSUCCESSFUL", "TRANSFERRED", "MISSED"],
+      "description": "Status of the call outcome"
     },
     "duration": {
       "type": "integer",
@@ -81,6 +91,7 @@ https://your-domain.com/api/v1/ai-agent/transcription/save
 ```
 
 ## Example Request
+
 ```json
 {
   "doctor_id": "cdc8e974-8a3c-4e95-b46d-53394e8b5e31",
@@ -94,6 +105,7 @@ https://your-domain.com/api/v1/ai-agent/transcription/save
 ```
 
 ## Expected Response
+
 ```json
 {
   "success": true,
@@ -105,12 +117,15 @@ https://your-domain.com/api/v1/ai-agent/transcription/save
 ```
 
 ## When to Call This Tool
+
 The AI agent should call this tool:
+
 - **At the end of EVERY call** (successful or not)
 - **Before saying goodbye** to the patient
 - **After any booking/cancellation is confirmed**
 
 ## Updated System Prompt Addition
+
 ```
 CRITICAL - END OF CALL PROCEDURE:
 Before ending ANY conversation, you MUST call SaveCallTranscription with:
@@ -149,6 +164,7 @@ This is MANDATORY for every call - no exceptions.
 5. Test the endpoint manually with Postman/curl
 
 **Manual Test:**
+
 ```bash
 curl -X POST https://your-domain.com/api/v1/ai-agent/transcription/save \
   -H "Content-Type: application/json" \

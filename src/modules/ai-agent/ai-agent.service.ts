@@ -10,11 +10,16 @@ import { WebhookResponseDto } from './dto/webhook-response.dto';
 import { KbQueryDto } from './dto/kb-query.dto';
 import { SlotQueryDto } from './dto/slot-query.dto';
 import { TranscriptionSaveDto } from './dto/transcription-save.dto';
+import { ElevenLabsPostCallDto } from './dto/elevenlabs-post-call.dto';
+import { AgentCreateTaskDto } from './dto/agent-create-task.dto';
+
+import axios from 'axios';
 
 @Injectable()
 export class AiAgentService {
   private readonly twilioNumber: string;
   private readonly fallbackNumber: string;
+  private readonly elevenLabsApiKey: string;
 
   constructor(
     private prisma: PrismaService,
@@ -22,6 +27,8 @@ export class AiAgentService {
   ) {
     this.twilioNumber = '+15095091987'; // Twilio number from client
     this.fallbackNumber = '+8801742460399'; // Physical assistant number
+    this.elevenLabsApiKey =
+      this.config.get<string>('ELEVENLABS_WEBHOOK_API_KEY') || '';
   }
 
   // =============== MAIN WEBHOOK PROCESSOR ===============
@@ -226,11 +233,11 @@ export class AiAgentService {
 
     // Validate the date
     const currentYear = new Date().getFullYear();
-    
+
     if (isNaN(requestedDate.getTime())) {
       // Try parsing with current year appended if initial parse failed
       const retryDate = new Date(`${requested_slot} ${currentYear}`);
-      
+
       if (!isNaN(retryDate.getTime())) {
         requestedDate.setTime(retryDate.getTime());
       } else {
@@ -240,11 +247,11 @@ export class AiAgentService {
       // If date parsed but year is significantly in the past (e.g., default 2001 behavior),
       // try to use the current year with the original input string
       if (requestedDate.getFullYear() < currentYear) {
-         const retryDate = new Date(`${requested_slot} ${currentYear}`);
-         // Only use retryDate if it's valid
-         if (!isNaN(retryDate.getTime())) {
-             requestedDate.setTime(retryDate.getTime());
-         }
+        const retryDate = new Date(`${requested_slot} ${currentYear}`);
+        // Only use retryDate if it's valid
+        if (!isNaN(retryDate.getTime())) {
+          requestedDate.setTime(retryDate.getTime());
+        }
       }
     }
 
@@ -432,14 +439,90 @@ export class AiAgentService {
     };
   }
 
+  // Helper to parse booking ID (handles "123", "#123", "123rd", "seventeen", "eighteenth")
+  private parseBookingId(id: string): number | null {
+    if (!id) return null;
+
+    const lowerId = id.toLowerCase().trim();
+
+    // 1. Try extracting digits directly (handles "18th", "#18", "No. 18")
+    const digitMatch = lowerId.match(/(\d+)/);
+    if (digitMatch) {
+      return Number(digitMatch[1]);
+    }
+
+    // 2. Handle number words and ordinals
+    const wordMap: Record<string, number> = {
+      // Cardinals
+      one: 1,
+      two: 2,
+      three: 3,
+      four: 4,
+      five: 5,
+      six: 6,
+      seven: 7,
+      eight: 8,
+      nine: 9,
+      ten: 10,
+      eleven: 11,
+      twelve: 12,
+      thirteen: 13,
+      fourteen: 14,
+      fifteen: 15,
+      sixteen: 16,
+      seventeen: 17,
+      eighteen: 18,
+      nineteen: 19,
+      twenty: 20,
+      // Ordinals
+      first: 1,
+      second: 2,
+      third: 3,
+      fourth: 4,
+      fifth: 5,
+      sixth: 6,
+      seventh: 7,
+      eighth: 8,
+      ninth: 9,
+      tenth: 10,
+      eleventh: 11,
+      twelfth: 12,
+      thirteenth: 13,
+      fourteenth: 14,
+      fifteenth: 15,
+      sixteenth: 16,
+      seventeenth: 17,
+      eighteenth: 18,
+      nineteenth: 19,
+      twentieth: 20,
+    };
+
+    if (wordMap[lowerId]) return wordMap[lowerId];
+
+    // Check for "number X" format with words
+    if (lowerId.startsWith('number ')) {
+      const part = lowerId.replace('number ', '').trim();
+      if (wordMap[part]) return wordMap[part];
+    }
+
+    return null;
+  }
+
   // =============== UPDATE BOOKING ===============
   async updateBooking(dto: {
     booking_id: string;
     new_slot_id?: string;
     new_date?: string;
   }) {
+    const bookingId = this.parseBookingId(dto.booking_id);
+    if (!bookingId) {
+      throw new BadRequestException(
+        'Invalid booking ID provided. Please provide a numeric ID.',
+      );
+    }
+
     const appointment = await this.prisma.appointment.findUnique({
-      where: { id: Number(dto.booking_id) },
+      where: { id: bookingId },
     });
 
     if (!appointment) {
@@ -467,7 +550,7 @@ export class AiAgentService {
           scheduleSlotId: dto.new_slot_id,
           appointmentDate: new Date(dto.new_date),
           status: 'SCHEDULED',
-          id: { not: Number(dto.booking_id) },
+          id: { not: bookingId },
         },
       });
 
@@ -477,7 +560,7 @@ export class AiAgentService {
     }
 
     const updated = await this.prisma.appointment.update({
-      where: { id: Number(dto.booking_id) },
+      where: { id: bookingId },
       data: {
         scheduleSlotId: dto.new_slot_id,
         appointmentDate: dto.new_date ? new Date(dto.new_date) : undefined,
@@ -511,9 +594,12 @@ export class AiAgentService {
 
     // Try to find by booking_id first
     if (dto.booking_id) {
-      appointment = await this.prisma.appointment.findUnique({
-        where: { id: Number(dto.booking_id) },
-      });
+      const bookingId = this.parseBookingId(dto.booking_id);
+      if (bookingId) {
+        appointment = await this.prisma.appointment.findUnique({
+          where: { id: bookingId },
+        });
+      }
     }
 
     // Fallback: Find by phone number
@@ -550,7 +636,7 @@ export class AiAgentService {
               `Found ${filtered.length} appointments on this date. Please provide the booking ID.`,
             );
           }
-          appointment = filtered[0];
+          if (filtered.length > 0) appointment = filtered[0];
         } else if (appointments.length === 1) {
           // Only one scheduled appointment, use it
           appointment = appointments[0];
@@ -588,8 +674,13 @@ export class AiAgentService {
 
   // =============== GET BOOKING ===============
   async getBooking(bookingId: string) {
+    const id = this.parseBookingId(bookingId);
+    if (!id) {
+      throw new NotFoundException('Invalid booking ID format');
+    }
+
     const appointment = await this.prisma.appointment.findUnique({
-      where: { id: Number(bookingId) },
+      where: { id: id },
       include: {
         doctor: {
           select: { firstName: true, lastName: true, specialities: true },
@@ -611,10 +702,78 @@ export class AiAgentService {
     };
   }
 
+  private determineCallStatus(
+    dto: TranscriptionSaveDto,
+    resolvedAppointmentId?: number,
+  ): 'SUCCESSFUL' | 'UNSUCCESSFUL' | 'TRANSFERRED' | 'MISSED' {
+    // 1. Priority: Explicit status from AI
+    if (dto.call_status) {
+      const status = dto.call_status.toUpperCase();
+      if (
+        ['SUCCESSFUL', 'UNSUCCESSFUL', 'TRANSFERRED', 'MISSED'].includes(status)
+      ) {
+        return status as any;
+      }
+    }
+
+    const duration = typeof dto.duration === 'number' ? dto.duration : -1;
+    const textToCheck = ((dto.summary || '') + ' ' + (dto.transcription || ''))
+      .toLowerCase()
+      .trim();
+
+    // 2. Priority: Appointment Made -> Always SUCCESSFUL
+    if (dto.appointment_id || resolvedAppointmentId) {
+      return 'SUCCESSFUL';
+    }
+
+    // 3. Priority: MISSED check
+    // If there is NO transcription, or it's under 10 seconds (User request), or short + aborted
+    if (!dto.transcription || dto.transcription.trim().length === 0) {
+      return 'MISSED';
+    }
+    if (duration >= 0 && duration < 10) {
+      return 'MISSED';
+    }
+    if (
+      duration >= 0 &&
+      duration < 25 &&
+      (dto.transcription.length < 100 ||
+        textToCheck.includes('cut the call') ||
+        textToCheck.includes('wrong number'))
+    ) {
+      return 'MISSED';
+    }
+
+    // 4. Priority: TRANSFERRED check
+    if (
+      dto.was_transferred ||
+      textToCheck.includes('transfer') ||
+      textToCheck.includes('human') ||
+      textToCheck.includes('assistant') ||
+      textToCheck.includes('connect you') ||
+      textToCheck.includes('physical assistance')
+    ) {
+      return 'TRANSFERRED';
+    }
+
+    // 5. Priority: Booking failure check
+    if (
+      dto.intent?.toUpperCase() === 'BOOK_APPOINTMENT' &&
+      !dto.appointment_id &&
+      !resolvedAppointmentId
+    ) {
+      return 'UNSUCCESSFUL';
+    }
+
+    return 'SUCCESSFUL';
+  }
+
   // =============== SAVE TRANSCRIPTION ===============
   async saveTranscription(dto: TranscriptionSaveDto) {
     let patientId = dto.patient_id;
-    let appointmentId = dto.appointment_id ? Number(dto.appointment_id) : undefined;
+    let appointmentId = dto.appointment_id
+      ? Number(dto.appointment_id)
+      : undefined;
 
     // Insurance ID: optional, digits only (no INS prefix)
     let insuranceId: string | undefined = dto.insurance_id;
@@ -700,31 +859,57 @@ export class AiAgentService {
       }
     }
 
+    // STEP 2.5: Calculate duration if not provided but timestamps are available
+    let callDuration = dto.duration;
+    if (!callDuration && dto.call_started_at && dto.call_ended_at) {
+      const startTime = new Date(dto.call_started_at).getTime();
+      const endTime = new Date(dto.call_ended_at).getTime();
+      callDuration = Math.floor((endTime - startTime) / 1000); // Convert ms to seconds
+      console.log(
+        `Calculated call duration: ${callDuration} seconds (from ${dto.call_started_at} to ${dto.call_ended_at})`,
+      );
+    }
+
     // STEP 3: Save transcription with linked patient and appointment
+    // If callSid is the literal template string (ElevenLabs UI issue) or null, generate a temp one
+    const isInvalidSid =
+      !dto.call_sid ||
+      dto.call_sid === '{{conversation_id}}' ||
+      dto.call_sid === '{{call_id}}';
+    const callSid = isInvalidSid
+      ? `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      : dto.call_sid;
+
+    if (isInvalidSid) {
+      console.warn(
+        `Received invalid callSid: "${dto.call_sid}". Using temporary ID: ${callSid}`,
+      );
+    }
+
+    const callStatus = this.determineCallStatus(dto, appointmentId);
+
     const transcription = await this.prisma.callTranscription.create({
       data: {
         doctorId: dto.doctor_id,
         patientId: patientId,
-        callSid: dto.call_sid,
+        callSid: callSid,
         phoneNumber: dto.phone_number,
-        duration: dto.duration,
+        duration: callDuration || dto.duration,
         audioUrl: dto.audio_url,
         transcription: dto.transcription,
-        intent: dto.intent?.toUpperCase() as any,
-        sentiment: dto.sentiment?.toUpperCase() as any,
+        intent: (dto.intent?.toUpperCase() as any) || 'GENERAL',
+        sentiment: (dto.sentiment?.toUpperCase() as any) || 'NEUTRAL',
         summary: dto.summary,
         appointmentId: appointmentId,
         fallbackNumber: dto.fallback_number || this.fallbackNumber,
-        wasTransferred: dto.was_transferred || false,
         callStartedAt: dto.call_started_at
           ? new Date(dto.call_started_at)
           : null,
         callEndedAt: dto.call_ended_at ? new Date(dto.call_ended_at) : null,
 
         // New fields
-        callStatus: dto.call_status
-          ? (dto.call_status.toUpperCase() as any)
-          : null,
+        callStatus: callStatus,
+        wasTransferred: dto.was_transferred || callStatus === 'TRANSFERRED',
         reasonForCalling: dto.reason_for_calling,
         insuranceId: insuranceId,
       },
@@ -737,6 +922,181 @@ export class AiAgentService {
       appointment_id: appointmentId,
       message: 'Call transcription saved successfully',
     };
+  }
+
+  // =============== POST-CALL WEBHOOK ===============
+  async processPostCallWebhook(dto: ElevenLabsPostCallDto, doctorId?: string) {
+    console.log('Post-call webhook received:', JSON.stringify(dto, null, 2));
+
+    // 1. Normalize Data (Handle nested "data" wrapper from ElevenLabs)
+    const realData = dto.data || dto;
+    const incomingCallSid = realData.conversation_id;
+    // Construct proxy Audio URL (easier for frontend to use)
+    // Use environment variable or fallback to localhost for development
+    const backendBaseUrl =
+      this.config.get<string>('BACKEND_URL') || 'https://backend.docline.ai';
+    const audioUrl = `${backendBaseUrl}/api/v1/ai-agent/audio/${incomingCallSid}`;
+
+    // Map duration correctly (logs show 'call_duration_secs')
+    let duration =
+      realData.duration_seconds ||
+      realData.metadata?.duration_seconds ||
+      realData.metadata?.call_duration_secs ||
+      realData.call_duration_secs;
+
+    // Format transcript if available
+    let transcriptionText = '';
+    if (Array.isArray(realData.transcript)) {
+      transcriptionText = realData.transcript
+        .map((t) => `${t.role}: ${t.message}`)
+        .join('\n');
+    }
+
+    // 2. Identify the Record (Smart Linking)
+    let existing = await this.prisma.callTranscription.findUnique({
+      where: { callSid: incomingCallSid },
+    });
+
+    // If not found by ID, try finding by Phone Number extracted from tool calls
+    // (This handles cases where the Tool saved with a "temp_" ID because config was broken)
+    if (!existing && realData.transcript) {
+      try {
+        const toolCall = realData.transcript.find((t) =>
+          t.tool_calls?.some(
+            (tc) =>
+              tc.tool_name?.includes('Webhook') ||
+              tc.tool_name?.includes('saveTranscription'),
+          ),
+        );
+
+        if (toolCall) {
+          const tc = toolCall.tool_calls.find(
+            (tc) =>
+              tc.tool_name?.includes('Webhook') ||
+              tc.tool_name?.includes('saveTranscription'),
+          );
+          if (tc && tc.params_as_json) {
+            const params = JSON.parse(tc.params_as_json);
+            // Extract phone from nested patient_info or flat phone_number
+            const phone =
+              params.patient_info?.phone || params.phone_number || params.phone;
+
+            if (phone) {
+              console.log(`Attempting to link call via phone number: ${phone}`);
+              // Find most recent temp record for this phone (last 15 mins)
+              const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+              existing = await this.prisma.callTranscription.findFirst({
+                where: {
+                  phoneNumber: phone,
+                  callSid: { startsWith: 'temp_' },
+                  createdAt: { gt: fifteenMinsAgo },
+                },
+                orderBy: { createdAt: 'desc' },
+              });
+
+              if (existing) {
+                console.log(
+                  `Found linked record via phone! ID: ${existing.id}, TempSID: ${existing.callSid}`,
+                );
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error in smart linking logic:', err);
+      }
+    }
+
+    if (existing) {
+      // If we have an existing record, update it with real ID, audioUrl and duration
+      await this.prisma.callTranscription.update({
+        where: { id: existing.id },
+        data: {
+          audioUrl: audioUrl,
+          duration: duration ? Math.round(duration) : undefined, // Ensure integer
+          callSid: incomingCallSid, // UPDATE to the real ID so next time it matches!
+          // Only update transcript if missing
+          transcription: existing.transcription ? undefined : transcriptionText,
+          // ALWAYS update summary with ElevenLabs summary when available (overwrite existing)
+          summary: realData.analysis?.transcript_summary || existing.summary,
+        },
+      });
+      console.log(
+        `Updated CallTranscription ${existing.id} with audio and duration.`,
+      );
+      return { success: true, message: 'Updated existing transcription' };
+    }
+
+    // If still no record, create a new one (Fallback)
+    const finalDoctorId = doctorId || dto.doctor_id;
+
+    if (!finalDoctorId) {
+      console.warn('Cannot create new transcription: Missing Doctor ID');
+      return { success: false, message: 'Missing Doctor ID' };
+    }
+
+    // Use determineCallStatus logic for fallback too
+    let detectedIntent = 'GENERAL';
+    const summaryTitle =
+      realData.analysis?.call_summary_title?.toUpperCase() || '';
+    if (summaryTitle.includes('BOOK')) detectedIntent = 'BOOK_APPOINTMENT';
+    else if (summaryTitle.includes('INQUIRY')) detectedIntent = 'INQUIRY';
+    else if (summaryTitle.includes('AVAILABILITY'))
+      detectedIntent = 'CHECK_AVAILABILITY';
+
+    const tempDto: any = {
+      duration: duration ? Math.round(duration) : 0,
+      transcription: transcriptionText,
+      summary: realData.analysis?.transcript_summary,
+      intent: detectedIntent,
+    };
+
+    const callStatus = this.determineCallStatus(tempDto);
+
+    await this.prisma.callTranscription.create({
+      data: {
+        doctorId: finalDoctorId,
+        callSid: incomingCallSid,
+        duration: tempDto.duration,
+        audioUrl: audioUrl,
+        transcription: tempDto.transcription,
+        summary: tempDto.summary,
+        callStatus: callStatus,
+        wasTransferred: callStatus === 'TRANSFERRED',
+        intent: detectedIntent as any,
+        sentiment:
+          (realData.analysis?.call_sentiment?.toUpperCase() as any) ||
+          'NEUTRAL',
+      },
+    });
+
+    console.log(`Created NEW CallTranscription for SID ${incomingCallSid}`);
+    return { success: true, message: 'Created new transcription' };
+  }
+
+  async getCallAudio(conversationId: string) {
+    // Detect EU residency key and use correct endpoint
+    const isEuKey = this.elevenLabsApiKey?.includes('_residency_eu');
+    const baseUrl = isEuKey
+      ? 'https://api.eu.residency.elevenlabs.io'
+      : 'https://api.elevenlabs.io';
+    const url = `${baseUrl}/v1/convai/conversations/${conversationId}/audio`;
+
+    try {
+      const response = await axios.get(url, {
+        headers: {
+          'xi-api-key': this.elevenLabsApiKey,
+        },
+        responseType: 'stream',
+      });
+      return response.data;
+    } catch (error) {
+      console.error(
+        'Error fetching audio from ElevenLabs:',
+        error.response?.data || error.message,
+      );
+      throw error;
+    }
   }
 
   // Helper method to extract patient info from conversation text
@@ -768,7 +1128,7 @@ export class AiAgentService {
         // clean up the name
         const fullName = match[1].trim();
         const nameParts = fullName.split(/\s+/);
-        
+
         if (nameParts.length >= 1) {
           result.firstName = nameParts[0];
         }
@@ -845,35 +1205,42 @@ export class AiAgentService {
     }
 
     // Otherwise, suggest available slots
-  try {
-    const slots = await this.suggestAlternativeSlots({
-      doctor_id: payload.doctor_id,
-      requested_slot: payload.requested_time || payload.requested_date || new Date().toISOString(),
-    });
+    try {
+      const slots = await this.suggestAlternativeSlots({
+        doctor_id: payload.doctor_id,
+        requested_slot:
+          payload.requested_time ||
+          payload.requested_date ||
+          new Date().toISOString(),
+      });
 
-    if (slots.alternative_slots.length > 0) {
-      const slotTexts = slots.alternative_slots
-        .slice(0, 3)
-        .map((s) => `${s.date} at ${s.time}`)
-        .join(', or ');
+      if (slots.alternative_slots.length > 0) {
+        const slotTexts = slots.alternative_slots
+          .slice(0, 3)
+          .map((s) => `${s.date} at ${s.time}`)
+          .join(', or ');
 
-      return {
-        reply_text: `I have availability on ${slotTexts}. Which time works best for you?`,
-        // Return ALL slots (up to 20) in the data payload so the LLM knows about them
-        suggested_slots: slots.alternative_slots.slice(0, 20),
-        action: 'ask_slot',
-      };
+        return {
+          reply_text: `I have availability on ${slotTexts}. Which time works best for you?`,
+          // Return ALL slots (up to 20) in the data payload so the LLM knows about them
+          suggested_slots: slots.alternative_slots.slice(0, 20),
+          action: 'ask_slot',
+        };
+      }
+    } catch (error) {
+      if (
+        error instanceof BadRequestException &&
+        error.message === 'Invalid date format'
+      ) {
+        return {
+          reply_text:
+            "I didn't quite catch the date properly. Could you please repeat the date you'd like to book?",
+          action: 'ask_date',
+        };
+      }
     }
-  } catch (error) {
-    if (error instanceof BadRequestException && error.message === 'Invalid date format') {
-      return {
-        reply_text: "I didn't quite catch the date properly. Could you please repeat the date you'd like to book?",
-        action: 'ask_date',
-      };
-    }
-  }
 
-  return {
+    return {
       reply_text:
         "I apologize, but we don't have availability in the near future. Would you like me to check next week, or connect you with our assistant?",
       action: 'no_availability',
@@ -1044,6 +1411,60 @@ export class AiAgentService {
         category: kbResponse.category,
         question: kbResponse.question,
       },
+    };
+  }
+
+  // =============== CREATE AGENT TASK ===============
+  async createAgentTask(dto: AgentCreateTaskDto) {
+    const {
+      doctor_id,
+      title,
+      description,
+      phone_number,
+      insurance_id,
+      priority,
+      time,
+      due_date,
+    } = dto;
+
+    let patientId: string | null = null;
+
+    // Try to find patient by phone number if provided
+    if (phone_number) {
+      const patient = await this.prisma.patient.findFirst({
+        where: { phone: phone_number },
+      });
+      if (patient) {
+        patientId = patient.id;
+      }
+    }
+
+    // Map priority "MEDIUM" to "NORMAL" for Flag enum if needed
+    let mappedPriority = priority?.toUpperCase();
+    if (mappedPriority === 'MEDIUM') {
+      mappedPriority = 'NORMAL';
+    }
+
+    // Create the task with status TODO
+    const task = await this.prisma.task.create({
+      data: {
+        doctorId: doctor_id,
+        title,
+        description,
+        status: 'TODO',
+        priority: mappedPriority as any,
+        time,
+        dueDate: due_date ? new Date(due_date) : undefined,
+        patientId,
+        insuranceId: insurance_id,
+        phone: phone_number,
+      },
+    });
+
+    return {
+      success: true,
+      data: task,
+      message: 'Task created successfully',
     };
   }
 }

@@ -51,6 +51,7 @@ export class TaskService {
         time: dto.time,
         patientId: dto.patientId,
         insuranceId: dto.insuranceId,
+        doctorId: doctorId,
       },
       include: {
         patient: {
@@ -92,6 +93,7 @@ export class TaskService {
 
     // Build where clause
     const where: any = {
+      doctorId,
       deletedAt: null,
     };
 
@@ -127,6 +129,7 @@ export class TaskService {
               firstName: true,
               lastName: true,
               photo: true,
+              phone: true,
             },
           },
         },
@@ -148,7 +151,6 @@ export class TaskService {
         next: page < totalPages ? page + 1 : null,
       },
       tasks,
-      
     };
   }
 
@@ -255,33 +257,32 @@ export class TaskService {
     return { task: updatedTask };
   }
 
-// ----------------- DELETE TASK (HARD DELETE) -------------------
-async deleteTask(accessToken: string, taskId: string) {
-  // Verify doctor session
-  const session = await this.prisma.session.findUnique({
-    where: { accessToken },
-    include: { doctor: true },
-  });
+  // ----------------- DELETE TASK (HARD DELETE) -------------------
+  async deleteTask(accessToken: string, taskId: string) {
+    // Verify doctor session
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
 
-  if (!session || !session.doctorId || !session.doctor) {
-    throw new UnauthorizedException('Invalid session or doctor not found');
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    // Check if task exists
+    const existingTask = await this.prisma.task.findUnique({
+      where: { id: taskId },
+    });
+
+    if (!existingTask) {
+      throw new NotFoundException('Task not found');
+    }
+
+    // HARD DELETE (permanent)
+    await this.prisma.task.delete({
+      where: { id: taskId },
+    });
+
+    return { message: 'Task deleted successfully' };
   }
-
-  // Check if task exists
-  const existingTask = await this.prisma.task.findUnique({
-    where: { id: taskId },
-  });
-
-  if (!existingTask) {
-    throw new NotFoundException('Task not found');
-  }
-
-  // HARD DELETE (permanent)
-  await this.prisma.task.delete({
-    where: { id: taskId },
-  });
-
-  return { message: 'Task deleted successfully' };
-}
-
 }

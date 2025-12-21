@@ -1,4 +1,10 @@
-import { Injectable, UnauthorizedException, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -179,7 +185,8 @@ export class DoctorService {
     if (dto.email !== undefined) updateData.email = dto.email;
     if (dto.phone !== undefined) updateData.phone = dto.phone;
     if (dto.licenceNo !== undefined) updateData.licenceNo = dto.licenceNo;
-    if (dto.specialities !== undefined) updateData.specialities = dto.specialities;
+    if (dto.specialities !== undefined)
+      updateData.specialities = dto.specialities;
     if (dto.experience !== undefined) updateData.experience = dto.experience;
     if (dto.dob !== undefined) updateData.dob = new Date(dto.dob);
     if (dto.photo !== undefined) updateData.photo = dto.photo;
@@ -240,7 +247,9 @@ export class DoctorService {
       });
 
       if (existingStaff) {
-        throw new ConflictException(`Employment ID ${dto.employmentId} already exists`);
+        throw new ConflictException(
+          `Employment ID ${dto.employmentId} already exists`,
+        );
       }
 
       employmentId = dto.employmentId;
@@ -267,7 +276,9 @@ export class DoctorService {
       }
 
       if (!isUnique) {
-        throw new BadRequestException('Failed to generate unique employment ID. Please try again.');
+        throw new BadRequestException(
+          'Failed to generate unique employment ID. Please try again.',
+        );
       }
     }
 
@@ -277,7 +288,9 @@ export class DoctorService {
     });
 
     if (emailExists) {
-      throw new ConflictException('Email is already in use by another staff member');
+      throw new ConflictException(
+        'Email is already in use by another staff member',
+      );
     }
 
     // Check if phone is already in use by another staff member
@@ -286,7 +299,9 @@ export class DoctorService {
     });
 
     if (phoneExists) {
-      throw new ConflictException('Phone number is already in use by another staff member');
+      throw new ConflictException(
+        'Phone number is already in use by another staff member',
+      );
     }
 
     // Create staff record
@@ -355,7 +370,10 @@ export class DoctorService {
   }
 
   // ----------------- CHECK EMPLOYMENT ID AVAILABILITY -------------------
-  async checkEmploymentIdAvailability(accessToken: string, employmentId: string) {
+  async checkEmploymentIdAvailability(
+    accessToken: string,
+    employmentId: string,
+  ) {
     // Find session to verify doctor authentication
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
@@ -369,7 +387,9 @@ export class DoctorService {
     // Validate employmentId format
     const employmentIdPattern = /^STF-\d+$/;
     if (!employmentIdPattern.test(employmentId)) {
-      throw new BadRequestException('Employment ID must start with STF- followed by digits');
+      throw new BadRequestException(
+        'Employment ID must start with STF- followed by digits',
+      );
     }
 
     // Check if the provided employment ID exists
@@ -401,7 +421,9 @@ export class DoctorService {
       }
 
       if (!isUnique) {
-        throw new BadRequestException('Failed to generate a unique employment ID suggestion. Please try again.');
+        throw new BadRequestException(
+          'Failed to generate a unique employment ID suggestion. Please try again.',
+        );
       }
 
       return {
@@ -496,13 +518,19 @@ export class DoctorService {
 
     // Check if no staff found and return with message
     if (total === 0) {
-      const hasFilters = query.search || query.department || query.position || 
-                         query.employmentStatus || query.employmentType || 
-                         query.gender || query.joinDateFrom || query.joinDateTo;
+      const hasFilters =
+        query.search ||
+        query.department ||
+        query.position ||
+        query.employmentStatus ||
+        query.employmentType ||
+        query.gender ||
+        query.joinDateFrom ||
+        query.joinDateTo;
 
-      const message = hasFilters 
+      const message = hasFilters
         ? 'No staff members found matching your search criteria'
-        : 'No staff members found. You haven\'t added any staff yet.';
+        : "No staff members found. You haven't added any staff yet.";
 
       return {
         staffs: [],
@@ -545,7 +573,7 @@ export class DoctorService {
     const totalPages = Math.ceil(total / limit);
 
     return {
-            pagination: {
+      pagination: {
         total,
         page,
         limit,
@@ -554,7 +582,6 @@ export class DoctorService {
         next: page < totalPages ? page + 1 : null,
       },
       staffs,
-
     };
   }
 
@@ -582,7 +609,9 @@ export class DoctorService {
     }
 
     if (staff.doctorId !== doctorId) {
-      throw new UnauthorizedException('You do not have permission to access this staff member');
+      throw new UnauthorizedException(
+        'You do not have permission to access this staff member',
+      );
     }
 
     return {
@@ -614,7 +643,9 @@ export class DoctorService {
     }
 
     if (existingStaff.doctorId !== doctorId) {
-      throw new UnauthorizedException('You do not have permission to update this staff member');
+      throw new UnauthorizedException(
+        'You do not have permission to update this staff member',
+      );
     }
 
     // Check if employmentId is being updated and if it already exists
@@ -624,7 +655,9 @@ export class DoctorService {
       });
 
       if (employmentIdExists) {
-        throw new ConflictException(`Employment ID ${dto.employmentId} already exists`);
+        throw new ConflictException(
+          `Employment ID ${dto.employmentId} already exists`,
+        );
       }
     }
 
@@ -638,7 +671,9 @@ export class DoctorService {
       });
 
       if (emailExists) {
-        throw new ConflictException('Email is already in use by another staff member');
+        throw new ConflictException(
+          'Email is already in use by another staff member',
+        );
       }
     }
 
@@ -652,43 +687,58 @@ export class DoctorService {
       });
 
       if (phoneExists) {
-        throw new ConflictException('Phone number is already in use by another staff member');
+        throw new ConflictException(
+          'Phone number is already in use by another staff member',
+        );
       }
     }
 
     // Prepare update data
     const updateData: any = {};
 
-    if (dto.employmentId !== undefined) updateData.employmentId = dto.employmentId;
+    if (dto.employmentId !== undefined)
+      updateData.employmentId = dto.employmentId;
     if (dto.firstName !== undefined) updateData.firstName = dto.firstName;
     if (dto.lastName !== undefined) updateData.lastName = dto.lastName;
     if (dto.dob !== undefined) updateData.dob = new Date(dto.dob);
     if (dto.gender !== undefined) updateData.gender = dto.gender;
     if (dto.email !== undefined) updateData.email = dto.email;
     if (dto.phone !== undefined) updateData.phone = dto.phone;
-    if (dto.presentAddress !== undefined) updateData.presentAddress = dto.presentAddress;
-    if (dto.permanentAddress !== undefined) updateData.permanentAddress = dto.permanentAddress;
-    if (dto.maritalStatus !== undefined) updateData.maritalStatus = dto.maritalStatus;
+    if (dto.presentAddress !== undefined)
+      updateData.presentAddress = dto.presentAddress;
+    if (dto.permanentAddress !== undefined)
+      updateData.permanentAddress = dto.permanentAddress;
+    if (dto.maritalStatus !== undefined)
+      updateData.maritalStatus = dto.maritalStatus;
     if (dto.state !== undefined) updateData.state = dto.state;
     if (dto.postalCode !== undefined) updateData.postalCode = dto.postalCode;
     if (dto.country !== undefined) updateData.country = dto.country;
     if (dto.nationality !== undefined) updateData.nationality = dto.nationality;
-    if (dto.nationalIdNumber !== undefined) updateData.nationalIdNumber = dto.nationalIdNumber;
+    if (dto.nationalIdNumber !== undefined)
+      updateData.nationalIdNumber = dto.nationalIdNumber;
     if (dto.department !== undefined) updateData.department = dto.department;
     if (dto.position !== undefined) updateData.position = dto.position;
     if (dto.description !== undefined) updateData.description = dto.description;
-    if (dto.joinDate !== undefined) updateData.joinDate = dto.joinDate ? new Date(dto.joinDate) : null;
-    if (dto.employmentType !== undefined) updateData.employmentType = dto.employmentType;
-    if (dto.workSchedule !== undefined) updateData.workSchedule = dto.workSchedule;
+    if (dto.joinDate !== undefined)
+      updateData.joinDate = dto.joinDate ? new Date(dto.joinDate) : null;
+    if (dto.employmentType !== undefined)
+      updateData.employmentType = dto.employmentType;
+    if (dto.workSchedule !== undefined)
+      updateData.workSchedule = dto.workSchedule;
     if (dto.weeklyHours !== undefined) updateData.weeklyHours = dto.weeklyHours;
-    if (dto.employmentStatus !== undefined) updateData.employmentStatus = dto.employmentStatus;
+    if (dto.employmentStatus !== undefined)
+      updateData.employmentStatus = dto.employmentStatus;
 
     // Handle photo update - delete old photo if new one is uploaded
     if (dto.photo !== undefined) {
       updateData.photo = dto.photo;
-      
+
       // Delete old photo if it exists and a new one is being set
-      if (existingStaff.photo && dto.photo && existingStaff.photo !== dto.photo) {
+      if (
+        existingStaff.photo &&
+        dto.photo &&
+        existingStaff.photo !== dto.photo
+      ) {
         await deleteFileFromUploads(existingStaff.photo);
       }
     }
@@ -757,7 +807,9 @@ export class DoctorService {
     }
 
     if (staff.doctorId !== doctorId) {
-      throw new UnauthorizedException('You do not have permission to delete this staff member');
+      throw new UnauthorizedException(
+        'You do not have permission to delete this staff member',
+      );
     }
 
     // Delete the staff
@@ -809,12 +861,14 @@ export class DoctorService {
     for (const slot of dto.slots) {
       const [startHour, startMin] = slot.startTime.split(':').map(Number);
       const [endHour, endMin] = slot.endTime.split(':').map(Number);
-      
+
       const startMinutes = startHour * 60 + startMin;
       const endMinutes = endHour * 60 + endMin;
 
       if (endMinutes <= startMinutes) {
-        throw new BadRequestException(`End time must be after start time for slot ${slot.startTime} - ${slot.endTime}`);
+        throw new BadRequestException(
+          `End time must be after start time for slot ${slot.startTime} - ${slot.endTime}`,
+        );
       }
     }
 
@@ -837,7 +891,7 @@ export class DoctorService {
         // Check for overlap: slot1 starts before slot2 ends AND slot2 starts before slot1 ends
         if (start1Minutes < end2Minutes && start2Minutes < end1Minutes) {
           throw new BadRequestException(
-            `Time slots overlap: ${slot1.startTime}-${slot1.endTime} overlaps with ${slot2.startTime}-${slot2.endTime}`
+            `Time slots overlap: ${slot1.startTime}-${slot1.endTime} overlaps with ${slot2.startTime}-${slot2.endTime}`,
           );
         }
       }
@@ -850,7 +904,7 @@ export class DoctorService {
         day: dto.day,
         isClosed: dto.isClosed || false,
         slots: {
-          create: dto.slots.map(slot => ({
+          create: dto.slots.map((slot) => ({
             startTime: slot.startTime,
             endTime: slot.endTime,
           })),
@@ -943,7 +997,9 @@ export class DoctorService {
     }
 
     if (schedule.doctorId !== doctorId) {
-      throw new UnauthorizedException('You do not have permission to access this schedule');
+      throw new UnauthorizedException(
+        'You do not have permission to access this schedule',
+      );
     }
 
     return {
@@ -952,7 +1008,11 @@ export class DoctorService {
   }
 
   // ----------------- UPDATE SCHEDULE -------------------
-  async updateSchedule(accessToken: string, scheduleId: string, dto: UpdateScheduleDto) {
+  async updateSchedule(
+    accessToken: string,
+    scheduleId: string,
+    dto: UpdateScheduleDto,
+  ) {
     // Find session to get doctor ID
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
@@ -976,7 +1036,9 @@ export class DoctorService {
     }
 
     if (existingSchedule.doctorId !== doctorId) {
-      throw new UnauthorizedException('You do not have permission to update this schedule');
+      throw new UnauthorizedException(
+        'You do not have permission to update this schedule',
+      );
     }
 
     // Validate time slots if provided
@@ -984,12 +1046,14 @@ export class DoctorService {
       for (const slot of dto.slots) {
         const [startHour, startMin] = slot.startTime.split(':').map(Number);
         const [endHour, endMin] = slot.endTime.split(':').map(Number);
-        
+
         const startMinutes = startHour * 60 + startMin;
         const endMinutes = endHour * 60 + endMin;
 
         if (endMinutes <= startMinutes) {
-          throw new BadRequestException(`End time must be after start time for slot ${slot.startTime} - ${slot.endTime}`);
+          throw new BadRequestException(
+            `End time must be after start time for slot ${slot.startTime} - ${slot.endTime}`,
+          );
         }
       }
 
@@ -999,9 +1063,13 @@ export class DoctorService {
           const slot1 = dto.slots[i];
           const slot2 = dto.slots[j];
 
-          const [start1Hour, start1Min] = slot1.startTime.split(':').map(Number);
+          const [start1Hour, start1Min] = slot1.startTime
+            .split(':')
+            .map(Number);
           const [end1Hour, end1Min] = slot1.endTime.split(':').map(Number);
-          const [start2Hour, start2Min] = slot2.startTime.split(':').map(Number);
+          const [start2Hour, start2Min] = slot2.startTime
+            .split(':')
+            .map(Number);
           const [end2Hour, end2Min] = slot2.endTime.split(':').map(Number);
 
           const start1Minutes = start1Hour * 60 + start1Min;
@@ -1012,7 +1080,7 @@ export class DoctorService {
           // Check for overlap: slot1 starts before slot2 ends AND slot2 starts before slot1 ends
           if (start1Minutes < end2Minutes && start2Minutes < end1Minutes) {
             throw new BadRequestException(
-              `Time slots overlap: ${slot1.startTime}-${slot1.endTime} overlaps with ${slot2.startTime}-${slot2.endTime}`
+              `Time slots overlap: ${slot1.startTime}-${slot1.endTime} overlaps with ${slot2.startTime}-${slot2.endTime}`,
             );
           }
         }
@@ -1035,7 +1103,7 @@ export class DoctorService {
 
       // Create new slots
       updateData.slots = {
-        create: dto.slots.map(slot => ({
+        create: dto.slots.map((slot) => ({
           startTime: slot.startTime,
           endTime: slot.endTime,
         })),
@@ -1084,7 +1152,9 @@ export class DoctorService {
     }
 
     if (schedule.doctorId !== doctorId) {
-      throw new UnauthorizedException('You do not have permission to delete this schedule');
+      throw new UnauthorizedException(
+        'You do not have permission to delete this schedule',
+      );
     }
 
     // Delete schedule (slots will be cascade deleted)
@@ -1242,12 +1312,33 @@ export class DoctorService {
       throw new UnauthorizedException('Invalid session or doctor not found');
     }
 
-    const { page = 1, limit = 20, patientId, intent } = query;
+    const {
+      page = 1,
+      limit = 20,
+      patientId,
+      intent,
+      startDate,
+      endDate,
+    } = query;
     const skip = (page - 1) * limit;
 
     const where: any = { doctorId: session.doctorId };
     if (patientId) where.patientId = patientId;
     if (intent) where.intent = intent;
+
+    // Add date filtering (optional)
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        // Set to end of day to include the entire end date
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999);
+        where.createdAt.lte = endDateTime;
+      }
+    }
 
     const [calls, total] = await Promise.all([
       this.prisma.callTranscription.findMany({
@@ -1256,8 +1347,17 @@ export class DoctorService {
         take: +limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          patient: { select: { firstName: true, lastName: true, phone: true } },
-          appointment: { select: { id: true, appointmentDate: true, status: true } },
+          patient: {
+            select: {
+              firstName: true,
+              lastName: true,
+              phone: true,
+              insuranceId: true,
+            },
+          },
+          appointment: {
+            select: { id: true, appointmentDate: true, status: true },
+          },
         },
       }),
       this.prisma.callTranscription.count({ where }),
@@ -1300,5 +1400,131 @@ export class DoctorService {
     return { data: call };
   }
 
-}
+  // ==================== DASHBOARD STATISTICS ====================
 
+  // ----------------- GET DASHBOARD STATS -------------------
+  async getDashboardStats(accessToken: string) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+      include: { doctor: true },
+    });
+
+    if (!session || !session.doctorId || !session.doctor) {
+      throw new UnauthorizedException('Invalid session or doctor not found');
+    }
+
+    const doctorId = session.doctorId;
+
+    // Get today's range (UTC)
+    const today = new Date();
+    const startOfDay = new Date(today);
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const endOfDay = new Date(today);
+    endOfDay.setUTCHours(23, 59, 59, 999);
+
+    const commonWhere = {
+      doctorId,
+      createdAt: {
+        gte: startOfDay,
+        lte: endOfDay,
+      },
+    };
+
+    const overallWhere = { doctorId };
+
+    // 1. Incoming Calls
+    const todayIncomingCalls = await this.prisma.callTranscription.count({
+      where: commonWhere,
+    });
+    const overallIncomingCalls = await this.prisma.callTranscription.count({
+      where: overallWhere,
+    });
+
+    // 2. Successful Calls
+    const todaySuccessfulCalls = await this.prisma.callTranscription.count({
+      where: {
+        ...commonWhere,
+        callStatus: 'SUCCESSFUL',
+      },
+    });
+    const overallSuccessfulCalls = await this.prisma.callTranscription.count({
+      where: {
+        ...overallWhere,
+        callStatus: 'SUCCESSFUL',
+      },
+    });
+
+    // 3. Average Call Duration
+    const durationAggregateToday =
+      await this.prisma.callTranscription.aggregate({
+        where: commonWhere,
+        _avg: {
+          duration: true,
+        },
+      });
+    const durationAggregateOverall =
+      await this.prisma.callTranscription.aggregate({
+        where: overallWhere,
+        _avg: {
+          duration: true,
+        },
+      });
+
+    // 4. Tasks (Task model with status TODO)
+    const todayTasks = await this.prisma.task.count({
+      where: {
+        doctorId,
+        status: 'TODO',
+        OR: [
+          { dueDate: { gte: startOfDay, lte: endOfDay } },
+          { createdAt: { gte: startOfDay, lte: endOfDay } },
+        ],
+      },
+    });
+    const overallTasks = await this.prisma.task.count({
+      where: {
+        doctorId,
+        status: 'TODO',
+      },
+    });
+
+    // 5. Requires a call back (Missed or Unsuccessful)
+    const todayRequiresCallback = await this.prisma.callTranscription.count({
+      where: {
+        ...commonWhere,
+        callStatus: {
+          in: ['MISSED', 'UNSUCCESSFUL'],
+        },
+      },
+    });
+    const overallRequiresCallback = await this.prisma.callTranscription.count({
+      where: {
+        ...overallWhere,
+        callStatus: {
+          in: ['MISSED', 'UNSUCCESSFUL'],
+        },
+      },
+    });
+
+    return {
+      today: {
+        incomingCalls: todayIncomingCalls,
+        successfulCalls: todaySuccessfulCalls,
+        averageCallDuration: Math.round(
+          durationAggregateToday._avg.duration || 0,
+        ),
+        tasks: todayTasks,
+        requiresCallback: todayRequiresCallback,
+      },
+      overall: {
+        incomingCalls: overallIncomingCalls,
+        successfulCalls: overallSuccessfulCalls,
+        averageCallDuration: Math.round(
+          durationAggregateOverall._avg.duration || 0,
+        ),
+        tasks: overallTasks,
+        requiresCallback: overallRequiresCallback,
+      },
+    };
+  }
+}
