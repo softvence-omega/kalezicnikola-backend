@@ -51,6 +51,7 @@ model Task {
   patientId   String?
   insuranceId String?
   doctorId    String?
+  phone       String?
 
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt
