@@ -44,7 +44,7 @@ model Task {
   title       String?
   description String?
   status      TaskStatus?
-  priority    Priority?
+  priority    Flag?
   time        String?
   dueDate     DateTime?
 

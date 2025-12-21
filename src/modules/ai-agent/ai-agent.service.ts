@@ -1439,6 +1439,12 @@ export class AiAgentService {
       }
     }
 
+    // Map priority "MEDIUM" to "NORMAL" for Flag enum if needed
+    let mappedPriority = priority?.toUpperCase();
+    if (mappedPriority === 'MEDIUM') {
+      mappedPriority = 'NORMAL';
+    }
+
     // Create the task with status TODO
     const task = await this.prisma.task.create({
       data: {
@@ -1446,7 +1452,7 @@ export class AiAgentService {
         title,
         description,
         status: 'TODO',
-        priority: priority ? (priority.toUpperCase() as any) : undefined,
+        priority: mappedPriority as any,
         time,
         dueDate: due_date ? new Date(due_date) : undefined,
         patientId,

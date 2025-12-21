@@ -1,6 +1,12 @@
-import { IsOptional, IsString, IsEnum, IsDateString, IsUUID } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsEnum,
+  IsDateString,
+  IsUUID,
+} from 'class-validator';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
-import { Priority, TaskStatus } from 'generated/prisma';
+import { Flag, TaskStatus } from 'generated/prisma';
 
 export class GetAllTasksDto extends PaginationDto {
   @IsOptional()
@@ -12,8 +18,8 @@ export class GetAllTasksDto extends PaginationDto {
   status?: TaskStatus;
 
   @IsOptional()
-  @IsEnum(Priority)
-  priority?: Priority;
+  @IsEnum(Flag)
+  priority?: Flag;
 
   @IsOptional()
   @IsUUID()
