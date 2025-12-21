@@ -1416,7 +1416,16 @@ export class AiAgentService {
 
   // =============== CREATE AGENT TASK ===============
   async createAgentTask(dto: AgentCreateTaskDto) {
-    const { doctor_id, title, description, phone_number, insurance_id } = dto;
+    const {
+      doctor_id,
+      title,
+      description,
+      phone_number,
+      insurance_id,
+      priority,
+      time,
+      due_date,
+    } = dto;
 
     let patientId: string | null = null;
 
@@ -1437,8 +1446,12 @@ export class AiAgentService {
         title,
         description,
         status: 'TODO',
+        priority: priority ? (priority.toUpperCase() as any) : undefined,
+        time,
+        dueDate: due_date ? new Date(due_date) : undefined,
         patientId,
         insuranceId: insurance_id,
+        phone: phone_number,
       },
     });
 

@@ -18,4 +18,16 @@ export class AgentCreateTaskDto {
   @IsOptional()
   @IsString()
   insurance_id?: string; // To identify patient's insurance
+
+  @IsOptional()
+  @IsString()
+  priority?: string; // e.g., 'LOW', 'MEDIUM', 'HIGH'
+
+  @IsOptional()
+  @IsString()
+  time?: string; // e.g., '10:00 AM'
+
+  @IsOptional()
+  @IsString()
+  due_date?: string; // e.g., '2025-12-21'
 }
