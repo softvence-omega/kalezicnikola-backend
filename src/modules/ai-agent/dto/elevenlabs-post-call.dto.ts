@@ -64,6 +64,15 @@ export class ElevenLabsPostCallDto {
     [key: string]: any;
   };
 
+  // SIP metadata from ElevenLabs (contains caller phone number)
+  @IsObject()
+  @IsOptional()
+  sip_metadata?: {
+    from_number?: string;
+    to_number?: string;
+    [key: string]: any;
+  };
+
   // Catch-all for wrapped data
   @IsObject()
   @IsOptional()
