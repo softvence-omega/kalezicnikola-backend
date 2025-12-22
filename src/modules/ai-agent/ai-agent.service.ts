@@ -1590,4 +1590,44 @@ export class AiAgentService {
       message: 'Task created successfully',
     };
   }
+  // =============== CALL REVIEW ===============
+  async updateCallReviewStatus(id: string, isReviewed: boolean) {
+    const transcription = await this.prisma.callTranscription.findUnique({
+      where: { id },
+    });
+
+    if (!transcription) {
+      throw new NotFoundException('Call transcription not found');
+    }
+
+    const updated = await this.prisma.callTranscription.update({
+      where: { id },
+      data: { isReviewed },
+    });
+
+    return {
+      success: true,
+      data: updated,
+      message: 'Call review status updated successfully',
+    };
+  }
+
+  async getUnreviewedCallCount(doctorId?: string) {
+    const where: any = {
+      isReviewed: false,
+    };
+
+    if (doctorId) {
+      where.doctorId = doctorId;
+    }
+
+    const count = await this.prisma.callTranscription.count({
+      where,
+    });
+
+    return {
+      success: true,
+      count,
+    };
+  }
 }

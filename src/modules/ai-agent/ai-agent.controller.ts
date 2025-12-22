@@ -141,4 +141,19 @@ export class AiAgentController {
       res.status(404).json({ message: 'Audio not found' });
     }
   }
+  // =============== CALL REVIEW ===============
+  @Post('transcription/:id/review')
+  @UseGuards(WebhookAuthGuard)
+  async updateCallReviewStatus(
+    @Param('id') id: string,
+    @Body('isReviewed') isReviewed: boolean,
+  ) {
+    return this.aiAgentService.updateCallReviewStatus(id, isReviewed);
+  }
+
+  @Get('transcription/unreviewed-count')
+  @UseGuards(WebhookAuthGuard)
+  async getUnreviewedCallCount(@Query('doctor_id') doctorId?: string) {
+    return this.aiAgentService.getUnreviewedCallCount(doctorId);
+  }
 }
