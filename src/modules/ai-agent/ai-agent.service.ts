@@ -788,12 +788,20 @@ export class AiAgentService {
       // At this point DTO already guarantees length === 10
     }
 
-    // STEP 1: Try to extract patient info from transcription/summary if not provided
-    if (!patientId && dto.phone_number) {
+    // Extract patient info from transcription/summary (including phone, name, email)
+    const patientInfo = this.extractPatientInfoFromText(
+      dto.transcription || dto.summary || '',
+    );
+
+    // Use extracted phone if not provided in DTO
+    let phoneNumber = dto.phone_number || patientInfo.phone;
+
+    // STEP 1: Try to find or create patient
+    if (!patientId && phoneNumber) {
       // Try to find existing patient by phone
       const existingPatient = await this.prisma.patient.findFirst({
         where: {
-          phone: dto.phone_number,
+          phone: phoneNumber,
         },
       });
 
@@ -807,19 +815,28 @@ export class AiAgentService {
             data: { insuranceId: insuranceId },
           });
         }
-      } else {
-        // Extract patient info from transcription/summary
-        const patientInfo = this.extractPatientInfoFromText(
-          dto.transcription || dto.summary || '',
-        );
 
+        // Update patient's name if extracted and not already set
+        if (
+          (patientInfo.firstName && !existingPatient.firstName) ||
+          (patientInfo.lastName && !existingPatient.lastName)
+        ) {
+          await this.prisma.patient.update({
+            where: { id: patientId },
+            data: {
+              firstName: patientInfo.firstName || existingPatient.firstName,
+              lastName: patientInfo.lastName || existingPatient.lastName,
+            },
+          });
+        }
+      } else {
+        // Create new patient if we have at least name or email
         if (patientInfo.firstName || patientInfo.email) {
-          // Create new patient
           const newPatient = await this.prisma.patient.create({
             data: {
               firstName: patientInfo.firstName,
               lastName: patientInfo.lastName,
-              phone: dto.phone_number,
+              phone: phoneNumber,
               email: patientInfo.email,
               insuranceId: insuranceId, // Save insurance ID for new patient
             },
@@ -893,7 +910,7 @@ export class AiAgentService {
         doctorId: dto.doctor_id,
         patientId: patientId,
         callSid: callSid,
-        phoneNumber: dto.phone_number,
+        phoneNumber: phoneNumber,
         duration: callDuration || dto.duration,
         audioUrl: dto.audio_url,
         transcription: dto.transcription,
@@ -944,12 +961,69 @@ export class AiAgentService {
       realData.metadata?.call_duration_secs ||
       realData.call_duration_secs;
 
+    // Extract caller phone number with priority order:
+    // 1. SIP metadata (actual caller's phone)
+    // 2. Tool call parameters (phone provided during call)
+    // 3. Extracted from transcription text
+    let callerPhoneNumber: string | null = null;
+
+    // Priority 1: Check SIP metadata for caller's actual phone number
+    if (realData.sip_metadata?.from_number || dto.sip_metadata?.from_number) {
+      callerPhoneNumber = realData.sip_metadata?.from_number || dto.sip_metadata?.from_number;
+      console.log(`Caller phone from SIP metadata: ${callerPhoneNumber}`);
+    }
+    // Also check in main metadata object
+    else if (realData.metadata?.from_number) {
+      callerPhoneNumber = realData.metadata?.from_number;
+      console.log(`Caller phone from metadata: ${callerPhoneNumber}`);
+    }
+
     // Format transcript if available
     let transcriptionText = '';
     if (Array.isArray(realData.transcript)) {
       transcriptionText = realData.transcript
         .map((t) => `${t.role}: ${t.message}`)
         .join('\n');
+    }
+
+    // Priority 2: Extract from tool call parameters if not found in SIP metadata
+    if (!callerPhoneNumber && realData.transcript) {
+      try {
+        const toolCall = realData.transcript.find((t) =>
+          t.tool_calls?.some(
+            (tc) =>
+              tc.tool_name?.includes('Webhook') ||
+              tc.tool_name?.includes('saveTranscription'),
+          ),
+        );
+        if (toolCall) {
+          const tc = toolCall.tool_calls.find(
+            (tc) =>
+              tc.tool_name?.includes('Webhook') ||
+              tc.tool_name?.includes('saveTranscription'),
+          );
+          if (tc && tc.params_as_json) {
+            const params = JSON.parse(tc.params_as_json);
+            const phoneFromTool =
+              params.patient_info?.phone || params.phone_number || params.phone;
+            if (phoneFromTool) {
+              callerPhoneNumber = phoneFromTool;
+              console.log(`Caller phone from tool call: ${callerPhoneNumber}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error extracting phone from tool call:', err);
+      }
+    }
+
+    // Priority 3: Extract from transcription text if still not found
+    if (!callerPhoneNumber && transcriptionText) {
+      const extractedInfo = this.extractPatientInfoFromText(transcriptionText);
+      if (extractedInfo.phone) {
+        callerPhoneNumber = extractedInfo.phone;
+        console.log(`Caller phone extracted from transcription: ${callerPhoneNumber}`);
+      }
     }
 
     // 2. Identify the Record (Smart Linking)
@@ -1008,13 +1082,15 @@ export class AiAgentService {
     }
 
     if (existing) {
-      // If we have an existing record, update it with real ID, audioUrl and duration
+      // If we have an existing record, update it with real ID, audioUrl, duration, and phone
       await this.prisma.callTranscription.update({
         where: { id: existing.id },
         data: {
           audioUrl: audioUrl,
           duration: duration ? Math.round(duration) : undefined, // Ensure integer
           callSid: incomingCallSid, // UPDATE to the real ID so next time it matches!
+          // Update phone number if we found it and existing record doesn't have one
+          phoneNumber: callerPhoneNumber || existing.phoneNumber,
           // Only update transcript if missing
           transcription: existing.transcription ? undefined : transcriptionText,
           // ALWAYS update summary with ElevenLabs summary when available (overwrite existing)
@@ -1057,6 +1133,7 @@ export class AiAgentService {
       data: {
         doctorId: finalDoctorId,
         callSid: incomingCallSid,
+        phoneNumber: callerPhoneNumber,
         duration: tempDto.duration,
         audioUrl: audioUrl,
         transcription: tempDto.transcription,
@@ -1104,14 +1181,60 @@ export class AiAgentService {
     firstName?: string;
     lastName?: string;
     email?: string;
+    phone?: string;
   } {
-    const result: { firstName?: string; lastName?: string; email?: string } =
-      {};
+    const result: { 
+      firstName?: string; 
+      lastName?: string; 
+      email?: string;
+      phone?: string;
+    } = {};
 
     // Extract email using regex
     const emailMatch = text.match(/[\w\.-]+@[\w\.-]+\.\w+/);
     if (emailMatch) {
       result.email = emailMatch[0];
+    }
+
+    // Extract phone number - support multiple formats
+    // 1. Standard digits (with optional +, spaces, or hyphens): "+8801742460391", "0174 246 0391", "01742460391"
+    const standardPhoneMatch = text.match(/(?:\+?88)?0?\d{2,4}[\s-]?\d{3,4}[\s-]?\d{4,5}/);
+    if (standardPhoneMatch) {
+      // Clean up the phone number (remove spaces and hyphens)
+      result.phone = standardPhoneMatch[0].replace(/[\s-]/g, '');
+    } else {
+      // 2. Spoken format: "zero one seven four two four six zero three nine one" or "zero, one, seven four..."
+      // Extract sequences of digit words
+      const digitWords = {
+        'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+        'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
+      };
+      
+      // Look for phone number patterns in spoken form
+      const phonePatterns = [
+        /(?:phone\s+number\s+is|my\s+number\s+is|call\s+me\s+at)\s+([zero|one|two|three|four|five|six|seven|eight|nine|\s|,]+)/i,
+        /(?:zero|one|two|three|four|five|six|seven|eight|nine)(?:\s*,?\s*(?:zero|one|two|three|four|five|six|seven|eight|nine)){9,}/i
+      ];
+      
+      for (const pattern of phonePatterns) {
+        const spokenMatch = text.match(pattern);
+        if (spokenMatch) {
+          const spokenText = spokenMatch[1] || spokenMatch[0];
+          // Convert spoken digits to numeric string
+          let phoneDigits = '';
+          const words = spokenText.toLowerCase().split(/[\s,]+/);
+          for (const word of words) {
+            if (digitWords[word.trim()]) {
+              phoneDigits += digitWords[word.trim()];
+            }
+          }
+          // Validate phone number length (should be 10-11 digits for Bangladesh)
+          if (phoneDigits.length >= 10 && phoneDigits.length <= 14) {
+            result.phone = phoneDigits;
+            break;
+          }
+        }
+      }
     }
 
     // Extract name patterns
