@@ -8,7 +8,10 @@ import {
   Param,
   Headers,
   Res,
+  BadRequestException,
+  Req,
 } from '@nestjs/common';
+import { DoctorGuard } from 'src/common/guard/doctor.guard';
 import { Response } from 'express';
 import { AiAgentService } from './ai-agent.service';
 import { WebhookAuthGuard } from './guards/webhook-auth.guard';
@@ -152,8 +155,9 @@ export class AiAgentController {
   }
 
   @Get('transcription/unreviewed-count')
-  @UseGuards(WebhookAuthGuard)
-  async getUnreviewedCallCount(@Query('doctor_id') doctorId?: string) {
+  @UseGuards(DoctorGuard)
+  async getUnreviewedCallCount(@Req() req: any) {
+    const doctorId = req.doctor.id;
     return this.aiAgentService.getUnreviewedCallCount(doctorId);
   }
 }

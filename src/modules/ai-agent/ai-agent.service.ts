@@ -1612,17 +1612,16 @@ export class AiAgentService {
     };
   }
 
-  async getUnreviewedCallCount(doctorId?: string) {
-    const where: any = {
-      isReviewed: false,
-    };
-
-    if (doctorId) {
-      where.doctorId = doctorId;
+  async getUnreviewedCallCount(doctorId: string) {
+    if (!doctorId) {
+      throw new BadRequestException('Doctor ID is required');
     }
 
     const count = await this.prisma.callTranscription.count({
-      where,
+      where: {
+        doctorId,
+        isReviewed: false,
+      },
     });
 
     return {
