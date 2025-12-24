@@ -5,8 +5,12 @@ model AdminConversation {
   userId    String   // Doctor or Patient ID (references User table)
   user      User     @relation("UserConversations", fields: [userId], references: [id])
   userRole  UserRole // DOCTOR or PATIENT
+  doctorId  String   // Direct reference to Doctor table
+  doctor    Doctor   @relation(fields: [doctorId], references: [id])
   adminId   String?  // Admin assigned to this conversation
   admin     User?    @relation("AdminConversations", fields: [adminId], references: [id])
+  // TODO: Admin should be array of admins for multiple admin support
+  // admins   User[]   @relation("AdminConversations")
   status    ConversationStatus @default(OPEN)
   subject   String?
   createdAt DateTime @default(now())
@@ -14,7 +18,9 @@ model AdminConversation {
   
   messages  SupportMessage[]
   
+  @@unique([doctorId]) // One conversation per doctor
   @@index([userId])
+  @@index([doctorId])
   @@index([adminId])
   @@index([status])
   @@map("admin_conversations")

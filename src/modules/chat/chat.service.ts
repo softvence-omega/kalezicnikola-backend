@@ -13,7 +13,7 @@ export class ChatService {
 
   // Helper to get User ID from admin/doctor ID
   private async getUserId(accountId: string, role: UserRole): Promise<string> {
-    console.log(`Getting user ID for accountId: ${accountId}, role: ${role}`);
+    // console.log(`Getting user ID for accountId: ${accountId}, role: ${role}`);
 
     const whereClause =
       role === UserRole.ADMIN
@@ -41,14 +41,14 @@ export class ChatService {
       }
 
       // Create user if doesn't exist
-      console.log('User not found, creating new user...');
+      // console.log('User not found, creating new user...');
       user = await this.prisma.user.create({
         data: {
           ...whereClause,
           role,
         },
       });
-      console.log('Created user:', user.id);
+      // console.log('Created user:', user.id);
     } else {
       console.log('Found existing user:', user.id);
     }
@@ -75,80 +75,31 @@ export class ChatService {
     );
   }
 
-  // Create or get existing conversation
+  // Create or get existing conversation (ONE conversation per doctor)
   async createConversation(dto: CreateConversationDto) {
-    console.log('Creating conversation with DTO:', dto);
+    // console.log('Creating conversation with DTO:', dto);
 
-    // TEAM-BASED POOL MODEL:
-    // - Doctors can create multiple OPEN conversations (different topics)
-    // - adminId can be null (no specific admin assigned)
-    // - All admins can see and reply to conversations
-    // - No uniqueness constraint - always create new conversation
+    // ONE-CONVERSATION-PER-DOCTOR MODEL:
+    // - Each doctor has ONE ongoing conversation with the admin team
+    // - If conversation exists, return it (reuse)
+    // - If not, create new conversation
+    // - Response includes all admin IDs in the system
 
-    // Create new conversation
-    console.log('Creating new conversation in pool model...');
-    const newConversation = await this.prisma.adminConversation.create({
-      data: {
-        userId: dto.userId!,
-        userRole: dto.userRole!,
-        subject: dto.subject,
-        adminId: dto.adminId || null, // null = available to all admins
-      },
+    // Validate that we have doctorId
+    if (!dto.doctorId) {
+      throw new Error('doctorId is required');
+    }
+
+    // Check if conversation already exists for this doctor
+    let conversation = await this.prisma.adminConversation.findUnique({
+      where: { doctorId: dto.doctorId },
       include: {
-        messages: true,
-        admin: dto.adminId
-          ? {
-              include: {
-                admin: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    photo: true,
-                    email: true,
-                  },
-                },
-                doctor: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    photo: true,
-                    email: true,
-                  },
-                },
-              },
-            }
-          : undefined,
-      },
-    });
-
-    console.log('Created conversation:', newConversation.id);
-    return newConversation;
-  }
-
-  // Send message
-  async sendMessage(senderId: string, dto: SendMessageDto) {
-    const message = await this.prisma.supportMessage.create({
-      data: {
-        conversationId: dto.conversationId,
-        senderId,
-        message: dto.message,
-        imageUrl: dto.imageUrl,
-        attachments: dto.attachments || [],
-      },
-      include: {
-        sender: {
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+        user: {
           include: {
-            admin: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                photo: true,
-                email: true,
-              },
-            },
             doctor: {
               select: {
                 id: true,
@@ -160,8 +111,134 @@ export class ChatService {
             },
           },
         },
-        conversation: true,
+        doctor: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            photo: true,
+            email: true,
+          },
+        },
       },
+    });
+
+    if (conversation) {
+      console.log('Found existing conversation:', conversation.id);
+    } else {
+      // Create new conversation
+      console.log('Creating new conversation for doctor:', dto.doctorId);
+      conversation = await this.prisma.adminConversation.create({
+        data: {
+          userId: dto.userId!,
+          userRole: dto.userRole!,
+          doctorId: dto.doctorId,
+          subject: dto.subject,
+          adminId: null, // Always null - available to all admins
+        },
+        include: {
+          messages: true,
+          user: {
+            include: {
+              doctor: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  photo: true,
+                  email: true,
+                },
+              },
+            },
+          },
+          doctor: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              photo: true,
+              email: true,
+            },
+          },
+        },
+      });
+      // console.log('Created conversation:', conversation.id);
+    }
+
+    // Get all admin IDs in the system
+    const allAdmins = await this.prisma.user.findMany({
+      where: { role: 'ADMIN' },
+      select: {
+        id: true,
+        admin: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            photo: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    // Return conversation with all admin IDs
+    return {
+      ...conversation,
+      adminIds: allAdmins.map((admin) => admin.id), // Array of all admin user IDs
+      admins: allAdmins.map((admin) => admin.admin), // Array of all admin details
+    };
+  }
+
+  // Get all admin user IDs (for WebSocket broadcasting)
+  async getAllAdminUserIds(): Promise<string[]> {
+    const admins = await this.prisma.user.findMany({
+      where: { role: 'ADMIN' },
+      select: { id: true },
+    });
+    return admins.map((admin) => admin.id);
+  }
+
+  // Send message
+  async sendMessage(senderId: string, dto: SendMessageDto) {
+    const sender = await this.prisma.user.findUnique({ where: {id: senderId}, include: {admin: true, doctor: true, conversations: true}})
+    // console.log(sender)
+    
+    // console.log(dto, senderId);
+
+    const message = await this.prisma.supportMessage.create({
+      data: {
+        conversationId: dto.conversationId,
+        senderId,
+        message: dto.message,
+        imageUrl: dto.imageUrl || null,
+        attachments: dto.attachments || [],
+      },
+      // include: {
+      //   sender: {
+      //     include: {
+      //       admin: {
+      //         select: {
+      //           id: true,
+      //           firstName: true,
+      //           lastName: true,
+      //           photo: true,
+      //           email: true,
+      //         },
+      //       },
+      //       doctor: {
+      //         select: {
+      //           id: true,
+      //           firstName: true,
+      //           lastName: true,
+      //           photo: true,
+      //           email: true,
+      //         },
+      //       },
+      //     },
+      //   },
+      //   conversation: true,
+      // },
     });
 
     // Update conversation timestamp
