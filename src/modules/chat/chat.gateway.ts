@@ -11,6 +11,7 @@ import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
 import { SendMessageDto } from './dto';
 import { UseGuards } from '@nestjs/common';
+import { omit } from 'src/utils/functions';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -50,7 +51,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Join user to their personal room
       client.join(`user:${userId}`);
 
-      console.log(`User ${userId} connected to chat`);
+      // console.log(`User ${userId} connected to chat`);
 
       // Broadcast user online status
       this.server.emit('user_online', { userId, userRole });
@@ -70,7 +71,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.server.emit('user_offline', { userId: client.userId, userRole: client.userRole });
       
       this.connectedUsers.delete(client.userId);
-      console.log(`User ${client.userId} disconnected from chat`);
+      // console.log(`User ${client.userId} disconnected from chat`);
     }
   }
 
@@ -81,29 +82,43 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     try {
       if (!client.userId) {
+        console.error('❌ User not authenticated');
         return { success: false, error: 'User not authenticated' };
       }
       
-      console.log('📨 Sending message from userId:', client.userId, 'Role:', client.userRole);
-      
-      const message = await this.chatService.sendMessage(client.userId, data);
+      // console.log('📨 Sending message from userId:', client.userId, 'Role:', client.userRole);
+      // console.log('📨 Message data:', JSON.stringify(data, null, 2));
 
-      // Get conversation to find recipient
+      // Save message to database first
+      // console.log('💾 Saving message to database...');
+      let message;
+      try {
+        message = await this.chatService.sendMessage(client.userId, data);
+        // console.log('✅ Message saved to database:', message.id);
+      } catch (dbError) {
+        console.error('❌ Database error while saving message:', dbError);
+        return { success: false, error: 'Failed to save message: ' + dbError.message };
+      }
+
+      // Get conversation to find recipients
+      // console.log('🔍 Fetching conversation details...');
       const conversation = await this.chatService.getConversationById(
         data.conversationId,
       );
 
       if (!conversation) {
+        console.error('❌ Conversation not found:', data.conversationId);
         return { success: false, error: 'Conversation not found' };
       }
+
+      // console.log('✅ Conversation found:', conversation.id);
 
       const messagePayload = {
         message,
         conversation,
       };
 
-      console.log('📤 Broadcasting message to conversation:', data.conversationId);
-      console.log('👥 Participants - Doctor:', conversation.userId, 'Admin:', conversation.adminId);
+      // console.log('📤 Broadcasting message to conversation:', data.conversationId);
 
       // Emit to conversation room (for users who joined the room)
       this.server.to(`conversation:${data.conversationId}`).emit('new_message', messagePayload);
@@ -111,29 +126,41 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // ALWAYS emit to sender's room (so they see their own message)
       this.server.to(`user:${client.userId}`).emit('new_message', messagePayload);
 
-      // Determine recipient and emit to their room
-      let recipientId: string | null = null;
+      // ONE-CONVERSATION-PER-DOCTOR MODEL:
+      // - If DOCTOR sends: broadcast to ALL admins
+      // - If ADMIN sends: send to the specific doctor
       
-      if (client.userRole === 'DOCTOR' && conversation.adminId) {
-        // Doctor sending to Admin
-        recipientId = conversation.adminId;
+      if (client.userRole === 'DOCTOR') {
+        // Doctor sending message - broadcast to ALL admins
+        // console.log('👨‍⚕️ Doctor sending message - broadcasting to all admins');
+        
+        // Get all admin user IDs
+        const allAdmins = await this.chatService.getAllAdminUserIds();
+        // console.log(`📋 Found ${allAdmins.length} admins:`, allAdmins);
+        
+        // Send to each admin's room
+        for (const adminUserId of allAdmins) {
+          // console.log('📬 Sending to admin userId:', adminUserId);
+          this.server.to(`user:${adminUserId}`).emit('new_message', messagePayload);
+        }
+        
+        // console.log(`✅ Message sent to ${allAdmins.length} admins`);
       } else if (client.userRole === 'ADMIN' && conversation.userId) {
         // Admin sending to Doctor
-        recipientId = conversation.userId;
-      }
-
-      if (recipientId) {
-        console.log('📬 Sending to recipient userId:', recipientId);
-        this.server.to(`user:${recipientId}`).emit('new_message', messagePayload);
+        // console.log('👨‍💼 Admin sending message to doctor userId:', conversation.userId);
+        this.server.to(`user:${conversation.userId}`).emit('new_message', messagePayload);
+        // console.log('✅ Message sent to doctor');
       } else {
-        console.warn('⚠️ No recipient found for message');
+        console.warn('⚠️ Unknown user role or missing conversation.userId');
       }
 
-      console.log('✅ Message broadcast complete');
+      // console.log('✅ Message broadcast complete');
+      const msg = omit(messagePayload, ['conversation'])
 
-      return { success: true, message };
+      return { success: true, msg };
     } catch (error) {
       console.error('❌ Error sending message:', error);
+      console.error('❌ Error stack:', error.stack);
       return { success: false, error: error.message };
     }
   }

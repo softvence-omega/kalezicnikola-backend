@@ -16,5 +16,9 @@ export class CreateConversationDto {
 
   @IsString()
   @IsOptional()
-  adminId?: string | null; // null = available to all admins (pool model)
+  doctorId?: string; // Doctor ID - required for one-conversation-per-doctor model
+
+  @IsString()
+  @IsOptional()
+  adminId?: string | null; // Deprecated - kept for backward compatibility
 }

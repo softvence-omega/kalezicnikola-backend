@@ -55,17 +55,14 @@ export class ChatController {
     @CurrentUser() user: any,
   ) {
     try {
-      console.log('📥 Create conversation request:', { dto, user });
+      // console.log('📥 Create conversation request:', { dto, user });
 
       // ROLE DETECTION: Determine role from user object
-      // The user object should have role from JWT (added by auth guard)
-      // But as fallback, detect from doctor-specific fields
       let detectedRole: 'ADMIN' | 'DOCTOR';
 
       if (user.role) {
-        // Role is available from JWT (preferred method)
         detectedRole = user.role.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'DOCTOR';
-        console.log('✅ Role from JWT:', detectedRole);
+        // console.log('✅ Role from JWT:', detectedRole);
       } else {
         // Fallback: Detect from user object structure
         if (
@@ -77,73 +74,45 @@ export class ChatController {
         } else {
           detectedRole = 'ADMIN';
         }
-        console.log(
-          '⚠️ Role detected from user fields (JWT role missing):',
-          detectedRole,
-        );
+        // console.log(
+        //   '⚠️ Role detected from user fields (JWT role missing):',
+        //   detectedRole,
+        // );
       }
 
-      // If adminId is provided in body, it means admin is starting chat with a doctor
-      // In this case, adminId from body is actually the doctor's chat user ID
-      if (dto.adminId && detectedRole === 'ADMIN') {
-        // Admin creating conversation with doctor
-        // adminId in DTO is actually the doctor's chat user ID
-        console.log(
-          '🔀 Admin initiating chat with doctor. Doctor chat user ID:',
-          dto.adminId,
-        );
-
-        const adminChatUserId = await this.chatService.getOrCreateUserId(
-          user.id,
-          'ADMIN',
-        );
-
-        console.log('✅ Admin chat user ID:', adminChatUserId);
-
-        const conversationData = {
-          userId: dto.adminId, // Doctor's chat user ID
-          userRole: UserRole.DOCTOR,
-          subject: dto.subject,
-          adminId: adminChatUserId, // Admin's chat user ID
-        };
-
-        console.log('📤 Creating conversation with data:', conversationData);
-
-        return this.chatService.createConversation(conversationData);
-      }
-
-      // Normal flow: user creating their own conversation
-      console.log('🔍 Getting or creating user ID for:', {
-        accountId: user.id,
-        role: detectedRole,
-      });
-
+      // Get chat user ID
       const userId = await this.chatService.getOrCreateUserId(
         user.id,
         detectedRole,
       );
+      // console.log('✅ Chat user ID:', userId);
 
-      console.log('✅ Chat user ID:', userId);
+      let doctorId: string;
 
-      const userRole =
-        detectedRole === 'ADMIN' ? UserRole.ADMIN : UserRole.DOCTOR;
+      if (detectedRole === 'DOCTOR') {
+        // Doctor creating conversation - use their own ID
+        doctorId = user.id;
+        // console.log('�‍⚕️ Doctor creating conversation, doctorId:', doctorId);
+      } else {
+        // Admin creating conversation - require doctorId in body
+        if (!dto.doctorId) {
+          throw new BadRequestException(
+            'doctorId is required when admin creates conversation',
+          );
+        }
+        doctorId = dto.doctorId;
+        // console.log('👨‍💼 Admin creating conversation with doctor:', doctorId);
+      }
 
-      // POOL MODEL: adminId is optional for doctors
-      // - If adminId provided: conversation with specific admin
-      // - If adminId null: conversation available to all admins (team pool)
-
-      // Merge with DTO
+      // Prepare conversation data
       const conversationDto = {
-        ...dto,
         userId,
-        // If adminId is provided, resolve it to Chat User ID
-        adminId: dto.adminId
-          ? await this.chatService.getOrCreateUserId(dto.adminId, 'ADMIN')
-          : null, // null = available to all admins
-        userRole,
+        userRole: detectedRole === 'DOCTOR' ? UserRole.DOCTOR : UserRole.ADMIN,
+        doctorId,
+        subject: dto.subject,
       };
 
-      console.log('📤 Final conversation DTO:', conversationDto);
+      // console.log('📤 Final conversation DTO:', conversationDto);
 
       return this.chatService.createConversation(conversationDto);
     } catch (error) {
@@ -163,10 +132,10 @@ export class ChatController {
   @UseGuards(JwtAuthGuard)
   async getMyConversations(@CurrentUser() user: any) {
     try {
-      console.log(
-        '🔍 getMyConversations - Full user object:',
-        JSON.stringify(user, null, 2),
-      );
+      // console.log(
+      //   '🔍 getMyConversations - Full user object:',
+      //   JSON.stringify(user, null, 2),
+      // );
 
       // ROLE DETECTION:
       // JWT contains admin/doctor table data, not User table data
@@ -185,15 +154,15 @@ export class ChatController {
         userRole = 'ADMIN';
       }
 
-      console.log('📋 Detected role:', userRole);
-      console.log('📋 Account ID:', user.id);
+      // console.log('📋 Detected role:', userRole);
+      // console.log('📋 Account ID:', user.id);
 
       const chatUserId = await this.chatService.getOrCreateUserId(
         user.id,
         userRole,
       );
 
-      console.log('✅ Chat user ID:', chatUserId);
+      // console.log('✅ Chat user ID:', chatUserId);
 
       return this.chatService.getUserConversations(chatUserId);
     } catch (error) {
