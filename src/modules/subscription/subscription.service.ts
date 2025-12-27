@@ -308,9 +308,7 @@ export class SubscriptionService implements OnModuleInit {
       const planDetails = await this.prisma.subscriptionPlan.findFirst({
         where: { 
           planType: subscription.planType as any,
-          // Note: We might want to store billingCycle on the Subscription model too
-          // or derive it from the planDetails if we find the correct one.
-          // For now, findFirst is safer if we don't have it on subscription.
+          billingCycle: (subscription.billingCycle || 'MONTHLY') as any,
         },
       });
 
@@ -442,7 +440,8 @@ export class SubscriptionService implements OnModuleInit {
       }
 
       // Check if it's the same plan
-      if (currentSubscription.planType === planType) {
+      const currentBillingCycle = currentSubscription.billingCycle || 'MONTHLY';
+      if (currentSubscription.planType === planType && currentBillingCycle === billingCycle) {
         throw new BadRequestException('You are already subscribed to this plan');
       }
 
@@ -565,6 +564,7 @@ export class SubscriptionService implements OnModuleInit {
           stripeCustomerId: session.customer as string,
           stripeSubscriptionId: stripeSubscription.id,
           planType: planType as any,
+          billingCycle: billingCycle as any,
           status: mapStripeStatus(stripeSubscription.status) as any,
           currentPeriodStart: periodStart,
           currentPeriodEnd: periodEnd,
@@ -871,6 +871,7 @@ export class SubscriptionService implements OnModuleInit {
             stripeCustomerId: session.customer as string,
             stripeSubscriptionId: stripeSubscription.id,
             planType: planType as any,
+            billingCycle: billingCycle as any,
             status: mapStripeStatus(stripeSubscription.status) as any,
             currentPeriodStart: periodStart,
             currentPeriodEnd: periodEnd,
@@ -886,6 +887,7 @@ export class SubscriptionService implements OnModuleInit {
             stripeCustomerId: session.customer as string,
             stripeSubscriptionId: stripeSubscription.id,
             planType: planType as any,
+            billingCycle: billingCycle as any,
             status: mapStripeStatus(stripeSubscription.status) as any,
             currentPeriodStart: periodStart,
             currentPeriodEnd: periodEnd,
@@ -925,9 +927,8 @@ export class SubscriptionService implements OnModuleInit {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
         if (session.metadata?.isUpgrade === 'true') {
-          // Handled by confirmUpgrade but good to have safety here
-          // We can call confirmUpgrade logic or a simplified version
           console.log(`Webhook: Processing upgrade for session ${session.id}`);
+          await this.confirmUpgrade(session.id);
         } else {
           console.log(`Webhook: Processing new subscription for session ${session.id}`);
           await this.completeSubscription(session.id);

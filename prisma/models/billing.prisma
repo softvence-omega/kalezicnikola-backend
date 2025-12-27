@@ -27,6 +27,7 @@ model Subscription {
   stripeSubscriptionId String?             @unique
   plan                 Plan?
   planType             PlanType?           // Current plan type
+  billingCycle         BillingCycle?       // Added billing cycle
   status               SubscriptionStatus?
   minutesAllocated     Int?                // Minutes for current plan
   minutesUsed          Int?                @default(0)
