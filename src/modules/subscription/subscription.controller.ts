@@ -146,7 +146,23 @@ export class SubscriptionController {
   })
   async getInvoices(@Request() req) {
     const userId = req.user.id;
-    return this.subscriptionService.getInvoices(userId);
+    const role = req.user.role;
+    return this.subscriptionService.getInvoices(userId, role);
+  }
+
+  @Post('refund/:invoiceId')
+  @ApiOperation({ summary: 'Refund a specific invoice/payment (Doctor self-service)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Refund processed successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Invoice not found',
+  })
+  async refundInvoice(@Request() req, @Param('invoiceId') invoiceId: string) {
+    const userId = req.user.id;
+    return this.subscriptionService.refundInvoice(userId, invoiceId);
   }
 
   @Get('purchases')
@@ -157,7 +173,8 @@ export class SubscriptionController {
   })
   async getUserPurchases(@Request() req) {
     const userId = req.user.id;
-    return this.subscriptionService.getUserPurchases(userId);
+    const role = req.user.role;
+    return this.subscriptionService.getUserPurchases(userId, role);
   }
 
   @Post('checkout')

@@ -588,8 +588,23 @@ export class SubscriptionService implements OnModuleInit {
   }
 
   // Get invoices/transactions
-  async getInvoices(userId: string) {
+  async getInvoices(userId: string, role: string = 'DOCTOR') {
     try {
+      const isAdmin = role === 'ADMIN';
+
+      if (isAdmin) {
+        const invoices = await this.stripe.invoices.list({ limit: 50 });
+        return invoices.data.map((invoice) => ({
+          date: new Date(invoice.created * 1000),
+          name: invoice.customer_name || invoice.customer_email || 'Customer',
+          transactionId: invoice.number,
+          status: invoice.status?.toUpperCase() || 'UNKNOWN',
+          amount: invoice.amount_paid / 100,
+          currency: invoice.currency.toUpperCase(),
+          invoiceUrl: invoice.hosted_invoice_url,
+        }));
+      }
+
       const customers = await this.stripe.customers.search({
         query: `metadata['userId']:'${userId}'`,
         limit: 1,
@@ -623,9 +638,11 @@ export class SubscriptionService implements OnModuleInit {
   }
 
   // Get all user purchases/transactions
-  async getUserPurchases(userId: string) {
+  async getUserPurchases(userId: string, role: string = 'DOCTOR') {
     try {
-      // Get user's subscription history
+      const isAdmin = role === 'ADMIN';
+
+      // Get user's subscription record (needed for customerId)
       const subscription = await this.prisma.subscription.findUnique({
         where: { userId },
         select: {
@@ -639,33 +656,51 @@ export class SubscriptionService implements OnModuleInit {
         },
       });
 
+      let stripeCustomerId = subscription?.stripeCustomerId;
+      if (!stripeCustomerId && !isAdmin) {
+        // Only search for customerId if not admin and missing
+        const customers = await this.stripe.customers.search({
+          query: `metadata['userId']:'${userId}'`,
+          limit: 1,
+        });
+        if (customers.data.length > 0) {
+          stripeCustomerId = customers.data[0].id;
+        }
+      }
+
       // Get Stripe invoices
       let stripeInvoices: any[] = [];
       try {
-        let customerId = subscription?.stripeCustomerId;
-        
-        // If no customerId in subscription, search by metadata
-        if (!customerId) {
-          const customers = await this.stripe.customers.search({
-            query: `metadata['userId']:'${userId}'`,
-            limit: 1,
-          });
-          if (customers.data.length > 0) {
-            customerId = customers.data[0].id;
-          }
-        }
-
-        if (customerId) {
-          const customer = await this.stripe.customers.retrieve(customerId);
+        if (isAdmin) {
+          // Admin sees all invoices (last 100 across all customers)
+          const invoices = await this.stripe.invoices.list({ limit: 100 });
+          stripeInvoices = invoices.data.map((invoice) => ({
+            date: new Date(invoice.created * 1000),
+            name: invoice.customer_name || invoice.customer_email || 'Customer',
+            transactionId: invoice.number || invoice.id,
+            stripeInvoiceId: invoice.id,
+            stripeCustomerId: invoice.customer as string,
+            status: invoice.status === 'paid' ? 'Paid' : invoice.status === 'open' ? 'Pending' : 'Failed',
+            payAmount: `${(invoice.amount_paid / 100).toFixed(2)} ${invoice.currency.toUpperCase()}`,
+            amount: invoice.amount_paid / 100,
+            currency: invoice.currency.toUpperCase(),
+            invoiceUrl: invoice.hosted_invoice_url,
+            planType: invoice.lines.data[0]?.description || 'Subscription',
+          }));
+        } else if (stripeCustomerId) {
+          // Doctor sees only their invoices
+          const customer = await this.stripe.customers.retrieve(stripeCustomerId);
           const invoices = await this.stripe.invoices.list({
-            customer: customerId,
-            limit: 100, // Get more history
+            customer: stripeCustomerId,
+            limit: 100,
           });
 
           stripeInvoices = invoices.data.map((invoice) => ({
             date: new Date(invoice.created * 1000),
             name: (customer as any).name || (customer as any).email || 'Customer',
             transactionId: invoice.number || invoice.id,
+            stripeInvoiceId: invoice.id,
+            stripeCustomerId: stripeCustomerId,
             status: invoice.status === 'paid' ? 'Paid' : invoice.status === 'open' ? 'Pending' : 'Failed',
             payAmount: `${(invoice.amount_paid / 100).toFixed(2)} ${invoice.currency.toUpperCase()}`,
             amount: invoice.amount_paid / 100,
@@ -680,6 +715,7 @@ export class SubscriptionService implements OnModuleInit {
 
       // Get database invoices
       const dbInvoices = await this.prisma.invoice.findMany({
+        where: isAdmin ? {} : { stripeCustomerId }, // Filter if not admin
         orderBy: { createdAt: 'desc' },
         take: 100,
       });
@@ -687,6 +723,8 @@ export class SubscriptionService implements OnModuleInit {
       const dbInvoicesMapped = dbInvoices.map((invoice) => ({
         date: invoice.createdAt || new Date(),
         transactionId: invoice.invoiceNo || invoice.id,
+        stripeInvoiceId: invoice.stripeInvoiceId,
+        stripeCustomerId: invoice.stripeCustomerId,
         status: invoice.status || 'Unknown',
         payAmount: `${((invoice.amountPaid || 0) / 100).toFixed(2)} ${invoice.currency || 'USD'}`,
         amount: (invoice.amountPaid || 0) / 100,
@@ -694,39 +732,18 @@ export class SubscriptionService implements OnModuleInit {
         invoiceUrl: invoice.invoicePdfUrl,
       }));
 
-      // If no invoices found but subscription exists, create a transaction from subscription
-      let subscriptionTransaction: any[] = [];
-      if (stripeInvoices.length === 0 && dbInvoices.length === 0 && subscription) {
-        const planDetails = await this.prisma.subscriptionPlan.findFirst({
-          where: { planType: subscription.planType as any },
-        });
-
-        if (planDetails) {
-          subscriptionTransaction = [{
-            date: subscription.createdAt || new Date(),
-            name: 'Subscription Purchase',
-            transactionId: subscription.id || 'N/A',
-            status: subscription.status === 'ACTIVE' ? 'Paid' : 'Pending',
-            payAmount: `${(planDetails.price / 100).toFixed(2)} USD`,
-            amount: planDetails.price / 100,
-            currency: 'USD',
-            planType: planDetails.name,
-          }];
-        }
-      }
-
-      // Combine and sort by date
-      const allTransactions = [...stripeInvoices, ...dbInvoicesMapped, ...subscriptionTransaction]
+      // Combined and sorted by date
+      const allTransactions = [...stripeInvoices, ...dbInvoicesMapped]
+        // Filter unique by stripeInvoiceId to avoid duplicates between Stripe and DB listing
+        .filter((v, i, a) => a.findIndex(t => (t.stripeInvoiceId === v.stripeInvoiceId && v.stripeInvoiceId !== 'N/A')) === i)
         .sort((a, b) => {
           const dateA = a.date ? new Date(a.date).getTime() : 0;
           const dateB = b.date ? new Date(b.date).getTime() : 0;
           return dateB - dateA;
         });
 
-      console.log(`Found ${stripeInvoices.length} Stripe invoices, ${dbInvoices.length} DB invoices, ${subscriptionTransaction.length} subscription transactions`);
-
       return {
-        currentSubscription: subscription,
+        currentSubscription: isAdmin ? null : subscription, // Admins don't have a specific "current" subscription context here
         transactions: allTransactions,
         totalTransactions: allTransactions.length,
       };
@@ -909,6 +926,170 @@ export class SubscriptionService implements OnModuleInit {
     }
   }
 
+  // Refund an invoice
+  // Refund an invoice
+  async refundInvoice(userId: string, inputId: string) {
+    try {
+      // 0. Direct ID Support as a Fail-Safe (PI or CH)
+      if (inputId.startsWith('pi_') || inputId.startsWith('ch_')) {
+        console.log(`🚀 Direct Payment ID detected: ${inputId}. Verifying ownership...`);
+        
+        let payment: any;
+        if (inputId.startsWith('pi_')) {
+          payment = await this.stripe.paymentIntents.retrieve(inputId);
+        } else {
+          payment = await this.stripe.charges.retrieve(inputId);
+        }
+
+        const userSubscription = await this.prisma.subscription.findUnique({
+          where: { userId },
+        });
+
+        if (!userSubscription || payment.customer !== userSubscription.stripeCustomerId) {
+          throw new BadRequestException('This payment does not belong to your account');
+        }
+
+        const refund = await this.stripe.refunds.create({
+          [inputId.startsWith('pi_') ? 'payment_intent' : 'charge']: inputId,
+        });
+
+        return {
+          success: true,
+          message: 'Refund processed successfully via Direct ID',
+          refundId: refund.id,
+        };
+      }
+
+      // 1. Find the invoice in our DB first
+      let invoice = await this.prisma.invoice.findFirst({
+        where: {
+          OR: [
+            { stripeInvoiceId: inputId },
+            { invoiceNo: inputId },
+          ],
+        },
+        orderBy: { createdAt: 'desc' }, // Pick the most recent one if multiple match No
+      });
+
+      // 2. If not in DB, search Stripe directly (robustness for missed webhooks)
+      let stripeInvoice: any;
+      if (!invoice) {
+        console.log(`🔍 Invoice ${inputId} not found in DB, searching Stripe...`);
+        try {
+          if (inputId.startsWith('in_')) {
+            stripeInvoice = await this.stripe.invoices.retrieve(inputId);
+          } else {
+            const searchResults = await this.stripe.invoices.search({
+              query: `number:'${inputId}'`,
+              limit: 1,
+            });
+            if (searchResults.data.length > 0) {
+              stripeInvoice = searchResults.data[0];
+            }
+          }
+        } catch (e) {
+          console.error(`Stripe search failed: ${e.message}`);
+        }
+
+        if (!stripeInvoice) {
+          throw new NotFoundException('Invoice not found in our records or in Stripe. If this was a successful test payment, please provide the Payment ID (pi_...) directly.');
+        }
+
+        // Auto-sync missing invoice to DB
+        invoice = await this.prisma.invoice.create({
+          data: {
+            stripeInvoiceId: stripeInvoice.id,
+            stripeCustomerId: stripeInvoice.customer, // Save customer ID
+            invoiceNo: stripeInvoice.number,
+            amountDue: stripeInvoice.amount_due,
+            amountPaid: stripeInvoice.amount_paid,
+            currency: stripeInvoice.currency.toUpperCase(),
+            status: stripeInvoice.status || 'paid',
+            invoicePdfUrl: stripeInvoice.hosted_invoice_url,
+          },
+        });
+        console.log(`✅ Auto-synced invoice ${stripeInvoice.id} to local DB`);
+      } else {
+        // Retrieve with expansions to be 100% sure we get the IDs
+        stripeInvoice = await this.stripe.invoices.retrieve(invoice.stripeInvoiceId as string, {
+          expand: ['payment_intent', 'charge'],
+        });
+      }
+
+      // 3. Verify Ownership
+      const userSubscription = await this.prisma.subscription.findUnique({
+        where: { userId },
+      });
+
+      if (!userSubscription || stripeInvoice.customer !== userSubscription.stripeCustomerId) {
+        console.warn(`Mismatch: Stripe Cust ${stripeInvoice.customer} vs Local Cust ${userSubscription?.stripeCustomerId}`);
+        throw new BadRequestException('This invoice does not belong to your account');
+      }
+
+      let paymentIntentId = typeof stripeInvoice.payment_intent === 'string'
+        ? stripeInvoice.payment_intent
+        : (stripeInvoice.payment_intent as any)?.id;
+
+      let chargeId = typeof stripeInvoice.charge === 'string'
+        ? stripeInvoice.charge
+        : (stripeInvoice.charge as any)?.id;
+
+      // 4. Exhaustive Search: If Stripe invoice object has nulls, search customer transactions
+      if (!paymentIntentId && !chargeId) {
+        console.log(`🔎 Payment details missing on invoice ${stripeInvoice.id}. Searching customer payments...`);
+        const customerId = stripeInvoice.customer as string;
+        
+        // Search PaymentIntents for this customer that match the invoice
+        const pIntents = await this.stripe.paymentIntents.list({
+          customer: customerId,
+          limit: 15, // Search a bit more
+        });
+        const match = pIntents.data.find(pi => (pi as any).invoice === stripeInvoice.id);
+        if (match) {
+          paymentIntentId = match.id;
+        } else {
+          // Search Charges as a fallback
+          const charges = await this.stripe.charges.list({
+            customer: customerId,
+            limit: 15,
+          });
+          const chargeMatch = charges.data.find(c => (c as any).invoice === stripeInvoice.id);
+          if (chargeMatch) {
+            chargeId = chargeMatch.id;
+            paymentIntentId = (chargeMatch as any).payment_intent;
+          }
+        }
+      }
+
+      if (!paymentIntentId && !chargeId) {
+        throw new BadRequestException(`No payment intent or charge found for invoice ${stripeInvoice.id}. Status: ${stripeInvoice.status}. If this was a successful test payment, please use the Payment Intent ID (starts with "pi_") from your Stripe Dashboard for a direct refund.`);
+      }
+
+      // 5. Process Refund
+      const refund = await this.stripe.refunds.create({
+        [paymentIntentId ? 'payment_intent' : 'charge']: 
+          (paymentIntentId || chargeId) as string,
+      });
+
+      // 6. Update local status
+      await this.prisma.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          status: 'REFUNDED',
+          updatedAt: new Date(),
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Refund processed successfully',
+        refundId: refund.id,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
   // Handle Stripe Webhooks
   async handleStripeWebhook(payload: any, signature: string) {
     let event: Stripe.Event;
@@ -997,9 +1178,16 @@ export class SubscriptionService implements OnModuleInit {
         const invoice = event.data.object as Stripe.Invoice;
         if ((invoice as any).subscription) {
           // Optional: Create an invoice record in your DB
-          await this.prisma.invoice.create({
-            data: {
+          await this.prisma.invoice.upsert({
+            where: { stripeInvoiceId: invoice.id },
+            update: {
+              status: invoice.status || 'paid',
+              amountPaid: invoice.amount_paid,
+              stripeCustomerId: invoice.customer as string, // Ensure customerId is updated
+            },
+            create: {
               stripeInvoiceId: invoice.id,
+              stripeCustomerId: invoice.customer as string,
               invoiceNo: invoice.number || null,
               amountDue: invoice.amount_due,
               amountPaid: invoice.amount_paid,
@@ -1023,6 +1211,21 @@ export class SubscriptionService implements OnModuleInit {
               data: { status: 'PAST_DUE' },
             });
           }
+        }
+        break;
+      }
+
+      case 'charge.refunded': {
+        const charge = event.data.object as Stripe.Charge;
+        if ((charge as any).invoice) {
+          await this.prisma.invoice.update({
+            where: { stripeInvoiceId: (charge as any).invoice as string },
+            data: {
+              status: 'REFUNDED',
+              updatedAt: new Date(),
+            },
+          });
+          console.log(`Webhook: Invoice ${(charge as any).invoice} marked as REFUNDED`);
         }
         break;
       }

@@ -45,9 +45,10 @@ model Subscription {
 }
 
 model Invoice {
-  id              String    @id @default(uuid())
-  stripeInvoiceId String?   @unique
-  invoiceNo       String?
+  id               String    @id @default(uuid())
+  stripeInvoiceId  String?   @unique
+  stripeCustomerId String?   // Added to filter by customer
+  invoiceNo        String?
   amountDue       Int?
   amountPaid      Int?
   currency        String?
