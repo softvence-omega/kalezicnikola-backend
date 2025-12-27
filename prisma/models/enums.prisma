@@ -58,8 +58,8 @@ enum Plan {
 }
 
 enum PlanType {
-  BASIC
-  PROFESSIONAL
+  STANDARD
+  PREMIUM
   ENTERPRISE
 }
 

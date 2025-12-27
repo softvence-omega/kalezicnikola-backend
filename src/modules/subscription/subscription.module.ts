@@ -4,11 +4,12 @@ import { JwtModule } from '@nestjs/jwt';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { SubscriptionService } from './subscription.service';
 import { SubscriptionController } from './subscription.controller';
+import { StripeWebhookController } from './stripe-webhook.controller';
 import { SubscriptionCronService } from './subscription.cron.service';
 
 @Module({
   imports: [ConfigModule, JwtModule, PrismaModule],
-  controllers: [SubscriptionController],
+  controllers: [SubscriptionController, StripeWebhookController],
   providers: [SubscriptionService, SubscriptionCronService],
   exports: [SubscriptionService],
 })

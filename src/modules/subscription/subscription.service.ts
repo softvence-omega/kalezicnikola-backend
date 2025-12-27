@@ -30,43 +30,107 @@ export class SubscriptionService implements OnModuleInit {
   private async seedSubscriptionPlans() {
     try {
       const defaultPlans = [
+        // STANDARD PLANS
         {
-          planType: 'BASIC' as const,
-          name: 'Basic Plan',
+          planType: 'STANDARD' as const,
+          billingCycle: 'MONTHLY' as const,
+          name: 'Standard Monthly',
           price: 399,
-          stripePriceId: 'price_1SbCviD60jTqpzFUD4WuxbQN',
-          minutes: 500,
+          stripePriceId: this.configService.get<string>('STRIPE_STANDARD_MONTHLY_PRICE_ID') || 'price_standard_monthly_placeholder',
+          minutes: 2000,
           features: [
-            'Average of 2-5 easy to follow trade alerts',
-            'Average of 2-5 easy to follow trade',
-            'Average of 2-5 easy to follow trade alerts per week',
-            'Average of 2-5 easy to follow trade alerts',
+            'AI Agent creation & setup',
+            '24/7 availability & call logging',
+            'Intelligent triage & task creation',
+            '2000 call minutes / month included',
+            '€0.35 per extra minute',
+            'Email support',
           ],
         },
         {
-          planType: 'PROFESSIONAL' as const,
-          name: 'Professional',
-          price: 899,
-          stripePriceId: 'price_1SbCv9D60jTqpzFUYuH2aykt',
-          minutes: 1000,
+          planType: 'STANDARD' as const,
+          billingCycle: 'YEARLY' as const,
+          name: 'Standard Yearly',
+          price: 339,
+          stripePriceId: this.configService.get<string>('STRIPE_STANDARD_YEARLY_PRICE_ID') || 'price_standard_yearly_placeholder',
+          minutes: 2000,
           features: [
-            'Average of 2-5 easy to follow trade alerts',
-            'Average of 2-5 easy to follow trade',
-            'Average of 2-5 easy to follow trade alerts per week',
-            'Average of 2-5 easy to follow',
+            'AI Agent creation & setup',
+            '24/7 availability & call logging',
+            'Intelligent triage & task creation',
+            '2000 call minutes / month included',
+            '€0.35 per extra minute',
+            'Email support',
+          ],
+        },
+        // PREMIUM PLANS
+        {
+          planType: 'PREMIUM' as const,
+          billingCycle: 'MONTHLY' as const,
+          name: 'Premium Monthly',
+          price: 899,
+          stripePriceId: this.configService.get<string>('STRIPE_PREMIUM_MONTHLY_PRICE_ID') || 'price_premium_monthly_placeholder',
+          minutes: 4000,
+          features: [
+            'AI Agent creation & setup',
+            '24/7 availability & call logging',
+            'Intelligent triage & task creation',
+            '4000 call minutes / month included',
+            '€0.30 per extra minute',
+            'Multilingual (25+ languages)',
+            'Prioritized email and live chat support',
+          ],
+        },
+        {
+          planType: 'PREMIUM' as const,
+          billingCycle: 'YEARLY' as const,
+          name: 'Premium Yearly',
+          price: 765,
+          stripePriceId: this.configService.get<string>('STRIPE_PREMIUM_YEARLY_PRICE_ID') || 'price_premium_yearly_placeholder',
+          minutes: 4000,
+          features: [
+            'AI Agent creation & setup',
+            '24/7 availability & call logging',
+            'Intelligent triage & task creation',
+            '4000 call minutes / month included',
+            '€0.30 per extra minute',
+            'Multilingual (25+ languages)',
+            'Prioritized email and live chat support',
+          ],
+        },
+        // ENTERPRISE PLANS
+        {
+          planType: 'ENTERPRISE' as const,
+          billingCycle: 'MONTHLY' as const,
+          name: 'Enterprise Monthly',
+          price: 1299,
+          stripePriceId: this.configService.get<string>('STRIPE_ENTERPRISE_MONTHLY_PRICE_ID') || 'price_enterprise_monthly_placeholder',
+          minutes: 8000,
+          features: [
+            'AI Agent creation & setup',
+            '24/7 availability & call logging',
+            'Intelligent triage & task creation',
+            '8000 call minutes / month included',
+            '€0.25 per extra minute',
+            'Multilingual (25+ languages)',
+            '24/7 Premium support',
           ],
         },
         {
           planType: 'ENTERPRISE' as const,
-          name: 'Enterprise',
-          price: 1299,
-          stripePriceId: 'price_1SbCwLD60jTqpzFUGZBNsqi0',
-          minutes: 2000,
+          billingCycle: 'YEARLY' as const,
+          name: 'Enterprise Yearly',
+          price: 1105,
+          stripePriceId: this.configService.get<string>('STRIPE_ENTERPRISE_YEARLY_PRICE_ID') || 'price_enterprise_yearly_placeholder',
+          minutes: 8000,
           features: [
-            'Average of 2-5 easy to follow trade alerts',
-            'Average of 2-5 easy to follow trade alerts',
-            'Average of 2-5 easy to follow',
-            'Average of 2-5 easy to follow trade alerts',
+            'AI Agent creation & setup',
+            '24/7 availability & call logging',
+            'Intelligent triage & task creation',
+            '8000 call minutes / month included',
+            '€0.25 per extra minute',
+            'Multilingual (25+ languages)',
+            '24/7 Premium support',
           ],
         },
       ];
@@ -75,8 +139,11 @@ export class SubscriptionService implements OnModuleInit {
       let skipped = 0;
 
       for (const plan of defaultPlans) {
-        const existingPlan = await this.prisma.subscriptionPlan.findUnique({
-          where: { planType: plan.planType },
+        const existingPlan = await this.prisma.subscriptionPlan.findFirst({
+          where: { 
+            planType: plan.planType,
+            billingCycle: plan.billingCycle
+          },
         });
 
         if (existingPlan) {
@@ -161,11 +228,16 @@ export class SubscriptionService implements OnModuleInit {
   // Create a new subscription
   async createSubscription(userId: string, createSubscriptionDto: CreateSubscriptionDto) {
     try {
-      const { planType, paymentMethodId } = createSubscriptionDto;
+      const { planType, billingCycle, paymentMethodId } = createSubscriptionDto;
       
       // Get plan from database
       const planDetails = await this.prisma.subscriptionPlan.findUnique({
-        where: { planType },
+        where: { 
+          planType_billingCycle: {
+            planType: planType as any,
+            billingCycle: billingCycle as any
+          }
+        },
       });
 
       if (!planDetails) {
@@ -241,7 +313,12 @@ export class SubscriptionService implements OnModuleInit {
 
       // Get plan details from database
       const planDetails = await this.prisma.subscriptionPlan.findFirst({
-        where: { planType: subscription.planType },
+        where: { 
+          planType: subscription.planType as any,
+          // Note: We might want to store billingCycle on the Subscription model too
+          // or derive it from the planDetails if we find the correct one.
+          // For now, findFirst is safer if we don't have it on subscription.
+        },
       });
 
       if (!planDetails) {
@@ -336,8 +413,7 @@ export class SubscriptionService implements OnModuleInit {
     }
   }
 
-  // Create checkout session for upgrade/downgrade
-  async createUpgradeCheckout(userId: string, planType: string) {
+  async createUpgradeCheckout(userId: string, planType: string, billingCycle: string = 'MONTHLY') {
     try {
       // Check if user has an active subscription
       const currentSubscription = await this.prisma.subscription.findUnique({
@@ -360,7 +436,12 @@ export class SubscriptionService implements OnModuleInit {
 
       // Get new plan from database
       const planDetails = await this.prisma.subscriptionPlan.findUnique({
-        where: { planType: planType as any },
+        where: { 
+          planType_billingCycle: {
+            planType: planType as any,
+            billingCycle: billingCycle as any
+          }
+        },
       });
 
       if (!planDetails) {
@@ -387,6 +468,7 @@ export class SubscriptionService implements OnModuleInit {
         metadata: {
           userId,
           planType,
+          billingCycle,
           isUpgrade: 'true',
           oldSubscriptionId: currentSubscription.stripeSubscriptionId || '',
         },
@@ -422,11 +504,17 @@ export class SubscriptionService implements OnModuleInit {
 
       const userId = session.metadata.userId;
       const planType = session.metadata.planType;
+      const billingCycle = session.metadata.billingCycle || 'MONTHLY';
       const oldSubscriptionId = session.metadata.oldSubscriptionId;
 
       // Get plan details from database
       const planDetails = await this.prisma.subscriptionPlan.findUnique({
-        where: { planType: planType as any },
+        where: { 
+          planType_billingCycle: {
+            planType: planType as any,
+            billingCycle: billingCycle as any
+          }
+        },
       });
 
       if (!planDetails) {
@@ -616,7 +704,7 @@ export class SubscriptionService implements OnModuleInit {
       // If no invoices found but subscription exists, create a transaction from subscription
       let subscriptionTransaction: any[] = [];
       if (stripeInvoices.length === 0 && dbInvoices.length === 0 && subscription) {
-        const planDetails = await this.prisma.subscriptionPlan.findUnique({
+        const planDetails = await this.prisma.subscriptionPlan.findFirst({
           where: { planType: subscription.planType as any },
         });
 
@@ -656,7 +744,7 @@ export class SubscriptionService implements OnModuleInit {
   }
 
   // Create checkout session
-  async createCheckoutSession(userId: string, planType: string) {
+  async createCheckoutSession(userId: string, planType: string, billingCycle: string = 'MONTHLY') {
     try {
       // Get user email from database
       const user = await this.prisma.doctor.findUnique({
@@ -670,7 +758,12 @@ export class SubscriptionService implements OnModuleInit {
 
       // Get plan from database
       const planDetails = await this.prisma.subscriptionPlan.findUnique({
-        where: { planType: planType as any },
+        where: { 
+          planType_billingCycle: {
+            planType: planType as any,
+            billingCycle: billingCycle as any
+          }
+        },
       });
 
       if (!planDetails) {
@@ -692,6 +785,7 @@ export class SubscriptionService implements OnModuleInit {
         metadata: {
           userId,
           planType,
+          billingCycle,
         },
       });
 
@@ -724,10 +818,16 @@ export class SubscriptionService implements OnModuleInit {
 
       const userId = session.metadata.userId;
       const planType = session.metadata.planType;
+      const billingCycle = session.metadata.billingCycle || 'MONTHLY';
 
       // Get plan details from database
       const planDetails = await this.prisma.subscriptionPlan.findUnique({
-        where: { planType: planType as any },
+        where: { 
+          planType_billingCycle: {
+            planType: planType as any,
+            billingCycle: billingCycle as any
+          }
+        },
       });
 
       if (!planDetails) {
@@ -811,6 +911,130 @@ export class SubscriptionService implements OnModuleInit {
       };
     } catch (error) {
       throw new BadRequestException(error.message);
+    }
+  }
+
+  // Handle Stripe Webhooks
+  async handleStripeWebhook(payload: any, signature: string) {
+    let event: Stripe.Event;
+
+    try {
+      event = this.stripe.webhooks.constructEvent(
+        payload,
+        signature,
+        this.configService.get<string>('STRIPE_WEBHOOK_SECRET')!,
+      );
+    } catch (err) {
+      throw new BadRequestException(`Webhook Error: ${err.message}`);
+    }
+
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        if (session.metadata?.isUpgrade === 'true') {
+          // Handled by confirmUpgrade but good to have safety here
+          // We can call confirmUpgrade logic or a simplified version
+          console.log(`Webhook: Processing upgrade for session ${session.id}`);
+        } else {
+          console.log(`Webhook: Processing new subscription for session ${session.id}`);
+          await this.completeSubscription(session.id);
+        }
+        break;
+      }
+
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        const stripeSubscription = event.data.object as Stripe.Subscription;
+        const userId = stripeSubscription.metadata.userId;
+
+        if (!userId) {
+          console.warn(`Webhook: No userId found in subscription metadata for ${stripeSubscription.id}`);
+          break;
+        }
+
+        const subscriptionData = stripeSubscription as any;
+        const periodStart = subscriptionData.current_period_start 
+          ? new Date(subscriptionData.current_period_start * 1000)
+          : undefined;
+        const periodEnd = subscriptionData.current_period_end
+          ? new Date(subscriptionData.current_period_end * 1000)
+          : undefined;
+
+        const mapStripeStatus = (stripeStatus: string) => {
+          const statusMap: { [key: string]: string } = {
+            'active': 'ACTIVE',
+            'past_due': 'PAST_DUE',
+            'canceled': 'CANCELLED',
+            'cancelled': 'CANCELLED',
+            'unpaid': 'PAST_DUE',
+            'incomplete': 'PENDING',
+            'incomplete_expired': 'CANCELLED',
+            'trialing': 'ACTIVE',
+          };
+          return statusMap[stripeStatus] || 'PENDING';
+        };
+
+        const status = mapStripeStatus(stripeSubscription.status);
+
+        if (event.type === 'customer.subscription.deleted') {
+          await this.prisma.subscription.update({
+            where: { userId },
+            data: {
+              status: 'CANCELLED',
+              isActive: false,
+              cancelledAt: new Date(),
+            },
+          });
+        } else {
+          await this.prisma.subscription.update({
+            where: { userId },
+            data: {
+              status: status as any,
+              currentPeriodStart: periodStart,
+              currentPeriodEnd: periodEnd,
+              updatedAt: new Date(),
+            },
+          });
+        }
+        break;
+      }
+
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object as Stripe.Invoice;
+        if ((invoice as any).subscription) {
+          // Optional: Create an invoice record in your DB
+          await this.prisma.invoice.create({
+            data: {
+              stripeInvoiceId: invoice.id,
+              invoiceNo: invoice.number || null,
+              amountDue: invoice.amount_due,
+              amountPaid: invoice.amount_paid,
+              currency: invoice.currency.toUpperCase(),
+              status: invoice.status || 'paid',
+              invoicePdfUrl: invoice.hosted_invoice_url || null,
+            },
+          });
+        }
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        if ((invoice as any).subscription) {
+          const stripeSubscription = await this.stripe.subscriptions.retrieve((invoice as any).subscription as string);
+          const userId = stripeSubscription.metadata.userId;
+          if (userId) {
+            await this.prisma.subscription.update({
+              where: { userId },
+              data: { status: 'PAST_DUE' },
+            });
+          }
+        }
+        break;
+      }
+
+      default:
+        console.log(`Unhandled event type ${event.type}`);
     }
   }
 }

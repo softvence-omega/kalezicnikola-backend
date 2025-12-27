@@ -111,9 +111,13 @@ export class SubscriptionController {
     status: 400,
     description: 'Invalid plan type or no active subscription',
   })
-  async createUpgradeCheckout(@Request() req, @Query('planType') planType: string) {
+  async createUpgradeCheckout(
+    @Request() req, 
+    @Query('planType') planType: string,
+    @Query('billingCycle') billingCycle: string = 'MONTHLY'
+  ) {
     const userId = req.user.id;
-    return this.subscriptionService.createUpgradeCheckout(userId, planType);
+    return this.subscriptionService.createUpgradeCheckout(userId, planType, billingCycle);
   }
 
   @Get('upgrade/confirm')
@@ -166,9 +170,13 @@ export class SubscriptionController {
     status: 400,
     description: 'Invalid plan type',
   })
-  async createCheckoutSession(@Request() req, @Query('planType') planType: string) {
+  async createCheckoutSession(
+    @Request() req, 
+    @Query('planType') planType: string,
+    @Query('billingCycle') billingCycle: string = 'MONTHLY'
+  ) {
     const userId = req.user.id;
-    return this.subscriptionService.createCheckoutSession(userId, planType);
+    return this.subscriptionService.createCheckoutSession(userId, planType, billingCycle);
   }
 
   @Get('success')

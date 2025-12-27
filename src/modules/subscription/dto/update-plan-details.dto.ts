@@ -2,8 +2,8 @@ import { IsString, IsNumber, IsArray, IsOptional, IsEnum } from 'class-validator
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum PlanTypeEnum {
-  BASIC = 'BASIC',
-  PROFESSIONAL = 'PROFESSIONAL',
+  STANDARD = 'STANDARD',
+  PREMIUM = 'PREMIUM',
   ENTERPRISE = 'ENTERPRISE',
 }
 
