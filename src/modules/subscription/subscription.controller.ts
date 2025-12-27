@@ -17,6 +17,7 @@ import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 import { UpdatePlanDetailsDto } from './dto/update-plan-details.dto';
 import { JwtAuthGuard } from '../../common/guard/auth.guard';
+import { AdminGuard } from '../../common/guard/admin.guard';
 
 @ApiTags('Subscription')
 @Controller('subscription')
@@ -212,5 +213,12 @@ export class SubscriptionController {
   })
   async handleSuccess(@Query('session_id') sessionId: string) {
     return this.subscriptionService.completeSubscription(sessionId);
+  }
+
+  @Get('admin/stats')
+  @UseGuards(AdminGuard)
+  @ApiOperation({ summary: 'Get overall subscription statistics (Admin only)' })
+  async getAdminStats() {
+    return this.subscriptionService.getAdminStats();
   }
 }

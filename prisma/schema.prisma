@@ -1,10 +1,1162 @@
 generator client {
-  provider = "prisma-client-js"
-  output   = "../generated/prisma"
+  provider        = "prisma-client-js"
+  output          = "../generated/prisma"
+  previewFeatures = ["prismaSchemaFolder"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+}
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+model SubscriptionPlan {
+  id            String       @id @default(uuid())
+  planType      PlanType
+  billingCycle  BillingCycle
+  name          String
+  price         Int
+  stripePriceId String
+  minutes       Int
+  features      Json
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([planType, billingCycle])
+  @@map("subscription_plans")
+}
+
+model Subscription {
+  id                   String              @id @default(uuid()) 
+  userId               String?             @unique // Link to user
+  stripeCustomerId     String?             @unique 
+  stripeSubscriptionId String?             @unique
+  plan                 Plan?
+  planType             PlanType?           // Current plan type
+  billingCycle         BillingCycle?       // Added billing cycle
+  status               SubscriptionStatus?
+  minutesAllocated     Int?                // Minutes for current plan
+  minutesUsed          Int?                @default(0)
+  currentPeriodStart   DateTime?           
+  currentPeriodEnd     DateTime?           
+  cancelledAt          DateTime?
+  isActive             Boolean?            @default(true) // Set to false when period ends after cancellation
+  createdAt            DateTime?           @default(now()) 
+  updatedAt            DateTime?           @updatedAt 
+
+  // Relations
+  doctor Doctor? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id               String    @id @default(uuid())
+  stripeInvoiceId  String?   @unique
+  stripeCustomerId String?   // Added to filter by customer
+  planType         PlanType? // Added for statistics
+  invoiceNo        String?
+  amountDue       Int?
+  amountPaid      Int?
+  currency        String?
+  status          String?
+  invoicePdfUrl   String?
+  createdAt       DateTime? @default(now())
+  updatedAt       DateTime? @updatedAt
+
+  @@map("invoices")
+}
+
+model NotificationQueue {
+  id        String              @id @default(uuid())
+  type      NotificationType?
+  recipient String?
+  payload   Json?
+  status    NotificationStatus?
+  sentAt    DateTime?
+  createdAt DateTime?           @default(now())
+
+  @@map("notification_queues")
+}
+// Chat Models
+
+model AdminConversation {
+  id        String   @id @default(uuid())
+  userId    String   // Doctor or Patient ID (references User table)
+  user      User     @relation("UserConversations", fields: [userId], references: [id])
+  userRole  UserRole // DOCTOR or PATIENT
+  doctorId  String   // Direct reference to Doctor table
+  doctor    Doctor   @relation(fields: [doctorId], references: [id])
+  adminId   String?  // Admin assigned to this conversation
+  admin     User?    @relation("AdminConversations", fields: [adminId], references: [id])
+  // TODO: Admin should be array of admins for multiple admin support
+  // admins   User[]   @relation("AdminConversations")
+  status    ConversationStatus @default(OPEN)
+  subject   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  messages  SupportMessage[]
+  
+  @@unique([doctorId]) // One conversation per doctor
+  @@index([userId])
+  @@index([doctorId])
+  @@index([adminId])
+  @@index([status])
+  @@map("admin_conversations")
+}
+
+model SupportMessage {
+  id             String              @id @default(uuid())
+  conversationId String
+  conversation   AdminConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User                @relation(fields: [senderId], references: [id])
+  message        String              @db.Text
+  imageUrl       String?             // Single image URL for chat messages
+  isRead         Boolean             @default(false)
+  attachments    Json?               // Array of file URLs (for future use)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  
+  @@index([conversationId])
+  @@index([senderId])
+  @@map("support_messages")
+}
+model ConsentVersion {
+  id            String       @id @default(uuid())    
+  type          ConsentType?
+  version       String?     
+  title         String?     
+  body          String?      
+  effectiveDate DateTime?    
+  createdAt     DateTime?    @default(now())  
+
+  patientConsents PatientConsent[]
+
+  @@map("consent_versions")
+}
+
+model PatientConsent {
+  id               String       @id @default(uuid()) 
+  patientId        String?       
+  consentVersionId String?      
+  type             ConsentType?
+  given            Boolean?
+  givenAt          DateTime?    
+  withdrawnAt      DateTime?    
+  ip               String?      
+  userAgent        String?      
+  createdAt        DateTime?    @default(now()) 
+  updatedAt        DateTime?    @updatedAt 
+
+  patient        Patient?        @relation(fields: [patientId], references: [id])
+  consentVersion ConsentVersion? @relation(fields: [consentVersionId], references: [id])
+
+  @@map("patient_consents")
+}
+
+model KeyManagement {
+  id        String    @id @default(uuid()) 
+  version   String?   @unique
+  dekCipher Bytes?   
+  createdAt DateTime? @default(now()) 
+  rotatedAt DateTime?  
+
+  @@map("key_managements")
+}
+
+model AuditLog {
+  id         String    @id @default(uuid()) 
+  table      String?  
+  rowId      String?    
+  action     String?  
+  oldValues  Json?     
+  newValues  Json?     
+  
+  // Can be triggered by Admin or Doctor
+  adminId    String?   
+  doctorId   String?    
+    
+  ip         String?   
+  userAgent  String?   
+  occurredAt DateTime? 
+
+  admin  Admin?  @relation(fields: [adminId], references: [id])
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model DataRequest {
+  id                String             @id @default(uuid())     
+  patientId         String?            
+  type              DataRequestType?
+  status            DataRequestStatus?
+  requestReason     String?           
+  requestedAt       DateTime?          
+  completedAt       DateTime?          
+  downloadUrl       String?            
+  downloadExpiresAt DateTime?          
+
+  patient Patient? @relation(fields: [patientId], references: [id])
+
+  @@map("data_requests")
+}enum UserRole {
+  ADMIN
+  DOCTOR
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHERS
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum CallStatus {
+  SUCCESSFUL
+  UNSUCCESSFUL
+  TRANSFERRED
+  MISSED
+}
+
+enum Sentiment {
+  POSITIVE
+  NEGATIVE
+  NEUTRAL
+}
+
+enum Flag {
+  LOW
+  HIGH
+  NORMAL
+}
+
+enum PrescriptionStatus {
+  ACTIVE
+  CANCELLED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum Plan {
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum PlanType {
+  STANDARD
+  PREMIUM
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  PENDING
+}
+
+enum NotificationType {
+  IN_APP
+  SMS
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum ConsentType {
+  MARKETING
+  CARE_ANALYTICS
+}
+
+enum DataRequestType {
+  EXPORT
+  ERASURE
+}
+
+enum DataRequestStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum Department {
+  CARDIOLOGY
+  NEUROLOGY
+  PEDIATRICS
+  ORTHOPEDICS
+  DERMATOLOGY
+  RADIOLOGY
+  PHARMACY
+  ADMINISTRATION
+  RECEPTION
+  NURSING
+  LABORATORY
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  TEMPORARY
+  INTERN
+  TRAINEE
+}
+
+enum MetricType {
+  CPU
+  MEMORY
+  DISK
+  NETWORK
+  DATABASE_CONNECTIONS
+  REQUEST_RATE
+  ERROR_RATE
+}
+
+enum ServiceName {
+  API_GATEWAY
+  DATABASE_PRIMARY
+  DATABASE_REPLICA
+  VOICEBOT_SERVICE
+  AUTHENTICATION_SERVICE
+  PAYMENT_GATEWAY
+  NOTIFICATION_SERVICE
+  PRESCRIPTION_SERVICE
+  APPOINTMENT_SERVICE
+  PATIENT_SERVICE
+  LAB_SERVICE
+}
+
+enum ServiceStatus {
+  OPERATIONAL
+  DEGRADED
+  PARTIAL_OUTAGE
+  MAJOR_OUTAGE
+  MAINTENANCE
+}
+
+enum IncidentSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum IncidentStatus {
+  INVESTIGATING
+  IDENTIFIED
+  MONITORING
+  RESOLVED
+  POSTMORTEM
+}
+
+enum HealthCheckStatus {
+  HEALTHY
+  UNHEALTHY
+  TIMEOUT
+}
+
+// Settings Enums
+
+enum Timezone {
+  UTC
+  Africa_Cairo
+  Africa_Johannesburg
+  America_New_York
+  America_Chicago
+  America_Denver
+  America_Los_Angeles
+  America_Toronto
+  America_Sao_Paulo
+  Asia_Dhaka
+  Asia_Dubai
+  Asia_Riyadh
+  Asia_Singapore
+  Asia_Kuala_Lumpur
+  Asia_Tokyo
+  Europe_London
+  Europe_Berlin
+  Europe_Paris
+  Europe_Madrid
+  Europe_Rome
+  Australia_Sydney
+}
+
+enum DateFormat {
+  DD_MM_YYYY // 31-12-2025
+  MM_DD_YYYY // 12-31-2025
+  YYYY_MM_DD // 2025-12-31
+  DD_MMM_YYYY // 31 Dec 2025
+  MMM_DD_YYYY // Dec 31 2025
+}
+
+enum TimeFormat {
+  HOUR_12 // 03:30 PM
+  HOUR_24 // 15:30
+}
+
+enum Language {
+  English
+  Arabic
+  Bengali
+  French
+  German
+  Spanish
+  Italian
+  Hindi
+  Chinese
+}
+
+enum CalendarView {
+  DayView
+  WeekView
+  MonthView
+  AgendaView
+}
+
+enum AppointmentDuration {
+  Minutes_10
+  Minutes_15
+  Minutes_20
+  Minutes_30
+  Minutes_45
+  Minutes_60
+}
+
+enum ReminderTime {
+  Minutes_10_Before
+  Minutes_30_Before
+  Hour_1_Before
+  Hours_2_Before
+  Hours_6_Before
+  Hours_12_Before
+  Hours_24_Before
+}
+
+enum BufferTime {
+  Minutes_5
+  Minutes_10
+  Minutes_15
+  Minutes_20
+  Minutes_30
+}
+
+// Staff
+enum StaffRole {
+  CARDIOLOGIST
+  NEUROLOGIST
+  HEAD_NURSE
+  LAB_TECHNICIAN
+  PHARMACIST
+  RECEPTIONIST
+}
+
+enum StaffStatus {
+  ACTIVE
+  INACTIVE
+  ON_LEAVE
+}
+
+enum MaritalStatus {
+  MARRIED
+  UNMARRIED
+}
+
+// patient
+enum PatientStatus {
+  ACTIVE // Currently under treatment
+  INACTIVE // Not currently under treatment
+  DISCHARGED // Treatment completed
+}
+
+enum BloodGroup {
+  A_POS
+  A_NEG
+  B_POS
+  B_NEG
+  AB_POS
+  AB_NEG
+  O_POS
+  O_NEG
+}
+
+
+// docotor
+
+enum WeekDay {
+  SATURDAY
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+}
+
+// appointment
+enum AppointmentType {
+  CHECKUP
+  FOLLOWUP
+}
+
+enum PrescriptionTime {
+  MORNING
+  AFTERNOON
+  NIGHT
+}
+
+// AI Agent
+enum CallIntent {
+  BOOK_APPOINTMENT
+  CHECK_AVAILABILITY
+  RESCHEDULE
+  CANCEL
+  INQUIRY
+  GENERAL
+  EMERGENCY
+}
+
+
+enum KnowledgeBaseCategory {
+  FAQ
+  POLICY
+  TREATMENT
+  PRICING
+  OFFICE_HOURS
+  INSURANCE
+  GENERAL
+}
+
+// Chat/Support
+enum ConversationStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+model Appointment {
+  id          Int     @id @default(autoincrement())
+  patientId   String?
+  insuranceId String?
+  doctorId    String?
+
+  firstName          String?
+  lastName           String?
+  email              String?
+  phone              String?
+  dob                DateTime?
+  gender             Gender?
+  bloodGroup         BloodGroup?
+  scheduleSlotId     String?
+  appointmentDate    DateTime? // Specific date for the appointment
+  appointmentDetails String?
+  address            String?
+  status             AppointmentStatus? @default(SCHEDULED)
+  type               AppointmentType?   @default(CHECKUP)
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  doctor       Doctor?             @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  patient      Patient?            @relation("PatientAppointments", fields: [patientId], references: [id])
+  scheduleSlot DoctorScheduleSlot? @relation("AppointmentScheduleSlot", fields: [scheduleSlotId], references: [id])
+
+  prescriptions Prescription[]
+  labs          Lab[]
+  // AI Agent Relations
+  callTranscriptions CallTranscription[] @relation("AppointmentCallTranscription")
+
+  @@map("appointments")
+}
+
+model DoctorWeeklySchedule {
+  id       String  @id @default(uuid())
+  doctorId String
+  day      WeekDay
+  isClosed Boolean @default(false)
+
+  // One-to-many: multiple time slots allowed
+  slots DoctorScheduleSlot[]
+
+  doctor Doctor @relation(fields: [doctorId], references: [id])
+
+  @@unique([doctorId, day]) // Only one schedule record per day per doctor
+  @@map("doctor_weekly_schedules")
+}
+
+model DoctorScheduleSlot {
+  id         String @id @default(uuid())
+  scheduleId String
+
+  startTime String // e.g., "09:00"
+  endTime   String // e.g., "13:00"
+
+  schedule     DoctorWeeklySchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  appointments Appointment[]        @relation("AppointmentScheduleSlot")
+
+  @@map("doctor_schedule_slots")
+}
+
+model Call {
+  id                 String      @id @default(uuid())
+  patientId          String?
+  doctorId           String?
+  startAt            DateTime?
+  endAt              DateTime?
+  durationSeconds    Int?
+  status             CallStatus?
+  recordingUrlCipher String?
+  transcript         String?
+  aiSummary          String?
+  sentiment          Sentiment?
+  escalated          Boolean?
+  minutesUsed        Int?
+  createdAt          DateTime?   @default(now())
+  updatedAt          DateTime?   @updatedAt
+  aiModelId          String?
+  aiDecision         String?
+  patient            Patient?    @relation(fields: [patientId], references: [id])
+  doctor             Doctor?     @relation("DoctorCalls", fields: [doctorId], references: [id])
+
+  @@map("calls")
+}
+
+model Diagnosis {
+  id            String    @id @default(uuid())
+  patientId     String?
+  doctorId      String?
+  diagnosisCode String?
+  diagnosisName String?
+  description   String?
+  status        String?
+  diagnosedDate DateTime?
+  resolvedDate  DateTime?
+  createdAt     DateTime? @default(now())
+  updatedAt     DateTime? @updatedAt
+
+  patient Patient? @relation(fields: [patientId], references: [id])
+  doctor  Doctor?  @relation("DoctorDiagnoses", fields: [doctorId], references: [id])
+
+  @@map("diagnoses")
+}
+
+model Lab {
+  id              String    @id @default(uuid())
+  patientId       String?
+  doctorId        String?
+  appointmentId   Int?
+  testDate        DateTime?
+  additionalNotes String?
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+  deletedAt DateTime?
+
+  doctor      Doctor?      @relation("DoctorLabs", fields: [doctorId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  patient     Patient?     @relation(fields: [patientId], references: [id])
+  results     LabResult[]
+
+  @@map("labs")
+}
+
+model LabResult {
+  id        String  @id @default(uuid())
+  labId     String?
+  testName  String?
+  result    String?
+  unit      String?
+  normalMin Float?
+  normalMax Float?
+  flag      Flag?
+
+  lab Lab? @relation(fields: [labId], references: [id])
+
+  @@map("lab_results")
+}
+
+model Prescription {
+  id            String  @id @default(uuid())
+  patientId     String?
+  doctorId      String?
+  appointmentId Int?
+
+  prescriptionNo String?             @unique
+  status         PrescriptionStatus? @default(ACTIVE)
+
+  // General prescription instructions (optional)
+  instructions String?
+
+  // Additional notes (optional)
+  additionalNotes String?
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+  deletedAt DateTime?
+
+  patient Patient? @relation(fields: [patientId], references: [id])
+  doctor  Doctor?  @relation("DoctorPrescriptions", fields: [doctorId], references: [id])
+
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+
+  // One prescription can have multiple medicines
+  items PrescriptionItem[]
+
+  @@map("prescriptions")
+}
+
+model PrescriptionItem {
+  id             String @id @default(uuid())
+  prescriptionId String
+
+  medicineName         String?
+  medicineInstructions String?
+
+  // Dosage per time of day (e.g., 0, 0.5, 1, 2 tablets/spoons)
+  morningDosage   Float?
+  afternoonDosage Float?
+  nightDosage     Float?
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+
+  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@map("prescription_items")
+}
+
+// AI Agent Models
+
+model CallTranscription {
+  id            String    @id @default(uuid())
+  doctorId      String
+  patientId     String?
+  
+  // Call metadata
+  callSid       String?   @unique // ElevenLabs/Twilio call identifier
+  phoneNumber   String?
+  duration      Int?      // Duration in seconds
+  
+  // Audio & transcription
+  audioUrl      String?   // Path to stored audio file
+  transcription String?   @db.Text
+  
+  // AI analysis
+  intent        CallIntent?
+  sentiment     Sentiment?
+  summary       String?   @db.Text
+  
+  // Call outcome and details
+  callStatus       CallStatus? // Status of the call
+  reasonForCalling String?     // Why patient called
+  insuranceId      String?     
+  
+  // Appointment context (if booking was made)
+  appointmentId Int?
+  
+  // Fallback info
+  fallbackNumber String?  // Physical assistant number if agent is busy
+  wasTransferred Boolean? @default(false)
+  isReviewed     Boolean  @default(false)
+  
+  // Timestamps
+  callStartedAt DateTime?
+  callEndedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  doctor        Doctor      @relation("DoctorCallTranscriptions", fields: [doctorId], references: [id])
+  patient       Patient?    @relation("PatientCallTranscriptions", fields: [patientId], references: [id])
+  appointment   Appointment? @relation("AppointmentCallTranscription", fields: [appointmentId], references: [id])
+  
+  @@index([doctorId, createdAt])
+  @@index([patientId, createdAt])
+  @@map("call_transcriptions")
+}
+
+model DoctorKnowledgeBase {
+  id          String    @id @default(uuid())
+  doctorId    String
+  
+  // Knowledge content
+  category    KnowledgeBaseCategory? @default(GENERAL)
+  question    String    @db.Text
+  answer      String    @db.Text
+  keywords    String[]  // Array of keywords for better matching
+  
+  // Metadata
+  isActive    Boolean   @default(true)
+  priority    Int       @default(0) // Higher priority answers shown first
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Relations
+  doctor      Doctor    @relation("DoctorKnowledgeBase", fields: [doctorId], references: [id])
+  
+  @@index([doctorId, category])
+  @@index([doctorId, isActive])
+  @@map("doctor_knowledge_base")
+}
+
+model Patient {
+  id                 String         @id @default(uuid())
+  firstName          String?
+  lastName           String?
+  photo              String?
+  phone              String?
+  alternativePhone   String?
+  email              String?
+  insuranceId        String?        @unique
+  address            String?
+  emergencyContact   String?
+  dob                DateTime?
+  maritalStatus      MaritalStatus?
+  city               String?
+  gender             Gender?
+  bloodGroup         BloodGroup?
+  conditionName      String?
+  diagnosedDate      DateTime?
+  severity           String?
+  status             PatientStatus  @default(ACTIVE)
+  retentionExpiresAt DateTime?
+  createdAt          DateTime?      @default(now())
+  updatedAt          DateTime?      @updatedAt
+  deletedAt          DateTime?
+
+  // emergency contact
+  emergencyContactName         String?
+  emergencyContactPhone        String?
+  emergencyContactRelationship String?
+
+  // Relations
+  appointments  Appointment[]    @relation("PatientAppointments")
+  calls         Call[]
+  labs          Lab[]
+  prescriptions Prescription[]
+  tasks         Task[]
+  dataRequests  DataRequest[]
+  diagnoses     Diagnosis[]
+  consents      PatientConsent[]
+  
+  // AI Agent Relations
+  callTranscriptions CallTranscription[] @relation("PatientCallTranscriptions")
+
+  @@map("patients")
+}
+model DoctorNotificationSettings {
+  id       String @id @default(uuid())
+  doctorId String @unique
+  doctor   Doctor @relation(fields: [doctorId], references: [id])
+
+  appointmentReminders Boolean @default(true)
+  patientUpdates       Boolean @default(false)
+  callLogs             Boolean @default(true)
+  taskDeadlines        Boolean @default(false)
+  securityAlerts       Boolean @default(true)
+  emailNotifications   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("doctor_notification_settings")
+}
+
+model DoctorRegionalSettings {
+  id       String @id @default(uuid())
+  doctorId String @unique
+  doctor   Doctor @relation(fields: [doctorId], references: [id])
+
+  timezone   Timezone   @default(Asia_Dhaka)
+  dateFormat DateFormat @default(DD_MM_YYYY)
+  timeFormat TimeFormat @default(HOUR_24)
+  language   Language   @default(English)
+
+  defaultCalendarView        CalendarView        @default(DayView)
+  defaultAppointmentDuration AppointmentDuration @default(Minutes_20)
+
+  allowOnlineBooking        Boolean @default(true)
+  requireApprovalForBooking Boolean @default(false)
+  sendAppointmentReminders  Boolean @default(false)
+
+  reminderTime      ReminderTime @default(Minutes_30_Before)
+  bufferTimeBetween BufferTime   @default(Minutes_10)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("doctor_regional_settings")
+}
+
+model DoctorSecuritySettings {
+  id       String @id @default(uuid())
+  doctorId String @unique
+  doctor   Doctor @relation(fields: [doctorId], references: [id])
+
+  enforceTwoFA Boolean @default(true)
+
+  sessionTimeoutMinutes Int @default(30)
+  maxLoginAttempts      Int @default(5)
+
+  encryptSensitiveData Boolean @default(true)
+  enableAuditLogs      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("doctor_security_settings")
+}
+model Staff {
+  id       String  @id @default(uuid())
+  doctorId String?
+
+  // personal details
+  employmentId     String         @unique
+  firstName        String
+  lastName         String
+  dob              DateTime
+  gender           Gender
+  photo            String?
+  email            String         @unique
+  phone            String         @unique
+  presentAddress   String
+  permanentAddress String?
+  maritalStatus    MaritalStatus?
+  state            String
+  postalCode       String
+  country          String
+  nationality      String
+  nationalIdNumber String?
+
+  // employment details
+  department       Department?
+  position         String?
+  description      String?
+  joinDate         DateTime?
+  employmentType   EmploymentType?
+  workSchedule     String?
+  weeklyHours      Int?
+  employmentStatus StaffStatus?
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+
+  // Relations
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
+
+  @@map("staffs")
+}
+
+model Task {
+  id          String      @id @default(uuid())
+  title       String?
+  description String?
+  status      TaskStatus?
+  priority    Flag?
+  time        String?
+  dueDate     DateTime?
+
+  patientId   String?
+  insuranceId String?
+  doctorId    String?
+  phone       String?
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+  deletedAt DateTime?
+
+  patient Patient? @relation(fields: [patientId], references: [id])
+  doctor  Doctor?  @relation(fields: [doctorId], references: [id])
+
+  @@map("tasks")
+}
+// prisma/models/system.prisma
+model SystemMetric {
+  id         String      @id @default(uuid()) 
+  serviceName ServiceName? 
+  metricType MetricType? 
+  value      Float?
+  unit       String?     
+  recordedAt DateTime?  
+  createdAt  DateTime?   @default(now()) 
+
+  @@map("system_metrics")
+}model Admin {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  passwordHash String?
+  firstName    String?
+  lastName     String?
+  photo        String?
+
+  emailVerifiedAt  DateTime?
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean?
+  lastLoginAt      DateTime?
+  createdAt        DateTime? @default(now())
+  updatedAt        DateTime? @updatedAt
+  deletedAt        DateTime?
+
+  // Relations
+  sessions       Session[]
+  auditLogs      AuditLog[]
+  passwordResets PasswordReset[]
+  user           User?
+
+  @@map("admins")
+}
+
+model Doctor {
+  id           String  @id @default(uuid())
+  email        String? @unique
+  phone        String? @unique
+  passwordHash String?
+  firstName    String?
+  lastName     String?
+
+  // Doctor Specific Fields
+  licenceNo    String?
+  specialities String[]
+  experience   String?
+
+  emailVerifiedAt  DateTime?
+  dob              DateTime?
+  photo            String?
+  gender           Gender?
+  address          String?
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean?
+  lastLoginAt      DateTime?
+  createdAt        DateTime? @default(now())
+  updatedAt        DateTime? @updatedAt
+  deletedAt        DateTime?
+
+  // Relations
+  sessions       Session[]
+  appointments   Appointment[]   @relation("DoctorAppointments")
+  calls          Call[]          @relation("DoctorCalls")
+  prescriptions  Prescription[]  @relation("DoctorPrescriptions")
+  labs           Lab[]           @relation("DoctorLabs")
+  diagnoses      Diagnosis[]     @relation("DoctorDiagnoses")
+  auditLogs      AuditLog[]
+  passwordResets PasswordReset[]
+  user           User?
+
+  staff Staff[]
+
+  weeklySchedules DoctorWeeklySchedule[]
+
+  // Settings Relations
+  doctorNotificationSettings DoctorNotificationSettings?
+  doctorRegionalSettings     DoctorRegionalSettings?
+  doctorSecuritySettings     DoctorSecuritySettings?
+
+  // Subscription Relation
+  subscription       Subscription?
+  // AI Agent Relations
+  callTranscriptions CallTranscription[]   @relation("DoctorCallTranscriptions")
+  knowledgeBase      DoctorKnowledgeBase[] @relation("DoctorKnowledgeBase")
+  tasks              Task[]
+  
+  // Chat Relations
+  conversations AdminConversation[]
+
+  @@map("doctors")
+}
+
+model Session {
+  id       String  @id @default(uuid())
+  adminId  String?
+  doctorId String?
+
+  accessToken  String @unique
+  refreshToken String @unique
+
+  isActive  Boolean   @default(true)
+  isRevoked Boolean   @default(false)
+  revokedAt DateTime?
+
+  lastActivity          DateTime @default(now())
+  refreshTokenExpiresAt DateTime
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime  @updatedAt
+
+  admin  Admin?  @relation(fields: [adminId], references: [id])
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
+
+  @@map("sessions")
+}
+
+model PasswordReset {
+  id         String    @id @default(uuid())
+  email      String
+  otp        String
+  token      String?   @unique
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  // Relation to track which user
+  adminId  String?
+  doctorId String?
+
+  admin  Admin?  @relation(fields: [adminId], references: [id])
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
+
+  @@map("password_resets")
+}
+
+// Unified User model for chat
+model User {
+  id       String   @id @default(uuid())
+  adminId  String?  @unique
+  doctorId String?  @unique
+  role     UserRole
+
+  admin  Admin?  @relation(fields: [adminId], references: [id])
+  doctor Doctor? @relation(fields: [doctorId], references: [id])
+
+  // Conversations where this user is the participant
+  conversations      AdminConversation[] @relation("UserConversations")
+  // Conversations where this user is the admin
+  adminConversations AdminConversation[] @relation("AdminConversations")
+  sentMessages       SupportMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
 }

@@ -454,8 +454,8 @@ export class SubscriptionService implements OnModuleInit {
           },
         ],
         mode: 'subscription',
-        success_url: `${this.configService.get<string>('ClIENT_URL')}/subscription/upgrade/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${this.configService.get<string>('ClIENT_URL')}/subscription/cancelled`,
+        success_url: `${this.configService.get<string>('ClIENT_URL')}/subscription/upgrade/success?session_id={CHECKOUT_SESSION_ID}&status=success`,
+        cancel_url: `${this.configService.get<string>('ClIENT_URL')}/subscription/cancelled?status=fail`,
         customer_email: user.email,
         metadata: {
           userId,
@@ -789,8 +789,8 @@ export class SubscriptionService implements OnModuleInit {
           },
         ],
         mode: 'subscription',
-        success_url: `${this.configService.get<string>('ClIENT_URL')}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${this.configService.get<string>('ClIENT_URL')}/subscription/cancelled`,
+        success_url: `${this.configService.get<string>('ClIENT_URL')}/subscription/success?session_id={CHECKOUT_SESSION_ID}&status=success`,
+        cancel_url: `${this.configService.get<string>('ClIENT_URL')}/subscription/cancelled?status=fail`,
         customer_email: user.email,
         metadata: {
           userId,
@@ -996,10 +996,21 @@ export class SubscriptionService implements OnModuleInit {
         }
 
         // Auto-sync missing invoice to DB
+        let planType: any = null;
+        if (stripeInvoice.subscription) {
+          try {
+            const sub = await this.stripe.subscriptions.retrieve(stripeInvoice.subscription as string);
+            planType = sub.metadata.planType;
+          } catch (e) {
+            console.warn(`Could not fetch subscription for planType: ${e.message}`);
+          }
+        }
+
         invoice = await this.prisma.invoice.create({
           data: {
             stripeInvoiceId: stripeInvoice.id,
             stripeCustomerId: stripeInvoice.customer, // Save customer ID
+            planType: planType,
             invoiceNo: stripeInvoice.number,
             amountDue: stripeInvoice.amount_due,
             amountPaid: stripeInvoice.amount_paid,
@@ -1177,6 +1188,14 @@ export class SubscriptionService implements OnModuleInit {
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as Stripe.Invoice;
         if ((invoice as any).subscription) {
+          let planType: any = null;
+          try {
+            const sub = await this.stripe.subscriptions.retrieve((invoice as any).subscription as string);
+            planType = sub.metadata.planType;
+          } catch (e) {
+            console.warn(`Webhook: Could not fetch subscription for planType: ${e.message}`);
+          }
+
           // Optional: Create an invoice record in your DB
           await this.prisma.invoice.upsert({
             where: { stripeInvoiceId: invoice.id },
@@ -1184,10 +1203,12 @@ export class SubscriptionService implements OnModuleInit {
               status: invoice.status || 'paid',
               amountPaid: invoice.amount_paid,
               stripeCustomerId: invoice.customer as string, // Ensure customerId is updated
+              planType: planType,
             },
             create: {
               stripeInvoiceId: invoice.id,
               stripeCustomerId: invoice.customer as string,
+              planType: planType,
               invoiceNo: invoice.number || null,
               amountDue: invoice.amount_due,
               amountPaid: invoice.amount_paid,
@@ -1230,8 +1251,146 @@ export class SubscriptionService implements OnModuleInit {
         break;
       }
 
-      default:
-        console.log(`Unhandled event type ${event.type}`);
     }
+  }
+
+  async getAdminStats() {
+    const now = new Date();
+    const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+
+    // 1. Current Users by Plan (Active)
+    const activeSubscriptions = await this.prisma.subscription.findMany({
+      where: { status: 'ACTIVE' },
+      select: { planType: true },
+    });
+
+    const currentUsersByPlan = {
+      STANDARD: activeSubscriptions.filter(s => s.planType === 'STANDARD').length,
+      PREMIUM: activeSubscriptions.filter(s => s.planType === 'PREMIUM').length,
+      ENTERPRISE: activeSubscriptions.filter(s => s.planType === 'ENTERPRISE').length,
+    };
+
+    // 2. Overall Plan Purchased (Lifetime)
+    const allInvoices = await this.prisma.invoice.findMany({
+      where: { status: { in: ['paid', 'succeeded', 'REFUNDED'] } },
+      select: { planType: true },
+    });
+
+    const lifetimePurchasesByPlan = {
+      STANDARD: allInvoices.filter(i => i.planType === 'STANDARD').length,
+      PREMIUM: allInvoices.filter(i => i.planType === 'PREMIUM').length,
+      ENTERPRISE: allInvoices.filter(i => i.planType === 'ENTERPRISE').length,
+    };
+
+    // 3. Active Subscriptions count & Comparison
+    const currentActiveCount = activeSubscriptions.length;
+    const lastMonthActiveCount = await this.prisma.subscription.count({
+      where: {
+        status: 'ACTIVE',
+        createdAt: { lte: endOfLastMonth },
+      },
+    });
+
+    // 4. Monthly Recurring Revenue (MRR)
+    // We normalize yearly plans to monthly (Price / 12)
+    const activeSubsWithPlans = await this.prisma.subscription.findMany({
+      where: { status: 'ACTIVE' },
+      include: {
+        doctor: {
+          include: {
+            user: true
+          }
+        }
+      }
+    });
+
+    // Fetch all plans to get prices
+    const plans = await this.prisma.subscriptionPlan.findMany();
+    
+    const calculateMRR = (subs: any[]) => {
+      return subs.reduce((acc, sub) => {
+        const plan = plans.find(p => p.planType === sub.planType && p.billingCycle === sub.billingCycle);
+        if (plan) {
+          const monthlyPrice = sub.billingCycle === 'YEARLY' ? plan.price / 12 : plan.price;
+          return acc + monthlyPrice;
+        }
+        return acc;
+      }, 0);
+    };
+
+    const currentMRR = calculateMRR(activeSubsWithPlans);
+    
+    // For last month MRR, we'd ideally need snapshot data, 
+    // but we can approximate using subscriptions active then
+    const lastMonthSubs = await this.prisma.subscription.findMany({
+      where: {
+        isActive: true,
+        createdAt: { lte: endOfLastMonth },
+      },
+    });
+    const lastMonthMRR = calculateMRR(lastMonthSubs);
+
+    // 5. Total Revenue & Comparison
+    const currentTotalRevenue = (await this.prisma.invoice.aggregate({
+      where: { status: { in: ['paid', 'succeeded'] } },
+      _sum: { amountPaid: true },
+    }))._sum.amountPaid || 0;
+
+    const lastMonthTotalRevenue = (await this.prisma.invoice.aggregate({
+      where: {
+        status: { in: ['paid', 'succeeded'] },
+        createdAt: { lte: endOfLastMonth },
+      },
+      _sum: { amountPaid: true },
+    }))._sum.amountPaid || 0;
+
+    // 6. Pending Invoices & Comparison
+    const currentPendingCount = await this.prisma.invoice.count({
+      where: { status: { in: ['open', 'unpaid', 'PENDING'] } },
+    });
+
+    const lastMonthPendingCount = await this.prisma.invoice.count({
+      where: {
+        status: { in: ['open', 'unpaid', 'PENDING'] },
+        createdAt: { lte: endOfLastMonth },
+      },
+    });
+
+    // Helper to calculate percentage change
+    const getPercentageChange = (current: number, previous: number) => {
+      if (previous === 0) return current > 0 ? 100 : 0;
+      return parseFloat(((current - previous) / previous * 100).toFixed(2));
+    };
+
+    return {
+      planDistribution: {
+        currentActive: currentUsersByPlan,
+        lifetimePurchases: lifetimePurchasesByPlan,
+      },
+      metrics: {
+        activeSubscriptions: {
+          value: currentActiveCount,
+          previousValue: lastMonthActiveCount,
+          percentageChange: getPercentageChange(currentActiveCount, lastMonthActiveCount),
+        },
+        monthlyRecurringRevenue: {
+          value: Math.round(currentMRR),
+          previousValue: Math.round(lastMonthMRR),
+          percentageChange: getPercentageChange(currentMRR, lastMonthMRR),
+        },
+        totalRevenue: {
+          value: currentTotalRevenue,
+          previousValue: lastMonthTotalRevenue,
+          percentageChange: getPercentageChange(currentTotalRevenue, lastMonthTotalRevenue),
+        },
+        pendingInvoices: {
+          value: currentPendingCount,
+          previousValue: lastMonthPendingCount,
+          percentageChange: getPercentageChange(currentPendingCount, lastMonthPendingCount),
+        },
+      },
+    };
   }
 }

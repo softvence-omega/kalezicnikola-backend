@@ -48,6 +48,7 @@ model Invoice {
   id               String    @id @default(uuid())
   stripeInvoiceId  String?   @unique
   stripeCustomerId String?   // Added to filter by customer
+  planType         PlanType? // Added for statistics
   invoiceNo        String?
   amountDue       Int?
   amountPaid      Int?
