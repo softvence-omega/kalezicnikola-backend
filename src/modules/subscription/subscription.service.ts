@@ -599,8 +599,8 @@ export class SubscriptionService implements OnModuleInit {
           name: invoice.customer_name || invoice.customer_email || 'Customer',
           transactionId: invoice.number,
           status: invoice.status?.toUpperCase() || 'UNKNOWN',
-          amount: invoice.amount_paid / 100,
-          currency: invoice.currency.toUpperCase(),
+          amount: parseFloat((invoice.amount_paid / 100).toFixed(2)),
+          currency: 'EUR', // Force EUR as requested
           invoiceUrl: invoice.hosted_invoice_url,
         }));
       }
@@ -625,8 +625,8 @@ export class SubscriptionService implements OnModuleInit {
         name: customer.name || 'Customer',
         transactionId: invoice.number,
         status: invoice.status?.toUpperCase() || 'UNKNOWN',
-        amount: invoice.amount_paid / 100,
-        currency: invoice.currency.toUpperCase(),
+        amount: parseFloat((invoice.amount_paid / 100).toFixed(2)),
+        currency: 'EUR', // Force EUR as requested
         invoiceUrl: invoice.hosted_invoice_url,
       }));
     } catch (error) {
@@ -726,9 +726,9 @@ export class SubscriptionService implements OnModuleInit {
         stripeInvoiceId: invoice.stripeInvoiceId,
         stripeCustomerId: invoice.stripeCustomerId,
         status: invoice.status || 'Unknown',
-        payAmount: `${((invoice.amountPaid || 0) / 100).toFixed(2)} ${invoice.currency || 'USD'}`,
-        amount: (invoice.amountPaid || 0) / 100,
-        currency: invoice.currency || 'USD',
+        payAmount: `${((invoice.amountPaid || 0) / 100).toFixed(2)} EUR`,
+        amount: parseFloat(((invoice.amountPaid || 0) / 100).toFixed(2)),
+        currency: 'EUR',
         invoiceUrl: invoice.invoicePdfUrl,
       }));
 
@@ -1365,6 +1365,7 @@ export class SubscriptionService implements OnModuleInit {
     };
 
     return {
+      currency: 'EUR',
       planDistribution: {
         currentActive: currentUsersByPlan,
         lifetimePurchases: lifetimePurchasesByPlan,
@@ -1376,13 +1377,13 @@ export class SubscriptionService implements OnModuleInit {
           percentageChange: getPercentageChange(currentActiveCount, lastMonthActiveCount),
         },
         monthlyRecurringRevenue: {
-          value: Math.round(currentMRR),
-          previousValue: Math.round(lastMonthMRR),
+          value: parseFloat(currentMRR.toFixed(2)),
+          previousValue: parseFloat(lastMonthMRR.toFixed(2)),
           percentageChange: getPercentageChange(currentMRR, lastMonthMRR),
         },
         totalRevenue: {
-          value: currentTotalRevenue,
-          previousValue: lastMonthTotalRevenue,
+          value: parseFloat((currentTotalRevenue / 100).toFixed(2)),
+          previousValue: parseFloat((lastMonthTotalRevenue / 100).toFixed(2)),
           percentageChange: getPercentageChange(currentTotalRevenue, lastMonthTotalRevenue),
         },
         pendingInvoices: {
