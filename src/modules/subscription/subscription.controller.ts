@@ -17,6 +17,7 @@ import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 import { UpdatePlanDetailsDto } from './dto/update-plan-details.dto';
 import { JwtAuthGuard } from '../../common/guard/auth.guard';
+import { AdminGuard } from '../../common/guard/admin.guard';
 
 @ApiTags('Subscription')
 @Controller('subscription')
@@ -111,9 +112,13 @@ export class SubscriptionController {
     status: 400,
     description: 'Invalid plan type or no active subscription',
   })
-  async createUpgradeCheckout(@Request() req, @Query('planType') planType: string) {
+  async createUpgradeCheckout(
+    @Request() req, 
+    @Query('planType') planType: string,
+    @Query('billingCycle') billingCycle: string = 'MONTHLY'
+  ) {
     const userId = req.user.id;
-    return this.subscriptionService.createUpgradeCheckout(userId, planType);
+    return this.subscriptionService.createUpgradeCheckout(userId, planType, billingCycle);
   }
 
   @Get('upgrade/confirm')
@@ -142,7 +147,23 @@ export class SubscriptionController {
   })
   async getInvoices(@Request() req) {
     const userId = req.user.id;
-    return this.subscriptionService.getInvoices(userId);
+    const role = req.user.role;
+    return this.subscriptionService.getInvoices(userId, role);
+  }
+
+  @Post('refund/:invoiceId')
+  @ApiOperation({ summary: 'Refund a specific invoice/payment (Doctor self-service)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Refund processed successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Invoice not found',
+  })
+  async refundInvoice(@Request() req, @Param('invoiceId') invoiceId: string) {
+    const userId = req.user.id;
+    return this.subscriptionService.refundInvoice(userId, invoiceId);
   }
 
   @Get('purchases')
@@ -153,7 +174,8 @@ export class SubscriptionController {
   })
   async getUserPurchases(@Request() req) {
     const userId = req.user.id;
-    return this.subscriptionService.getUserPurchases(userId);
+    const role = req.user.role;
+    return this.subscriptionService.getUserPurchases(userId, role);
   }
 
   @Post('checkout')
@@ -166,9 +188,13 @@ export class SubscriptionController {
     status: 400,
     description: 'Invalid plan type',
   })
-  async createCheckoutSession(@Request() req, @Query('planType') planType: string) {
+  async createCheckoutSession(
+    @Request() req, 
+    @Query('planType') planType: string,
+    @Query('billingCycle') billingCycle: string = 'MONTHLY'
+  ) {
     const userId = req.user.id;
-    return this.subscriptionService.createCheckoutSession(userId, planType);
+    return this.subscriptionService.createCheckoutSession(userId, planType, billingCycle);
   }
 
   @Get('success')
@@ -187,5 +213,12 @@ export class SubscriptionController {
   })
   async handleSuccess(@Query('session_id') sessionId: string) {
     return this.subscriptionService.completeSubscription(sessionId);
+  }
+
+  @Get('admin/stats')
+  @UseGuards(AdminGuard)
+  @ApiOperation({ summary: 'Get overall subscription statistics (Admin only)' })
+  async getAdminStats() {
+    return this.subscriptionService.getAdminStats();
   }
 }

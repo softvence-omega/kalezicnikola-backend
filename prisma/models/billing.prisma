@@ -1,15 +1,22 @@
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
 model SubscriptionPlan {
-  id            String   @id @default(uuid())
-  planType      PlanType @unique
+  id            String       @id @default(uuid())
+  planType      PlanType
+  billingCycle  BillingCycle
   name          String
   price         Int
   stripePriceId String
   minutes       Int
   features      Json
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
+  @@unique([planType, billingCycle])
   @@map("subscription_plans")
 }
 
@@ -20,6 +27,7 @@ model Subscription {
   stripeSubscriptionId String?             @unique
   plan                 Plan?
   planType             PlanType?           // Current plan type
+  billingCycle         BillingCycle?       // Added billing cycle
   status               SubscriptionStatus?
   minutesAllocated     Int?                // Minutes for current plan
   minutesUsed          Int?                @default(0)
@@ -37,9 +45,11 @@ model Subscription {
 }
 
 model Invoice {
-  id              String    @id @default(uuid())
-  stripeInvoiceId String?   @unique
-  invoiceNo       String?
+  id               String    @id @default(uuid())
+  stripeInvoiceId  String?   @unique
+  stripeCustomerId String?   // Added to filter by customer
+  planType         PlanType? // Added for statistics
+  invoiceNo        String?
   amountDue       Int?
   amountPaid      Int?
   currency        String?
