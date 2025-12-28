@@ -31,7 +31,7 @@ COPY --from=builder /app/prisma ./prisma
 RUN npm ci 
 
 # Expose Nest default port
-EXPOSE 3008
+EXPOSE 5000
 
 # Run the app
 CMD ["node", "dist/main.js"]
