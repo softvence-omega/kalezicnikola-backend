@@ -5,8 +5,8 @@ services:
     restart: always
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: mydb
+      POSTGRES_PASSWORD: 12345
+      POSTGRES_DB: docline_db
     ports:
       - "5434:5432"
     volumes:
@@ -27,7 +27,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: sakibsakib/kali:latest   
+    image: rockyhaque/kali:latest   
     container_name: kali
     restart: always
     env_file: .env
