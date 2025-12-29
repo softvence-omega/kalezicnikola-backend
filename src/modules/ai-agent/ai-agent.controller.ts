@@ -10,6 +10,7 @@ import {
   Res,
   BadRequestException,
   Req,
+  Patch,
 } from '@nestjs/common';
 import { DoctorGuard } from 'src/common/guard/doctor.guard';
 import { Response } from 'express';
@@ -145,19 +146,21 @@ export class AiAgentController {
     }
   }
   // =============== CALL REVIEW ===============
-  @Post('transcription/:id/review')
-  @UseGuards(WebhookAuthGuard)
-  async updateCallReviewStatus(
-    @Param('id') id: string,
-    @Body('isReviewed') isReviewed: boolean,
-  ) {
-    return this.aiAgentService.updateCallReviewStatus(id, isReviewed);
-  }
-
   @Get('transcription/unreviewed-count')
   @UseGuards(DoctorGuard)
   async getUnreviewedCallCount(@Req() req: any) {
     const doctorId = req.doctor.id;
     return this.aiAgentService.getUnreviewedCallCount(doctorId);
+  }
+
+  @Patch('transcription/multiple-review')
+  @UseGuards(DoctorGuard)
+  async bulkUpdateCallReviewStatus(
+    @Body('ids') ids: string[],
+    @Body('isReviewed') isReviewed: boolean,
+    @Req() req: any,
+  ) {
+    const doctorId = req.doctor.id;
+    return this.aiAgentService.bulkUpdateCallReviewStatus(ids, isReviewed, doctorId);
   }
 }

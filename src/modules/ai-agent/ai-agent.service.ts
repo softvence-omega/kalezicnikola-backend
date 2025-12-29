@@ -1591,27 +1591,6 @@ export class AiAgentService {
     };
   }
   // =============== CALL REVIEW ===============
-  async updateCallReviewStatus(id: string, isReviewed: boolean) {
-    const transcription = await this.prisma.callTranscription.findUnique({
-      where: { id },
-    });
-
-    if (!transcription) {
-      throw new NotFoundException('Call transcription not found');
-    }
-
-    const updated = await this.prisma.callTranscription.update({
-      where: { id },
-      data: { isReviewed },
-    });
-
-    return {
-      success: true,
-      data: updated,
-      message: 'Call review status updated successfully',
-    };
-  }
-
   async getUnreviewedCallCount(doctorId: string) {
     if (!doctorId) {
       throw new BadRequestException('Doctor ID is required');
@@ -1627,6 +1606,34 @@ export class AiAgentService {
     return {
       success: true,
       count,
+    };
+  }
+
+  async bulkUpdateCallReviewStatus(ids: string[], isReviewed: boolean, doctorId: string) {
+    // Verify all transcriptions belong to the doctor
+    const transcriptions = await this.prisma.callTranscription.findMany({
+      where: {
+        id: { in: ids },
+        doctorId,
+      },
+    });
+
+    if (transcriptions.length !== ids.length) {
+      throw new BadRequestException('Some call transcriptions not found or do not belong to this doctor');
+    }
+
+    const updated = await this.prisma.callTranscription.updateMany({
+      where: {
+        id: { in: ids },
+        doctorId,
+      },
+      data: { isReviewed },
+    });
+
+    return {
+      success: true,
+      updatedCount: updated.count,
+      message: `${updated.count} call review statuses updated successfully`,
     };
   }
 }
