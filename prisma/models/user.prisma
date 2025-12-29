@@ -74,9 +74,12 @@ model Doctor {
   callTranscriptions CallTranscription[]   @relation("DoctorCallTranscriptions")
   knowledgeBase      DoctorKnowledgeBase[] @relation("DoctorKnowledgeBase")
   tasks              Task[]
-  
+
   // Chat Relations
   conversations AdminConversation[]
+
+  // Event Relations
+  events Event[] @relation("DoctorEvents")
 
   @@map("doctors")
 }

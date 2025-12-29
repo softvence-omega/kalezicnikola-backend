@@ -27,8 +27,8 @@ model Appointment {
   patient      Patient?            @relation("PatientAppointments", fields: [patientId], references: [id])
   scheduleSlot DoctorScheduleSlot? @relation("AppointmentScheduleSlot", fields: [scheduleSlotId], references: [id])
 
-  prescriptions Prescription[]
-  labs          Lab[]
+  prescriptions      Prescription[]
+  labs               Lab[]
   // AI Agent Relations
   callTranscriptions CallTranscription[] @relation("AppointmentCallTranscription")
 
@@ -194,75 +194,74 @@ model PrescriptionItem {
 // AI Agent Models
 
 model CallTranscription {
-  id            String    @id @default(uuid())
-  doctorId      String
-  patientId     String?
-  
+  id        String  @id @default(uuid())
+  doctorId  String
+  patientId String?
+
   // Call metadata
-  callSid       String?   @unique // ElevenLabs/Twilio call identifier
-  phoneNumber   String?
-  duration      Int?      // Duration in seconds
-  
+  callSid     String? @unique // ElevenLabs/Twilio call identifier
+  phoneNumber String?
+  duration    Int? // Duration in seconds
+
   // Audio & transcription
-  audioUrl      String?   // Path to stored audio file
-  transcription String?   @db.Text
-  
+  audioUrl      String? // Path to stored audio file
+  transcription String? @db.Text
+
   // AI analysis
-  intent        CallIntent?
-  sentiment     Sentiment?
-  summary       String?   @db.Text
-  
+  intent    CallIntent?
+  sentiment Sentiment?
+  summary   String?     @db.Text
+
   // Call outcome and details
   callStatus       CallStatus? // Status of the call
-  reasonForCalling String?     // Why patient called
-  insuranceId      String?     
-  
+  reasonForCalling String? // Why patient called
+  insuranceId      String?
+
   // Appointment context (if booking was made)
   appointmentId Int?
-  
+
   // Fallback info
-  fallbackNumber String?  // Physical assistant number if agent is busy
+  fallbackNumber String? // Physical assistant number if agent is busy
   wasTransferred Boolean? @default(false)
   isReviewed     Boolean  @default(false)
-  
+
   // Timestamps
   callStartedAt DateTime?
   callEndedAt   DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  
+
   // Relations
-  doctor        Doctor      @relation("DoctorCallTranscriptions", fields: [doctorId], references: [id])
-  patient       Patient?    @relation("PatientCallTranscriptions", fields: [patientId], references: [id])
-  appointment   Appointment? @relation("AppointmentCallTranscription", fields: [appointmentId], references: [id])
-  
+  doctor      Doctor       @relation("DoctorCallTranscriptions", fields: [doctorId], references: [id])
+  patient     Patient?     @relation("PatientCallTranscriptions", fields: [patientId], references: [id])
+  appointment Appointment? @relation("AppointmentCallTranscription", fields: [appointmentId], references: [id])
+
   @@index([doctorId, createdAt])
   @@index([patientId, createdAt])
   @@map("call_transcriptions")
 }
 
 model DoctorKnowledgeBase {
-  id          String    @id @default(uuid())
-  doctorId    String
-  
+  id       String @id @default(uuid())
+  doctorId String
+
   // Knowledge content
-  category    KnowledgeBaseCategory? @default(GENERAL)
-  question    String    @db.Text
-  answer      String    @db.Text
-  keywords    String[]  // Array of keywords for better matching
-  
+  category KnowledgeBaseCategory? @default(GENERAL)
+  question String                 @db.Text
+  answer   String                 @db.Text
+  keywords String[] // Array of keywords for better matching
+
   // Metadata
-  isActive    Boolean   @default(true)
-  priority    Int       @default(0) // Higher priority answers shown first
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
+  isActive Boolean @default(true)
+  priority Int     @default(0) // Higher priority answers shown first
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relations
-  doctor      Doctor    @relation("DoctorKnowledgeBase", fields: [doctorId], references: [id])
-  
+  doctor Doctor @relation("DoctorKnowledgeBase", fields: [doctorId], references: [id])
+
   @@index([doctorId, category])
   @@index([doctorId, isActive])
   @@map("doctor_knowledge_base")
 }
-

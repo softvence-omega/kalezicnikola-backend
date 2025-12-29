@@ -21,22 +21,22 @@ model SubscriptionPlan {
 }
 
 model Subscription {
-  id                   String              @id @default(uuid()) 
+  id                   String              @id @default(uuid())
   userId               String?             @unique // Link to user
-  stripeCustomerId     String?             @unique 
+  stripeCustomerId     String?             @unique
   stripeSubscriptionId String?             @unique
   plan                 Plan?
-  planType             PlanType?           // Current plan type
-  billingCycle         BillingCycle?       // Added billing cycle
+  planType             PlanType? // Current plan type
+  billingCycle         BillingCycle? // Added billing cycle
   status               SubscriptionStatus?
-  minutesAllocated     Int?                // Minutes for current plan
+  minutesAllocated     Int? // Minutes for current plan
   minutesUsed          Int?                @default(0)
-  currentPeriodStart   DateTime?           
-  currentPeriodEnd     DateTime?           
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
   cancelledAt          DateTime?
   isActive             Boolean?            @default(true) // Set to false when period ends after cancellation
-  createdAt            DateTime?           @default(now()) 
-  updatedAt            DateTime?           @updatedAt 
+  createdAt            DateTime?           @default(now())
+  updatedAt            DateTime?           @updatedAt
 
   // Relations
   doctor Doctor? @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -47,16 +47,16 @@ model Subscription {
 model Invoice {
   id               String    @id @default(uuid())
   stripeInvoiceId  String?   @unique
-  stripeCustomerId String?   // Added to filter by customer
+  stripeCustomerId String? // Added to filter by customer
   planType         PlanType? // Added for statistics
   invoiceNo        String?
-  amountDue       Int?
-  amountPaid      Int?
-  currency        String?
-  status          String?
-  invoicePdfUrl   String?
-  createdAt       DateTime? @default(now())
-  updatedAt       DateTime? @updatedAt
+  amountDue        Int?
+  amountPaid       Int?
+  currency         String?
+  status           String?
+  invoicePdfUrl    String?
+  createdAt        DateTime? @default(now())
+  updatedAt        DateTime? @updatedAt
 
   @@map("invoices")
 }
