@@ -11,11 +11,17 @@ import {
   Put,
   Param,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { SubscriptionService } from './subscription.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 import { UpdatePlanDetailsDto } from './dto/update-plan-details.dto';
+import { AssignTrialPlanDto } from './dto/assign-trial-plan.dto';
 import { JwtAuthGuard } from '../../common/guard/auth.guard';
 import { AdminGuard } from '../../common/guard/admin.guard';
 
@@ -30,14 +36,17 @@ export class SubscriptionController {
   @ApiOperation({ summary: 'Get all available subscription plans' })
   @ApiResponse({
     status: 200,
-    description: 'Returns all available subscription plans with pricing and features',
+    description:
+      'Returns all available subscription plans with pricing and features',
   })
   async getPlans() {
     return this.subscriptionService.getPlans();
   }
 
   @Put('plans/:id')
-  @ApiOperation({ summary: 'Update plan details by ID (name, price, minutes, features)' })
+  @ApiOperation({
+    summary: 'Update plan details by ID (name, price, minutes, features)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Plan details updated successfully',
@@ -54,7 +63,10 @@ export class SubscriptionController {
     @Param('id') id: string,
     @Body() updatePlanDetailsDto: UpdatePlanDetailsDto,
   ) {
-    return this.subscriptionService.updatePlanDetailsById(id, updatePlanDetailsDto);
+    return this.subscriptionService.updatePlanDetailsById(
+      id,
+      updatePlanDetailsDto,
+    );
   }
 
   @Post('create')
@@ -67,16 +79,23 @@ export class SubscriptionController {
     status: 400,
     description: 'Bad request - Invalid plan type or payment method',
   })
-  async createSubscription(@Request() req, @Body() createSubscriptionDto: CreateSubscriptionDto) {
+  async createSubscription(
+    @Request() req,
+    @Body() createSubscriptionDto: CreateSubscriptionDto,
+  ) {
     const userId = req.user.id;
-    return this.subscriptionService.createSubscription(userId, createSubscriptionDto);
+    return this.subscriptionService.createSubscription(
+      userId,
+      createSubscriptionDto,
+    );
   }
 
   @Get('current')
   @ApiOperation({ summary: 'Get current subscription details' })
   @ApiResponse({
     status: 200,
-    description: 'Returns current subscription details including minutes used and remaining',
+    description:
+      'Returns current subscription details including minutes used and remaining',
   })
   @ApiResponse({
     status: 404,
@@ -103,7 +122,9 @@ export class SubscriptionController {
   }
 
   @Post('upgrade/checkout')
-  @ApiOperation({ summary: 'Create checkout session for upgrading/downgrading plan' })
+  @ApiOperation({
+    summary: 'Create checkout session for upgrading/downgrading plan',
+  })
   @ApiResponse({
     status: 201,
     description: 'Returns checkout session URL for new plan',
@@ -113,19 +134,27 @@ export class SubscriptionController {
     description: 'Invalid plan type or no active subscription',
   })
   async createUpgradeCheckout(
-    @Request() req, 
+    @Request() req,
     @Query('planType') planType: string,
-    @Query('billingCycle') billingCycle: string = 'MONTHLY'
+    @Query('billingCycle') billingCycle: string = 'MONTHLY',
   ) {
     const userId = req.user.id;
-    return this.subscriptionService.createUpgradeCheckout(userId, planType, billingCycle);
+    return this.subscriptionService.createUpgradeCheckout(
+      userId,
+      planType,
+      billingCycle,
+    );
   }
 
   @Get('upgrade/confirm')
-  @ApiOperation({ summary: 'Confirm upgrade and cancel old subscription after successful payment' })
+  @ApiOperation({
+    summary:
+      'Confirm upgrade and cancel old subscription after successful payment',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Subscription upgraded successfully, old subscription cancelled',
+    description:
+      'Subscription upgraded successfully, old subscription cancelled',
   })
   @ApiResponse({
     status: 400,
@@ -152,7 +181,9 @@ export class SubscriptionController {
   }
 
   @Post('refund/:invoiceId')
-  @ApiOperation({ summary: 'Refund a specific invoice/payment (Doctor self-service)' })
+  @ApiOperation({
+    summary: 'Refund a specific invoice/payment (Doctor self-service)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Refund processed successfully',
@@ -189,16 +220,22 @@ export class SubscriptionController {
     description: 'Invalid plan type',
   })
   async createCheckoutSession(
-    @Request() req, 
+    @Request() req,
     @Query('planType') planType: string,
-    @Query('billingCycle') billingCycle: string = 'MONTHLY'
+    @Query('billingCycle') billingCycle: string = 'MONTHLY',
   ) {
     const userId = req.user.id;
-    return this.subscriptionService.createCheckoutSession(userId, planType, billingCycle);
+    return this.subscriptionService.createCheckoutSession(
+      userId,
+      planType,
+      billingCycle,
+    );
   }
 
   @Get('success')
-  @ApiOperation({ summary: 'Handle successful checkout and complete subscription' })
+  @ApiOperation({
+    summary: 'Handle successful checkout and complete subscription',
+  })
   @ApiResponse({
     status: 200,
     description: 'Subscription completed successfully',
@@ -213,6 +250,26 @@ export class SubscriptionController {
   })
   async handleSuccess(@Query('session_id') sessionId: string) {
     return this.subscriptionService.completeSubscription(sessionId);
+  }
+
+  @Post('admin/assign-trial')
+  @UseGuards(AdminGuard)
+  @ApiOperation({ summary: 'Assign trial plan to a user (Admin only)' })
+  @ApiResponse({
+    status: 201,
+    description: 'Trial plan assigned successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid user ID',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'User not found or trial plan not found',
+  })
+  async assignTrialPlan(@Request() req, @Body() dto: AssignTrialPlanDto) {
+    const adminId = req.user.id;
+    return this.subscriptionService.assignTrialPlan(dto.userId, adminId);
   }
 
   @Get('admin/stats')

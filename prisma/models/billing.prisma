@@ -1,6 +1,7 @@
 enum BillingCycle {
   MONTHLY
   YEARLY
+  LIFETIME
 }
 
 model SubscriptionPlan {
