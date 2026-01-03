@@ -174,27 +174,39 @@ export class SubscriptionService implements OnModuleInit {
         },
       ];
 
-      let processed = 0;
+      let created = 0;
+      let skipped = 0;
 
       for (const plan of defaultPlans) {
-        await this.prisma.subscriptionPlan.upsert({
+        const existingPlan = await this.prisma.subscriptionPlan.findUnique({
           where: {
             planType_billingCycle: {
               planType: plan.planType,
               billingCycle: plan.billingCycle,
             },
           },
-          update: plan,
-          create: plan,
         });
-        processed++;
-        console.log(
-          `✅ Upserted plan: ${plan.planType} (${plan.billingCycle})`,
-        );
+
+        if (!existingPlan) {
+          await this.prisma.subscriptionPlan.create({
+            data: plan,
+          });
+          created++;
+          console.log(
+            `✅ Created plan: ${plan.planType} (${plan.billingCycle})`,
+          );
+        } else {
+          skipped++;
+          console.log(
+            `⏭️ Skipped existing plan: ${plan.planType} (${plan.billingCycle})`,
+          );
+        }
       }
 
       console.log(`\n📊 Subscription Plans Seeding Summary:`);
-      console.log(`   - Total Processed: ${processed}`);
+      console.log(`   - Total Processed: ${defaultPlans.length}`);
+      console.log(`   - Created: ${created}`);
+      console.log(`   - Skipped: ${skipped}`);
       console.log(`   - Total Expected: ${defaultPlans.length}\n`);
     } catch (error) {
       console.error('❌ Error seeding subscription plans:', error.message);
