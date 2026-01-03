@@ -1212,6 +1212,11 @@ export class AiAgentService {
       insuranceId?: string;
     } = {};
 
+    const digitWords: Record<string, string> = {
+      'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+      'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
+    };
+
     // Extract email using regex
     const emailMatch = text.match(/[\w\.-]+@[\w\.-]+\.\w+/);
     if (emailMatch) {
@@ -1219,56 +1224,49 @@ export class AiAgentService {
     }
 
     // Extract phone number - support multiple formats
-    // 1. Standard digits (with optional +, spaces, or hyphens): "+8801742460391", "0174 246 0391", "01742460391"
-    const standardPhoneMatch = text.match(/(?:\+?88)?0?\d{2,4}[\s-]?\d{3,4}[\s-]?\d{4,5}/);
-    if (standardPhoneMatch) {
-      // Clean up the phone number (remove spaces and hyphens)
-      result.phone = standardPhoneMatch[0].replace(/[\s-]/g, '');
-    } else {
-      // 2. Spoken format: "zero one seven four two four six zero three nine one" or "zero, one, seven four..."
-      // Extract sequences of digit words
-      const digitWords = {
-        'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
-        'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
-      };
-      
-      // Look for phone number patterns in spoken form
-      const phonePatterns = [
-        /(?:phone\s+number\s+is|my\s+number\s+is|call\s+me\s+at)\s+([zero|one|two|three|four|five|six|seven|eight|nine|\s|,]+)/i,
-        /(?:zero|one|two|three|four|five|six|seven|eight|nine)(?:\s*,?\s*(?:zero|one|two|three|four|five|six|seven|eight|nine)){9,}/i
-      ];
-      
-      for (const pattern of phonePatterns) {
-        const spokenMatch = text.match(pattern);
-        if (spokenMatch) {
-          const spokenText = spokenMatch[1] || spokenMatch[0];
-          // Convert spoken digits to numeric string
-          let phoneDigits = '';
-          const words = spokenText.toLowerCase().split(/[\s,]+/);
-          for (const word of words) {
-            if (digitWords[word.trim()]) {
-              phoneDigits += digitWords[word.trim()];
-            }
+    // 1. Spoken format with explicit trigger (highest priority)
+    const explicitPhonePatterns = [
+      /(?:phone\s+number\s+is|my\s+number\s+is|call\s+me\s+at)\s+([zero|one|two|three|four|five|six|seven|eight|nine|\s|,]+)/i,
+    ];
+
+    for (const pattern of explicitPhonePatterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        let phoneDigits = '';
+        const words = match[1].toLowerCase().split(/[\s,]+/);
+        for (const word of words) {
+          if (digitWords[word.trim()]) {
+            phoneDigits += digitWords[word.trim()];
           }
-          // Validate phone number length (should be 10-11 digits for Bangladesh)
-          if (phoneDigits.length >= 10 && phoneDigits.length <= 14) {
-            result.phone = phoneDigits;
-            break;
-          }
+        }
+        if (phoneDigits.length >= 10 && phoneDigits.length <= 14) {
+          result.phone = phoneDigits;
+          break;
+        }
+      }
+    }
+
+    if (!result.phone) {
+      // 2. Standard digits (with optional +, spaces, or hyphens)
+      // Tightened: must NOT be exactly 10 digits if we already looked for insurance, 
+      // but here we just ensure it's a plausible phone number sequence.
+      // Usually phone numbers in this context are 11 digits (Bangladesh) or 10.
+      const standardPhoneMatch = text.match(/(?:\+?88)?01[3-9]\d{8}/); // Specific to BD mobile numbers for better accuracy
+      if (standardPhoneMatch) {
+        result.phone = standardPhoneMatch[0].replace(/[\s-]/g, '');
+      } else {
+        // Fallback to broader digit sequence if not found
+        const broaderMatch = text.match(/(?:\+?88)?0?\d{9,13}/);
+        if (broaderMatch && broaderMatch[0] !== result.insuranceId) {
+          result.phone = broaderMatch[0].replace(/[\s-]/g, '');
         }
       }
     }
     
-    // Extract Insurance ID - 10 digits
     // 1. Spoken format: "one zero five..."
     const insurancePatterns = [
       /(?:insurance\s+id\s+is|id\s+number\s+is|insurance\s+is|id\s+as)\s+([zero|one|two|three|four|five|six|seven|eight|nine|\s|,]+)/i,
     ];
-
-    const digitWords = {
-      'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
-      'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
-    };
 
     for (const pattern of insurancePatterns) {
       const spokenMatch = text.match(pattern);
@@ -1409,7 +1407,20 @@ export class AiAgentService {
           reason = reason.substring(0, reason.length - 4).trim();
         }
 
-        if (reason.length >= 5) {
+        // Phase 6 Cleanup: Strip leading filler words
+        const fillerWords = [
+          'actually', 'uh', 'um', 'to', 'just', 'so', 'like', 'actually,', 'basis', 'urgent'
+        ];
+        
+        let words = reason.split(/\s+/);
+        while (words.length > 0 && fillerWords.includes(words[0].toLowerCase().replace(/[^a-z]/g, ''))) {
+          words.shift();
+        }
+        reason = words.join(' ');
+
+        if (reason.length >= 3) {
+          // Capitalize first letter for better display
+          reason = reason.charAt(0).toUpperCase() + reason.slice(1);
           return reason;
         }
       }
