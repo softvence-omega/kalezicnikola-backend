@@ -727,21 +727,32 @@ export class AiAgentService {
     }
 
     // 3. Priority: MISSED check
-    // If there is NO transcription, or it's under 10 seconds (User request), or short + aborted
+    // If there is NO transcription, or it's under 5 seconds (lowered from 10 to be safer), or short + aborted
     if (!dto.transcription || dto.transcription.trim().length === 0) {
       return 'MISSED';
     }
-    if (duration >= 0 && duration < 10) {
+    if (duration >= 0 && duration < 5) {
       return 'MISSED';
     }
     if (
       duration >= 0 &&
-      duration < 25 &&
-      (dto.transcription.length < 100 ||
+      duration < 20 &&
+      (dto.transcription.length < 50 ||
         textToCheck.includes('cut the call') ||
         textToCheck.includes('wrong number'))
     ) {
       return 'MISSED';
+    }
+
+    // 3.5 Priority: SUCCESSFUL check for Tasks or explicit success words
+    if (
+      textToCheck.includes('successfully created a task') ||
+      textToCheck.includes('task for you') ||
+      textToCheck.includes('created the task') ||
+      textToCheck.includes('successfully booked') ||
+      textToCheck.includes('appointment for you')
+    ) {
+      return 'SUCCESSFUL';
     }
 
     // 4. Priority: TRANSFERRED check
@@ -905,6 +916,11 @@ export class AiAgentService {
 
     const callStatus = this.determineCallStatus(dto, appointmentId);
 
+    // Extract reason for calling if not provided
+    const reasonForCalling = 
+      dto.reason_for_calling || 
+      this.extractReasonForCallingFromText(dto.transcription || dto.summary || '');
+
     const transcription = await this.prisma.callTranscription.create({
       data: {
         doctorId: dto.doctor_id,
@@ -927,8 +943,9 @@ export class AiAgentService {
         // New fields
         callStatus: callStatus,
         wasTransferred: dto.was_transferred || callStatus === 'TRANSFERRED',
-        reasonForCalling: dto.reason_for_calling,
+        reasonForCalling: reasonForCalling,
         insuranceId: insuranceId,
+        callerName: dto.caller_name || (patientInfo.firstName ? `${patientInfo.firstName} ${patientInfo.lastName || ''}`.trim() : undefined),
       },
     });
 
@@ -1018,9 +1035,10 @@ export class AiAgentService {
     }
 
     // Priority 3: Extract from transcription text if still not found
-    if (!callerPhoneNumber && transcriptionText) {
-      const extractedInfo = this.extractPatientInfoFromText(transcriptionText);
-      if (extractedInfo.phone) {
+    let extractedInfo: any = {};
+    if (transcriptionText) {
+      extractedInfo = this.extractPatientInfoFromText(transcriptionText);
+      if (!callerPhoneNumber && extractedInfo.phone) {
         callerPhoneNumber = extractedInfo.phone;
         console.log(`Caller phone extracted from transcription: ${callerPhoneNumber}`);
       }
@@ -1031,53 +1049,25 @@ export class AiAgentService {
       where: { callSid: incomingCallSid },
     });
 
-    // If not found by ID, try finding by Phone Number extracted from tool calls
+    // If not found by ID, try finding by Phone Number extracted from tool calls or transcription
     // (This handles cases where the Tool saved with a "temp_" ID because config was broken)
-    if (!existing && realData.transcript) {
-      try {
-        const toolCall = realData.transcript.find((t) =>
-          t.tool_calls?.some(
-            (tc) =>
-              tc.tool_name?.includes('Webhook') ||
-              tc.tool_name?.includes('saveTranscription'),
-          ),
+    if (!existing && callerPhoneNumber) {
+      console.log(`Attempting to link call via phone number: ${callerPhoneNumber}`);
+      // Find most recent temp record for this phone (last 15 mins)
+      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+      existing = await this.prisma.callTranscription.findFirst({
+        where: {
+          phoneNumber: callerPhoneNumber,
+          callSid: { startsWith: 'temp_' },
+          createdAt: { gt: fifteenMinsAgo },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (existing) {
+        console.log(
+          `Found linked record via phone! ID: ${existing.id}, TempSID: ${existing.callSid}`,
         );
-
-        if (toolCall) {
-          const tc = toolCall.tool_calls.find(
-            (tc) =>
-              tc.tool_name?.includes('Webhook') ||
-              tc.tool_name?.includes('saveTranscription'),
-          );
-          if (tc && tc.params_as_json) {
-            const params = JSON.parse(tc.params_as_json);
-            // Extract phone from nested patient_info or flat phone_number
-            const phone =
-              params.patient_info?.phone || params.phone_number || params.phone;
-
-            if (phone) {
-              console.log(`Attempting to link call via phone number: ${phone}`);
-              // Find most recent temp record for this phone (last 15 mins)
-              const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
-              existing = await this.prisma.callTranscription.findFirst({
-                where: {
-                  phoneNumber: phone,
-                  callSid: { startsWith: 'temp_' },
-                  createdAt: { gt: fifteenMinsAgo },
-                },
-                orderBy: { createdAt: 'desc' },
-              });
-
-              if (existing) {
-                console.log(
-                  `Found linked record via phone! ID: ${existing.id}, TempSID: ${existing.callSid}`,
-                );
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Error in smart linking logic:', err);
       }
     }
 
@@ -1095,6 +1085,23 @@ export class AiAgentService {
           transcription: existing.transcription ? undefined : transcriptionText,
           // ALWAYS update summary with ElevenLabs summary when available (overwrite existing)
           summary: realData.analysis?.transcript_summary || existing.summary,
+          // Merge insurance ID if missing
+          insuranceId: existing.insuranceId || extractedInfo.insuranceId,
+          // Update reason for calling if missing
+          reasonForCalling: 
+            existing.reasonForCalling || 
+            this.extractReasonForCallingFromText(transcriptionText || realData.analysis?.transcript_summary || ''),
+          // RE-DETERMINE STATUS: If it was MISSED before, it likely was because transcript was empty during call.
+          // Now we have the full transcript and real duration, so let's fix it.
+          callStatus: this.determineCallStatus({
+            doctor_id: existing.doctorId,
+            duration: duration ? Math.round(duration) : (existing.duration || 0),
+            transcription: transcriptionText || existing.transcription || '',
+            summary: realData.analysis?.transcript_summary || existing.summary || '',
+            intent: existing.intent || undefined,
+            call_status: undefined, // Let it calculate based on text
+          }),
+          callerName: existing.callerName || (extractedInfo.firstName ? `${extractedInfo.firstName} ${extractedInfo.lastName || ''}`.trim() : undefined),
         },
       });
       console.log(
@@ -1129,9 +1136,22 @@ export class AiAgentService {
 
     const callStatus = this.determineCallStatus(tempDto);
 
+    // Find patient for the fallback record
+    let patientId: string | null = null;
+    if (callerPhoneNumber) {
+      const patient = await this.prisma.patient.findFirst({
+        where: { phone: callerPhoneNumber },
+      });
+      if (patient) {
+        patientId = patient.id;
+        console.log(`Linked fallback call to patient: ${patientId}`);
+      }
+    }
+
     await this.prisma.callTranscription.create({
       data: {
         doctorId: finalDoctorId,
+        patientId,
         callSid: incomingCallSid,
         phoneNumber: callerPhoneNumber,
         duration: tempDto.duration,
@@ -1144,6 +1164,8 @@ export class AiAgentService {
         sentiment:
           (realData.analysis?.call_sentiment?.toUpperCase() as any) ||
           'NEUTRAL',
+        insuranceId: extractedInfo.insuranceId,
+        reasonForCalling: this.extractReasonForCallingFromText(transcriptionText || realData.analysis?.transcript_summary || ''),
       },
     });
 
@@ -1182,13 +1204,20 @@ export class AiAgentService {
     lastName?: string;
     email?: string;
     phone?: string;
+    insuranceId?: string;
   } {
     const result: { 
       firstName?: string; 
       lastName?: string; 
       email?: string;
       phone?: string;
+      insuranceId?: string;
     } = {};
+
+    const digitWords: Record<string, string> = {
+      'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+      'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
+    };
 
     // Extract email using regex
     const emailMatch = text.match(/[\w\.-]+@[\w\.-]+\.\w+/);
@@ -1197,72 +1226,209 @@ export class AiAgentService {
     }
 
     // Extract phone number - support multiple formats
-    // 1. Standard digits (with optional +, spaces, or hyphens): "+8801742460391", "0174 246 0391", "01742460391"
-    const standardPhoneMatch = text.match(/(?:\+?88)?0?\d{2,4}[\s-]?\d{3,4}[\s-]?\d{4,5}/);
-    if (standardPhoneMatch) {
-      // Clean up the phone number (remove spaces and hyphens)
-      result.phone = standardPhoneMatch[0].replace(/[\s-]/g, '');
-    } else {
-      // 2. Spoken format: "zero one seven four two four six zero three nine one" or "zero, one, seven four..."
-      // Extract sequences of digit words
-      const digitWords = {
-        'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
-        'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
-      };
-      
-      // Look for phone number patterns in spoken form
-      const phonePatterns = [
-        /(?:phone\s+number\s+is|my\s+number\s+is|call\s+me\s+at)\s+([zero|one|two|three|four|five|six|seven|eight|nine|\s|,]+)/i,
-        /(?:zero|one|two|three|four|five|six|seven|eight|nine)(?:\s*,?\s*(?:zero|one|two|three|four|five|six|seven|eight|nine)){9,}/i
-      ];
-      
-      for (const pattern of phonePatterns) {
-        const spokenMatch = text.match(pattern);
-        if (spokenMatch) {
-          const spokenText = spokenMatch[1] || spokenMatch[0];
-          // Convert spoken digits to numeric string
-          let phoneDigits = '';
-          const words = spokenText.toLowerCase().split(/[\s,]+/);
-          for (const word of words) {
-            if (digitWords[word.trim()]) {
-              phoneDigits += digitWords[word.trim()];
-            }
-          }
-          // Validate phone number length (should be 10-11 digits for Bangladesh)
-          if (phoneDigits.length >= 10 && phoneDigits.length <= 14) {
-            result.phone = phoneDigits;
-            break;
+    // 1. Spoken format with explicit trigger (highest priority)
+    const explicitPhonePatterns = [
+      /(?:phone\s+number\s+is|my\s+number\s+is|call\s+me\s+at)\s+([zero|one|two|three|four|five|six|seven|eight|nine|\s|,]+)/i,
+    ];
+
+    for (const pattern of explicitPhonePatterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        let phoneDigits = '';
+        const words = match[1].toLowerCase().split(/[\s,]+/);
+        for (const word of words) {
+          if (digitWords[word.trim()]) {
+            phoneDigits += digitWords[word.trim()];
           }
         }
+        if (phoneDigits.length >= 10 && phoneDigits.length <= 14) {
+          result.phone = phoneDigits;
+          break;
+        }
+      }
+    }
+
+    if (!result.phone) {
+      // 2. Standard digits (with optional +, spaces, or hyphens)
+      // Tightened: must NOT be exactly 10 digits if we already looked for insurance, 
+      // but here we just ensure it's a plausible phone number sequence.
+      // Usually phone numbers in this context are 11 digits (Bangladesh) or 10.
+      const standardPhoneMatch = text.match(/(?:\+?88)?01[3-9]\d{8}/); // Specific to BD mobile numbers for better accuracy
+      if (standardPhoneMatch) {
+        result.phone = standardPhoneMatch[0].replace(/[\s-]/g, '');
+      } else {
+        // Fallback to broader digit sequence if not found
+        const broaderMatch = text.match(/(?:\+?88)?0?\d{9,13}/);
+        if (broaderMatch && broaderMatch[0] !== result.insuranceId) {
+          result.phone = broaderMatch[0].replace(/[\s-]/g, '');
+        }
+      }
+    }
+    
+    // 1. Spoken format: "one zero five..."
+    const insurancePatterns = [
+      /(?:insurance\s+id\s+is|id\s+number\s+is|insurance\s+is|id\s+as)\s+([zero|one|two|three|four|five|six|seven|eight|nine|\s|,]+)/i,
+    ];
+
+    for (const pattern of insurancePatterns) {
+      const spokenMatch = text.match(pattern);
+      if (spokenMatch) {
+        const spokenText = spokenMatch[1];
+        let idDigits = '';
+        const words = spokenText.toLowerCase().split(/[\s,]+/);
+        for (const word of words) {
+          if (digitWords[word.trim()]) {
+            idDigits += digitWords[word.trim()];
+          }
+        }
+        if (idDigits.length === 10) {
+          result.insuranceId = idDigits;
+          break;
+        }
+      }
+    }
+
+    // 2. Direct digit sequence (10 digits) if not found by spoken pattern
+    if (!result.insuranceId) {
+      const digitMatch = text.match(/\b\d{10}\b/);
+      if (digitMatch) {
+        result.insuranceId = digitMatch[0];
       }
     }
 
     // Extract name patterns
-    // Support: "My full name is...", "I am...", "This is...", "First name and last name is..."
-    const namePatterns = [
-      /(?:my\s+full\s+name\s+is|my\s+name\s+is|i'm|i\s+am|this\s+is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
-      /first\s+name\s+and\s+last\s+name\s+is\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
-      /([A-Z][a-z]+\s+[A-Z][a-z]+)(?:,|\s+and)/,
+    // Priority 1: Explicit triggers like "My name is...", "I am...", "This is..."
+    const explicitPatterns = [
+      /(?:my\s+full\s+name\s+is|my\s+name\s+is|first\s+name\s+and\s+last\s+name\s+is)\s+([A-Z][a-z.]+(?:\s+[A-Z][a-z.]+)+)/i,
+      /(?:i\s+am|i'm|this\s+is)\s+([A-Z][a-z.]+(?:\s+[A-Z][a-z.]+)+)/i,
     ];
 
-    for (const pattern of namePatterns) {
+    const nameBlocklist = [
+      'an', 'urgent', 'and', 'a', 'the', 'task', 'medical', 'appointment',
+      'booking', 'insurance', 'doctor', 'called', 'calling', 'help', 'assist',
+      'order', 'medicine', 'delivery', 'test', 'result', 'high', 'priority',
+      'actually', 'just', 'please', 'morning', 'afternoon', 'evening'
+    ];
+
+    const boundaryStopWords = [
+      'and', 'from', 'my', 'for', 'with', 'at', 'about', 'is', 'want'
+    ];
+
+    for (const pattern of explicitPatterns) {
       const match = text.match(pattern);
       if (match && match[1]) {
-        // clean up the name
-        const fullName = match[1].trim();
-        const nameParts = fullName.split(/\s+/);
+        let fullName = match[1].trim();
+        
+        // Smart Slicing: Cut the name if a boundary stop word is found
+        const words = fullName.split(/\s+/);
+        const cleanedParts: string[] = [];
+        
+        for (const word of words) {
+          if (boundaryStopWords.includes(word.toLowerCase())) break;
+          cleanedParts.push(word);
+        }
+        
+        if (cleanedParts.length === 0) continue;
+        
+        fullName = cleanedParts.join(' ');
 
-        if (nameParts.length >= 1) {
-          result.firstName = nameParts[0];
+        // Blocklist Check
+        const isBlocked = cleanedParts.some(part => 
+          nameBlocklist.includes(part.toLowerCase())
+        );
+        if (isBlocked) continue;
+
+        // Validation: Ensure significant parts exist
+        if (cleanedParts.length >= 1) {
+          result.firstName = cleanedParts[0];
         }
-        if (nameParts.length >= 2) {
-          result.lastName = nameParts.slice(1).join(' ');
+        if (cleanedParts.length >= 2) {
+          result.lastName = cleanedParts.slice(1).join(' ');
         }
-        break;
+        
+        if (result.firstName) break;
+      }
+    }
+
+    // Fallback: If no explicit match, look for Capitalized Name pairs that aren't blocked
+    if (!result.firstName) {
+      const genericPattern = /\b([A-Z][a-z.]+\s+[A-Z][a-z.]+)\b/g;
+      let match;
+      while ((match = genericPattern.exec(text)) !== null) {
+        const fullName = match[1];
+        const parts = fullName.split(/\s+/);
+        
+        const isBlocked = parts.some(part => 
+          nameBlocklist.includes(part.toLowerCase())
+        );
+        
+        if (!isBlocked) {
+          result.firstName = parts[0];
+          result.lastName = parts[1];
+          break;
+        }
       }
     }
 
     return result;
+  }
+
+  // Helper method to extract reason for calling from transcript or summary
+  private extractReasonForCallingFromText(text: string): string | null {
+    if (!text) return null;
+
+    // Look for common "I want to...", "I need...", "Reason for calling is..." patterns
+    const reasonPatterns = [
+      /(?:reason\s+for\s+calling\s+is|purpose\s+of\s+the\s+call\s+is)\s+([^.\n]{5,})/i,
+      /(?:i\s+want\s+to|i\s+need\s+to|i\s+would\s+like\s+to|please\s+help\s+me\s+with)\s+([^.\n]{5,})/i,
+      /user:\s+(?:i\s+want\s+to|i\s+need\s+to|i\s+would\s+like\s+to)\s+([^.\n]{5,})/i,
+    ];
+
+    const personalInfoBoundaries = [
+      'and my name', 'and my email', 'and my insurance', 
+      'and my phone', 'and my number', 'my name is',
+      'my email is', 'and insurance'
+    ];
+
+    for (const pattern of reasonPatterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        let reason = match[1].trim();
+        
+        // Smart Slicing: Cut the reason if it starts pivoting to personal info
+        const lowerReason = reason.toLowerCase();
+        for (const boundary of personalInfoBoundaries) {
+          const index = lowerReason.indexOf(boundary);
+          if (index !== -1) {
+            reason = reason.substring(0, index).trim();
+          }
+        }
+
+        // Final cleanup: remove trailing "and"
+        if (reason.toLowerCase().endsWith(' and')) {
+          reason = reason.substring(0, reason.length - 4).trim();
+        }
+
+        // Phase 6 Cleanup: Strip leading filler words
+        const fillerWords = [
+          'actually', 'uh', 'um', 'to', 'just', 'so', 'like', 'actually,', 'basis', 'urgent'
+        ];
+        
+        let words = reason.split(/\s+/);
+        while (words.length > 0 && fillerWords.includes(words[0].toLowerCase().replace(/[^a-z]/g, ''))) {
+          words.shift();
+        }
+        reason = words.join(' ');
+
+        if (reason.length >= 3) {
+          // Capitalize first letter for better display
+          reason = reason.charAt(0).toUpperCase() + reason.slice(1);
+          return reason;
+        }
+      }
+    }
+
+    return null;
   }
 
   // =============== GET PATIENT HISTORY ===============
@@ -1397,9 +1563,46 @@ export class AiAgentService {
       };
     }
 
+    // If no slots on requested date, look for next available days (up to 7 days ahead)
+    const MAX_DAYS_TO_CHECK = 7;
+    const requestedDate = new Date(payload.requested_date || new Date());
+    
+    for (let i = 1; i <= MAX_DAYS_TO_CHECK; i++) {
+      const nextDate = new Date(requestedDate);
+      nextDate.setDate(nextDate.getDate() + i);
+      const nextDateStr = nextDate.toISOString().split('T')[0];
+      
+      const alternativeAvailability = await this.getAvailableSlots({
+        doctor_id: payload.doctor_id,
+        date: nextDateStr,
+      });
+
+      if (alternativeAvailability.summary.available > 0) {
+        const slotList = alternativeAvailability.availableSlots
+          .slice(0, 3)
+          .map((s) => `${s.startTime} to ${s.endTime}`)
+          .join(', ');
+
+        const formattedDate = nextDate.toLocaleDateString('en-US', { 
+          month: 'long', 
+          day: 'numeric' 
+        });
+
+        return {
+          reply_text: `Unfortunately, we're fully booked on your requested date. However, I found ${alternativeAvailability.summary.available} slots on ${formattedDate}. Available times include: ${slotList}. Would any of those work for you?`,
+          suggested_slots: alternativeAvailability.availableSlots.slice(0, 3).map((s) => ({
+            date: nextDateStr,
+            time: s.startTime,
+            slotId: s.slotId,
+          })),
+          action: 'show_slots',
+        };
+      }
+    }
+
     return {
       reply_text:
-        "Unfortunately, we're fully booked on that date. Would you like me to suggest alternative dates?",
+        "I'm sorry, but we seem to be fully booked for the next week. Would you like me to check for dates further out in the month?",
       action: 'suggest_alternatives',
     };
   }
@@ -1581,6 +1784,7 @@ export class AiAgentService {
         patientId,
         insuranceId: insurance_id,
         phone: phone_number,
+        callerName: dto.caller_name,
       },
     });
 

@@ -70,4 +70,8 @@ export class TranscriptionSaveDto {
   @IsString()
   @IsOptional()
   insurance_id?: string;
+
+  @IsString()
+  @IsOptional()
+  caller_name?: string;
 }
