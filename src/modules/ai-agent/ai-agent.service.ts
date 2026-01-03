@@ -905,6 +905,11 @@ export class AiAgentService {
 
     const callStatus = this.determineCallStatus(dto, appointmentId);
 
+    // Extract reason for calling if not provided
+    const reasonForCalling = 
+      dto.reason_for_calling || 
+      this.extractReasonForCallingFromText(dto.transcription || dto.summary || '');
+
     const transcription = await this.prisma.callTranscription.create({
       data: {
         doctorId: dto.doctor_id,
@@ -927,7 +932,7 @@ export class AiAgentService {
         // New fields
         callStatus: callStatus,
         wasTransferred: dto.was_transferred || callStatus === 'TRANSFERRED',
-        reasonForCalling: dto.reason_for_calling,
+        reasonForCalling: reasonForCalling,
         insuranceId: insuranceId,
       },
     });
@@ -1018,9 +1023,10 @@ export class AiAgentService {
     }
 
     // Priority 3: Extract from transcription text if still not found
-    if (!callerPhoneNumber && transcriptionText) {
-      const extractedInfo = this.extractPatientInfoFromText(transcriptionText);
-      if (extractedInfo.phone) {
+    let extractedInfo: any = {};
+    if (transcriptionText) {
+      extractedInfo = this.extractPatientInfoFromText(transcriptionText);
+      if (!callerPhoneNumber && extractedInfo.phone) {
         callerPhoneNumber = extractedInfo.phone;
         console.log(`Caller phone extracted from transcription: ${callerPhoneNumber}`);
       }
@@ -1031,53 +1037,25 @@ export class AiAgentService {
       where: { callSid: incomingCallSid },
     });
 
-    // If not found by ID, try finding by Phone Number extracted from tool calls
+    // If not found by ID, try finding by Phone Number extracted from tool calls or transcription
     // (This handles cases where the Tool saved with a "temp_" ID because config was broken)
-    if (!existing && realData.transcript) {
-      try {
-        const toolCall = realData.transcript.find((t) =>
-          t.tool_calls?.some(
-            (tc) =>
-              tc.tool_name?.includes('Webhook') ||
-              tc.tool_name?.includes('saveTranscription'),
-          ),
+    if (!existing && callerPhoneNumber) {
+      console.log(`Attempting to link call via phone number: ${callerPhoneNumber}`);
+      // Find most recent temp record for this phone (last 15 mins)
+      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+      existing = await this.prisma.callTranscription.findFirst({
+        where: {
+          phoneNumber: callerPhoneNumber,
+          callSid: { startsWith: 'temp_' },
+          createdAt: { gt: fifteenMinsAgo },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (existing) {
+        console.log(
+          `Found linked record via phone! ID: ${existing.id}, TempSID: ${existing.callSid}`,
         );
-
-        if (toolCall) {
-          const tc = toolCall.tool_calls.find(
-            (tc) =>
-              tc.tool_name?.includes('Webhook') ||
-              tc.tool_name?.includes('saveTranscription'),
-          );
-          if (tc && tc.params_as_json) {
-            const params = JSON.parse(tc.params_as_json);
-            // Extract phone from nested patient_info or flat phone_number
-            const phone =
-              params.patient_info?.phone || params.phone_number || params.phone;
-
-            if (phone) {
-              console.log(`Attempting to link call via phone number: ${phone}`);
-              // Find most recent temp record for this phone (last 15 mins)
-              const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
-              existing = await this.prisma.callTranscription.findFirst({
-                where: {
-                  phoneNumber: phone,
-                  callSid: { startsWith: 'temp_' },
-                  createdAt: { gt: fifteenMinsAgo },
-                },
-                orderBy: { createdAt: 'desc' },
-              });
-
-              if (existing) {
-                console.log(
-                  `Found linked record via phone! ID: ${existing.id}, TempSID: ${existing.callSid}`,
-                );
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Error in smart linking logic:', err);
       }
     }
 
@@ -1095,6 +1073,12 @@ export class AiAgentService {
           transcription: existing.transcription ? undefined : transcriptionText,
           // ALWAYS update summary with ElevenLabs summary when available (overwrite existing)
           summary: realData.analysis?.transcript_summary || existing.summary,
+          // Merge insurance ID if missing
+          insuranceId: existing.insuranceId || extractedInfo.insuranceId,
+          // Update reason for calling if missing
+          reasonForCalling: 
+            existing.reasonForCalling || 
+            this.extractReasonForCallingFromText(transcriptionText || realData.analysis?.transcript_summary || ''),
         },
       });
       console.log(
@@ -1129,9 +1113,22 @@ export class AiAgentService {
 
     const callStatus = this.determineCallStatus(tempDto);
 
+    // Find patient for the fallback record
+    let patientId: string | null = null;
+    if (callerPhoneNumber) {
+      const patient = await this.prisma.patient.findFirst({
+        where: { phone: callerPhoneNumber },
+      });
+      if (patient) {
+        patientId = patient.id;
+        console.log(`Linked fallback call to patient: ${patientId}`);
+      }
+    }
+
     await this.prisma.callTranscription.create({
       data: {
         doctorId: finalDoctorId,
+        patientId,
         callSid: incomingCallSid,
         phoneNumber: callerPhoneNumber,
         duration: tempDto.duration,
@@ -1144,6 +1141,8 @@ export class AiAgentService {
         sentiment:
           (realData.analysis?.call_sentiment?.toUpperCase() as any) ||
           'NEUTRAL',
+        insuranceId: extractedInfo.insuranceId,
+        reasonForCalling: this.extractReasonForCallingFromText(transcriptionText || realData.analysis?.transcript_summary || ''),
       },
     });
 
@@ -1182,12 +1181,14 @@ export class AiAgentService {
     lastName?: string;
     email?: string;
     phone?: string;
+    insuranceId?: string;
   } {
     const result: { 
       firstName?: string; 
       lastName?: string; 
       email?: string;
       phone?: string;
+      insuranceId?: string;
     } = {};
 
     // Extract email using regex
@@ -1236,33 +1237,140 @@ export class AiAgentService {
         }
       }
     }
-
-    // Extract name patterns
-    // Support: "My full name is...", "I am...", "This is...", "First name and last name is..."
-    const namePatterns = [
-      /(?:my\s+full\s+name\s+is|my\s+name\s+is|i'm|i\s+am|this\s+is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
-      /first\s+name\s+and\s+last\s+name\s+is\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
-      /([A-Z][a-z]+\s+[A-Z][a-z]+)(?:,|\s+and)/,
+    
+    // Extract Insurance ID - 10 digits
+    // 1. Spoken format: "one zero five..."
+    const insurancePatterns = [
+      /(?:insurance\s+id\s+is|id\s+number\s+is|insurance\s+is|id\s+as)\s+([zero|one|two|three|four|five|six|seven|eight|nine|\s|,]+)/i,
     ];
 
-    for (const pattern of namePatterns) {
+    const digitWords = {
+      'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+      'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
+    };
+
+    for (const pattern of insurancePatterns) {
+      const spokenMatch = text.match(pattern);
+      if (spokenMatch) {
+        const spokenText = spokenMatch[1];
+        let idDigits = '';
+        const words = spokenText.toLowerCase().split(/[\s,]+/);
+        for (const word of words) {
+          if (digitWords[word.trim()]) {
+            idDigits += digitWords[word.trim()];
+          }
+        }
+        if (idDigits.length === 10) {
+          result.insuranceId = idDigits;
+          break;
+        }
+      }
+    }
+
+    // 2. Direct digit sequence (10 digits) if not found by spoken pattern
+    if (!result.insuranceId) {
+      const digitMatch = text.match(/\b\d{10}\b/);
+      if (digitMatch) {
+        result.insuranceId = digitMatch[0];
+      }
+    }
+
+    // Extract name patterns
+    // Priority 1: Explicit triggers like "My name is...", "I am...", "This is..."
+    const explicitPatterns = [
+      /(?:my\s+full\s+name\s+is|my\s+name\s+is|first\s+name\s+and\s+last\s+name\s+is)\s+([A-Z][a-z.]+(?:\s+[A-Z][a-z.]+)+)/i,
+      /(?:i\s+am|i'm|this\s+is)\s+([A-Z][a-z.]+(?:\s+[A-Z][a-z.]+)+)/i,
+    ];
+
+    const nameBlocklist = [
+      'an', 'urgent', 'and', 'a', 'the', 'task', 'medical', 'appointment',
+      'booking', 'insurance', 'doctor', 'called', 'calling', 'help', 'assist',
+      'order', 'medicine', 'delivery', 'test', 'result', 'high', 'priority',
+      'actually', 'just', 'please', 'morning', 'afternoon', 'evening'
+    ];
+
+    const boundaryStopWords = [
+      'and', 'from', 'my', 'for', 'with', 'at', 'about', 'is', 'want'
+    ];
+
+    for (const pattern of explicitPatterns) {
       const match = text.match(pattern);
       if (match && match[1]) {
-        // clean up the name
-        const fullName = match[1].trim();
-        const nameParts = fullName.split(/\s+/);
+        let fullName = match[1].trim();
+        
+        // Smart Slicing: Cut the name if a boundary stop word is found
+        const words = fullName.split(/\s+/);
+        const cleanedParts: string[] = [];
+        
+        for (const word of words) {
+          if (boundaryStopWords.includes(word.toLowerCase())) break;
+          cleanedParts.push(word);
+        }
+        
+        if (cleanedParts.length === 0) continue;
+        
+        fullName = cleanedParts.join(' ');
 
-        if (nameParts.length >= 1) {
-          result.firstName = nameParts[0];
+        // Blocklist Check
+        const isBlocked = cleanedParts.some(part => 
+          nameBlocklist.includes(part.toLowerCase())
+        );
+        if (isBlocked) continue;
+
+        // Validation: Ensure significant parts exist
+        if (cleanedParts.length >= 1) {
+          result.firstName = cleanedParts[0];
         }
-        if (nameParts.length >= 2) {
-          result.lastName = nameParts.slice(1).join(' ');
+        if (cleanedParts.length >= 2) {
+          result.lastName = cleanedParts.slice(1).join(' ');
         }
-        break;
+        
+        if (result.firstName) break;
+      }
+    }
+
+    // Fallback: If no explicit match, look for Capitalized Name pairs that aren't blocked
+    if (!result.firstName) {
+      const genericPattern = /\b([A-Z][a-z.]+\s+[A-Z][a-z.]+)\b/g;
+      let match;
+      while ((match = genericPattern.exec(text)) !== null) {
+        const fullName = match[1];
+        const parts = fullName.split(/\s+/);
+        
+        const isBlocked = parts.some(part => 
+          nameBlocklist.includes(part.toLowerCase())
+        );
+        
+        if (!isBlocked) {
+          result.firstName = parts[0];
+          result.lastName = parts[1];
+          break;
+        }
       }
     }
 
     return result;
+  }
+
+  // Helper method to extract reason for calling from transcript or summary
+  private extractReasonForCallingFromText(text: string): string | null {
+    if (!text) return null;
+
+    // Look for common "I want to...", "I need...", "Reason for calling is..." patterns
+    const reasonPatterns = [
+      /(?:reason\s+for\s+calling\s+is|purpose\s+of\s+the\s+call\s+is)\s+([^.\n]+)/i,
+      /(?:i\s+want\s+to|i\s+need\s+to|i\s+would\s+like\s+to|please\s+help\s+me\s+with)\s+([^.\n]+)/i,
+      /user:\s+(?:i\s+want\s+to|i\s+need\s+to|i\s+would\s+like\s+to)\s+([^.\n]+)/i,
+    ];
+
+    for (const pattern of reasonPatterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+
+    return null;
   }
 
   // =============== GET PATIENT HISTORY ===============
@@ -1397,9 +1505,46 @@ export class AiAgentService {
       };
     }
 
+    // If no slots on requested date, look for next available days (up to 7 days ahead)
+    const MAX_DAYS_TO_CHECK = 7;
+    const requestedDate = new Date(payload.requested_date || new Date());
+    
+    for (let i = 1; i <= MAX_DAYS_TO_CHECK; i++) {
+      const nextDate = new Date(requestedDate);
+      nextDate.setDate(nextDate.getDate() + i);
+      const nextDateStr = nextDate.toISOString().split('T')[0];
+      
+      const alternativeAvailability = await this.getAvailableSlots({
+        doctor_id: payload.doctor_id,
+        date: nextDateStr,
+      });
+
+      if (alternativeAvailability.summary.available > 0) {
+        const slotList = alternativeAvailability.availableSlots
+          .slice(0, 3)
+          .map((s) => `${s.startTime} to ${s.endTime}`)
+          .join(', ');
+
+        const formattedDate = nextDate.toLocaleDateString('en-US', { 
+          month: 'long', 
+          day: 'numeric' 
+        });
+
+        return {
+          reply_text: `Unfortunately, we're fully booked on your requested date. However, I found ${alternativeAvailability.summary.available} slots on ${formattedDate}. Available times include: ${slotList}. Would any of those work for you?`,
+          suggested_slots: alternativeAvailability.availableSlots.slice(0, 3).map((s) => ({
+            date: nextDateStr,
+            time: s.startTime,
+            slotId: s.slotId,
+          })),
+          action: 'show_slots',
+        };
+      }
+    }
+
     return {
       reply_text:
-        "Unfortunately, we're fully booked on that date. Would you like me to suggest alternative dates?",
+        "I'm sorry, but we seem to be fully booked for the next week. Would you like me to check for dates further out in the month?",
       action: 'suggest_alternatives',
     };
   }
