@@ -727,21 +727,32 @@ export class AiAgentService {
     }
 
     // 3. Priority: MISSED check
-    // If there is NO transcription, or it's under 10 seconds (User request), or short + aborted
+    // If there is NO transcription, or it's under 5 seconds (lowered from 10 to be safer), or short + aborted
     if (!dto.transcription || dto.transcription.trim().length === 0) {
       return 'MISSED';
     }
-    if (duration >= 0 && duration < 10) {
+    if (duration >= 0 && duration < 5) {
       return 'MISSED';
     }
     if (
       duration >= 0 &&
-      duration < 25 &&
-      (dto.transcription.length < 100 ||
+      duration < 20 &&
+      (dto.transcription.length < 50 ||
         textToCheck.includes('cut the call') ||
         textToCheck.includes('wrong number'))
     ) {
       return 'MISSED';
+    }
+
+    // 3.5 Priority: SUCCESSFUL check for Tasks or explicit success words
+    if (
+      textToCheck.includes('successfully created a task') ||
+      textToCheck.includes('task for you') ||
+      textToCheck.includes('created the task') ||
+      textToCheck.includes('successfully booked') ||
+      textToCheck.includes('appointment for you')
+    ) {
+      return 'SUCCESSFUL';
     }
 
     // 4. Priority: TRANSFERRED check
@@ -1079,6 +1090,16 @@ export class AiAgentService {
           reasonForCalling: 
             existing.reasonForCalling || 
             this.extractReasonForCallingFromText(transcriptionText || realData.analysis?.transcript_summary || ''),
+          // RE-DETERMINE STATUS: If it was MISSED before, it likely was because transcript was empty during call.
+          // Now we have the full transcript and real duration, so let's fix it.
+          callStatus: this.determineCallStatus({
+            doctor_id: existing.doctorId,
+            duration: duration ? Math.round(duration) : (existing.duration || 0),
+            transcription: transcriptionText || existing.transcription || '',
+            summary: realData.analysis?.transcript_summary || existing.summary || '',
+            intent: existing.intent || undefined,
+            call_status: undefined, // Let it calculate based on text
+          }),
         },
       });
       console.log(
@@ -1358,15 +1379,39 @@ export class AiAgentService {
 
     // Look for common "I want to...", "I need...", "Reason for calling is..." patterns
     const reasonPatterns = [
-      /(?:reason\s+for\s+calling\s+is|purpose\s+of\s+the\s+call\s+is)\s+([^.\n]+)/i,
-      /(?:i\s+want\s+to|i\s+need\s+to|i\s+would\s+like\s+to|please\s+help\s+me\s+with)\s+([^.\n]+)/i,
-      /user:\s+(?:i\s+want\s+to|i\s+need\s+to|i\s+would\s+like\s+to)\s+([^.\n]+)/i,
+      /(?:reason\s+for\s+calling\s+is|purpose\s+of\s+the\s+call\s+is)\s+([^.\n]{5,})/i,
+      /(?:i\s+want\s+to|i\s+need\s+to|i\s+would\s+like\s+to|please\s+help\s+me\s+with)\s+([^.\n]{5,})/i,
+      /user:\s+(?:i\s+want\s+to|i\s+need\s+to|i\s+would\s+like\s+to)\s+([^.\n]{5,})/i,
+    ];
+
+    const personalInfoBoundaries = [
+      'and my name', 'and my email', 'and my insurance', 
+      'and my phone', 'and my number', 'my name is',
+      'my email is', 'and insurance'
     ];
 
     for (const pattern of reasonPatterns) {
       const match = text.match(pattern);
       if (match && match[1]) {
-        return match[1].trim();
+        let reason = match[1].trim();
+        
+        // Smart Slicing: Cut the reason if it starts pivoting to personal info
+        const lowerReason = reason.toLowerCase();
+        for (const boundary of personalInfoBoundaries) {
+          const index = lowerReason.indexOf(boundary);
+          if (index !== -1) {
+            reason = reason.substring(0, index).trim();
+          }
+        }
+
+        // Final cleanup: remove trailing "and"
+        if (reason.toLowerCase().endsWith(' and')) {
+          reason = reason.substring(0, reason.length - 4).trim();
+        }
+
+        if (reason.length >= 5) {
+          return reason;
+        }
       }
     }
 
