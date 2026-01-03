@@ -216,6 +216,7 @@ model CallTranscription {
   callStatus       CallStatus? // Status of the call
   reasonForCalling String? // Why patient called
   insuranceId      String?
+  callerName       String?
 
   // Appointment context (if booking was made)
   appointmentId Int?

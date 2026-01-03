@@ -945,6 +945,7 @@ export class AiAgentService {
         wasTransferred: dto.was_transferred || callStatus === 'TRANSFERRED',
         reasonForCalling: reasonForCalling,
         insuranceId: insuranceId,
+        callerName: dto.caller_name || (patientInfo.firstName ? `${patientInfo.firstName} ${patientInfo.lastName || ''}`.trim() : undefined),
       },
     });
 
@@ -1100,6 +1101,7 @@ export class AiAgentService {
             intent: existing.intent || undefined,
             call_status: undefined, // Let it calculate based on text
           }),
+          callerName: existing.callerName || (extractedInfo.firstName ? `${extractedInfo.firstName} ${extractedInfo.lastName || ''}`.trim() : undefined),
         },
       });
       console.log(
@@ -1782,6 +1784,7 @@ export class AiAgentService {
         patientId,
         insuranceId: insurance_id,
         phone: phone_number,
+        callerName: dto.caller_name,
       },
     });
 

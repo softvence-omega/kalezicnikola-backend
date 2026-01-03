@@ -19,6 +19,10 @@ export class AgentCreateTaskDto {
   @IsString()
   insurance_id?: string; // To identify patient's insurance
 
+  @IsOptional()
+  @IsString()
+  caller_name?: string; // For display if patient record doesn't exist
+
   @IsString()
   priority: string; // e.g., 'LOW', 'NORMAL', 'HIGH'
 
