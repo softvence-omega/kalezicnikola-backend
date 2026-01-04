@@ -14,6 +14,10 @@ export class TranscriptionSaveDto {
 
   @IsString()
   @IsOptional()
+  agent_id?: string;
+
+  @IsString()
+  @IsOptional()
   phone_number?: string;
 
   @IsInt()
