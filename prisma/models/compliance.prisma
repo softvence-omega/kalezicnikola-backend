@@ -1,11 +1,11 @@
 model ConsentVersion {
-  id            String       @id @default(uuid())    
+  id            String       @id @default(uuid())
   type          ConsentType?
-  version       String?     
-  title         String?     
-  body          String?      
-  effectiveDate DateTime?    
-  createdAt     DateTime?    @default(now())  
+  version       String?
+  title         String?
+  body          String?
+  effectiveDate DateTime?
+  createdAt     DateTime?    @default(now())
 
   patientConsents PatientConsent[]
 
@@ -13,17 +13,17 @@ model ConsentVersion {
 }
 
 model PatientConsent {
-  id               String       @id @default(uuid()) 
-  patientId        String?       
-  consentVersionId String?      
+  id               String       @id @default(uuid())
+  patientId        String?
+  consentVersionId String?
   type             ConsentType?
   given            Boolean?
-  givenAt          DateTime?    
-  withdrawnAt      DateTime?    
-  ip               String?      
-  userAgent        String?      
-  createdAt        DateTime?    @default(now()) 
-  updatedAt        DateTime?    @updatedAt 
+  givenAt          DateTime?
+  withdrawnAt      DateTime?
+  ip               String?
+  userAgent        String?
+  createdAt        DateTime?    @default(now())
+  updatedAt        DateTime?    @updatedAt
 
   patient        Patient?        @relation(fields: [patientId], references: [id])
   consentVersion ConsentVersion? @relation(fields: [consentVersionId], references: [id])
@@ -32,30 +32,30 @@ model PatientConsent {
 }
 
 model KeyManagement {
-  id        String    @id @default(uuid()) 
+  id        String    @id @default(uuid())
   version   String?   @unique
-  dekCipher Bytes?   
-  createdAt DateTime? @default(now()) 
-  rotatedAt DateTime?  
+  dekCipher Bytes?
+  createdAt DateTime? @default(now())
+  rotatedAt DateTime?
 
   @@map("key_managements")
 }
 
 model AuditLog {
-  id         String    @id @default(uuid()) 
-  table      String?  
-  rowId      String?    
-  action     String?  
-  oldValues  Json?     
-  newValues  Json?     
-  
+  id        String  @id @default(uuid())
+  table     String?
+  rowId     String?
+  action    String?
+  oldValues Json?
+  newValues Json?
+
   // Can be triggered by Admin or Doctor
-  adminId    String?   
-  doctorId   String?    
-    
-  ip         String?   
-  userAgent  String?   
-  occurredAt DateTime? 
+  adminId  String?
+  doctorId String?
+
+  ip         String?
+  userAgent  String?
+  occurredAt DateTime?
 
   admin  Admin?  @relation(fields: [adminId], references: [id])
   doctor Doctor? @relation(fields: [doctorId], references: [id])
@@ -64,15 +64,15 @@ model AuditLog {
 }
 
 model DataRequest {
-  id                String             @id @default(uuid())     
-  patientId         String?            
+  id                String             @id @default(uuid())
+  patientId         String?
   type              DataRequestType?
   status            DataRequestStatus?
-  requestReason     String?           
-  requestedAt       DateTime?          
-  completedAt       DateTime?          
-  downloadUrl       String?            
-  downloadExpiresAt DateTime?          
+  requestReason     String?
+  requestedAt       DateTime?
+  completedAt       DateTime?
+  downloadUrl       String?
+  downloadExpiresAt DateTime?
 
   patient Patient? @relation(fields: [patientId], references: [id])
 

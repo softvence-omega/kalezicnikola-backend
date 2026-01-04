@@ -51,6 +51,17 @@ enum Priority {
   HIGH
 }
 
+enum EventType {
+  EVENT
+  TASK
+  APPOINTMENT_SCHEDULE
+}
+
+enum EventLocationType {
+  ONLINE
+  OFFLINE
+}
+
 enum Plan {
   BASIC
   PROFESSIONAL
@@ -58,8 +69,9 @@ enum Plan {
 }
 
 enum PlanType {
-  BASIC
-  PROFESSIONAL
+  TRIAL
+  STANDARD
+  PREMIUM
   ENTERPRISE
 }
 
@@ -299,7 +311,6 @@ enum BloodGroup {
   O_NEG
 }
 
-
 // docotor
 
 enum WeekDay {
@@ -334,7 +345,6 @@ enum CallIntent {
   GENERAL
   EMERGENCY
 }
-
 
 enum KnowledgeBaseCategory {
   FAQ

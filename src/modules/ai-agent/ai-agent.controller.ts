@@ -8,7 +8,11 @@ import {
   Param,
   Headers,
   Res,
+  BadRequestException,
+  Req,
+  Patch,
 } from '@nestjs/common';
+import { DoctorGuard } from 'src/common/guard/doctor.guard';
 import { Response } from 'express';
 import { AiAgentService } from './ai-agent.service';
 import { WebhookAuthGuard } from './guards/webhook-auth.guard';
@@ -18,6 +22,7 @@ import { SlotQueryDto } from './dto/slot-query.dto';
 import { TranscriptionSaveDto } from './dto/transcription-save.dto';
 import { ElevenLabsPostCallDto } from './dto/elevenlabs-post-call.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
+import { AgentCreateTaskDto } from './dto/agent-create-task.dto';
 
 @Controller('ai-agent')
 export class AiAgentController {
@@ -110,6 +115,13 @@ export class AiAgentController {
     return this.aiAgentService.saveTranscription(dto);
   }
 
+  // =============== TASK MANAGEMENT ===============
+  @Post('task/create')
+  @UseGuards(WebhookAuthGuard)
+  async createAgentTask(@Body() dto: AgentCreateTaskDto) {
+    return this.aiAgentService.createAgentTask(dto);
+  }
+
   @Get('patient/:patientId/history')
   @UseGuards(WebhookAuthGuard)
   async getPatientHistory(@Param('patientId') patientId: string) {
@@ -132,5 +144,23 @@ export class AiAgentController {
       console.error('Error proxying audio:', error);
       res.status(404).json({ message: 'Audio not found' });
     }
+  }
+  // =============== CALL REVIEW ===============
+  @Get('transcription/unreviewed-count')
+  @UseGuards(DoctorGuard)
+  async getUnreviewedCallCount(@Req() req: any) {
+    const doctorId = req.doctor.id;
+    return this.aiAgentService.getUnreviewedCallCount(doctorId);
+  }
+
+  @Patch('transcription/multiple-review')
+  @UseGuards(DoctorGuard)
+  async bulkUpdateCallReviewStatus(
+    @Body('ids') ids: string[],
+    @Body('isReviewed') isReviewed: boolean,
+    @Req() req: any,
+  ) {
+    const doctorId = req.doctor.id;
+    return this.aiAgentService.bulkUpdateCallReviewStatus(ids, isReviewed, doctorId);
   }
 }

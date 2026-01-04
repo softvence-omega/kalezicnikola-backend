@@ -44,13 +44,15 @@ model Task {
   title       String?
   description String?
   status      TaskStatus?
-  priority    Priority?
+  priority    Flag?
   time        String?
   dueDate     DateTime?
 
   patientId   String?
   insuranceId String?
+  callerName  String?
   doctorId    String?
+  phone       String?
 
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt

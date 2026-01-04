@@ -24,10 +24,6 @@ export class GetAllAppointmentsDto {
 
   @IsOptional()
   @IsString()
-  doctorId?: string;
-
-  @IsOptional()
-  @IsString()
   patientId?: string;
 
   @IsOptional()
