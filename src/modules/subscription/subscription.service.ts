@@ -422,9 +422,18 @@ export class SubscriptionService implements OnModuleInit {
       }
 
       // Create or retrieve customer
+      const user = await this.prisma.doctor.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      });
+
+      if (!user || !user.email) {
+        throw new BadRequestException('User email not found');
+      }
+
       let customer: Stripe.Customer;
       const existingCustomers = await this.stripe.customers.list({
-        email: userId, // You might want to use actual email here
+        email: user.email,
         limit: 1,
       });
 
@@ -432,6 +441,7 @@ export class SubscriptionService implements OnModuleInit {
         customer = existingCustomers.data[0];
       } else {
         customer = await this.stripe.customers.create({
+          email: user.email,
           metadata: { userId },
         });
       }
@@ -810,10 +820,10 @@ export class SubscriptionService implements OnModuleInit {
   // Get invoices/transactions
   async getInvoices(userId: string, role: string = 'DOCTOR') {
     try {
-      const isAdmin = role === 'ADMIN';
+      const isAdmin = role.toUpperCase() === 'ADMIN';
 
       if (isAdmin) {
-        const invoices = await this.stripe.invoices.list({ limit: 50 });
+        const invoices = await this.stripe.invoices.list({ limit: 100 });
         return invoices.data.map((invoice) => ({
           date: new Date(invoice.created * 1000),
           name: invoice.customer_name || invoice.customer_email || 'Customer',
@@ -860,7 +870,7 @@ export class SubscriptionService implements OnModuleInit {
   // Get all user purchases/transactions
   async getUserPurchases(userId: string, role: string = 'DOCTOR') {
     try {
-      const isAdmin = role === 'ADMIN';
+      const isAdmin = role.toUpperCase() === 'ADMIN';
 
       // Get user's subscription record (needed for customerId)
       const subscription = await this.prisma.subscription.findUnique({
@@ -892,54 +902,93 @@ export class SubscriptionService implements OnModuleInit {
       let stripeInvoices: any[] = [];
       try {
         if (isAdmin) {
-          // Admin sees all invoices (last 100 across all customers)
-          const invoices = await this.stripe.invoices.list({ limit: 100 });
-          stripeInvoices = invoices.data.map((invoice) => ({
-            date: new Date(invoice.created * 1000),
-            name: invoice.customer_name || invoice.customer_email || 'Customer',
-            transactionId: invoice.number || invoice.id,
-            stripeInvoiceId: invoice.id,
-            stripeCustomerId: invoice.customer as string,
-            status:
-              invoice.status === 'paid'
-                ? 'Paid'
-                : invoice.status === 'open'
-                  ? 'Pending'
-                  : 'Failed',
-            payAmount: `${(invoice.amount_paid / 100).toFixed(2)} ${invoice.currency.toUpperCase()}`,
-            amount: invoice.amount_paid / 100,
-            currency: invoice.currency.toUpperCase(),
-            invoiceUrl: invoice.hosted_invoice_url,
-            planType: invoice.lines.data[0]?.description || 'Subscription',
-          }));
-        } else if (stripeCustomerId) {
+          // Admin sees all invoices - use auto-paging to get all history
+          const allInvoices: any[] = [];
+          
+          // Using a higher limit per page and auto-paging
+          for await (const invoice of this.stripe.invoices.list({ limit: 100 })) {
+            allInvoices.push({
+              date: new Date(invoice.created * 1000),
+              name: invoice.customer_name || invoice.customer_email || 'Customer',
+              email: invoice.customer_email || 'N/A',
+              transactionId: invoice.number || invoice.id,
+              stripeInvoiceId: invoice.id,
+              stripeCustomerId: invoice.customer as string,
+              status:
+                invoice.status === 'paid'
+                  ? 'Paid'
+                  : invoice.status === 'open'
+                    ? 'Pending'
+                    : 'Failed',
+              payAmount: `${(invoice.amount_paid / 100).toFixed(2)} ${invoice.currency.toUpperCase()}`,
+              amount: invoice.amount_paid / 100,
+              currency: invoice.currency.toUpperCase(),
+              invoiceUrl: invoice.hosted_invoice_url,
+              planType: invoice.lines.data[0]?.description || 'Subscription',
+            });
+            
+            // Safety break if there are thousands of invoices to prevent memory issues
+            if (allInvoices.length >= 1000) break;
+          }
+          stripeInvoices = allInvoices;
+        } else {
           // Doctor sees only their invoices
-          const customer =
-            await this.stripe.customers.retrieve(stripeCustomerId);
-          const invoices = await this.stripe.invoices.list({
-            customer: stripeCustomerId,
-            limit: 100,
+          // Fetch doctor's email
+          const doctor = await this.prisma.doctor.findUnique({
+            where: { id: userId },
+            select: { email: true },
           });
 
-          stripeInvoices = invoices.data.map((invoice) => ({
-            date: new Date(invoice.created * 1000),
-            name:
-              (customer as any).name || (customer as any).email || 'Customer',
-            transactionId: invoice.number || invoice.id,
-            stripeInvoiceId: invoice.id,
-            stripeCustomerId: stripeCustomerId,
-            status:
-              invoice.status === 'paid'
-                ? 'Paid'
-                : invoice.status === 'open'
-                  ? 'Pending'
-                  : 'Failed',
-            payAmount: `${(invoice.amount_paid / 100).toFixed(2)} ${invoice.currency.toUpperCase()}`,
-            amount: invoice.amount_paid / 100,
-            currency: invoice.currency.toUpperCase(),
-            invoiceUrl: invoice.hosted_invoice_url,
-            planType: invoice.lines.data[0]?.description || 'Subscription',
-          }));
+          if (!doctor || !doctor.email) {
+            throw new NotFoundException('Doctor or email not found');
+          }
+
+          // Search for ALL customers with this email to catch multiple accounts/guest checkouts
+          const customersByEmail = await this.stripe.customers.list({
+            email: doctor.email,
+            limit: 10,
+          });
+
+          const customerIds = customersByEmail.data.map((c) => c.id);
+          
+          // Also include the one from subscription record if not present
+          if (stripeCustomerId && !customerIds.includes(stripeCustomerId)) {
+            customerIds.push(stripeCustomerId);
+          }
+
+          if (customerIds.length > 0) {
+            // Fetch invoices for each customer ID found
+            const invoicePromises = customerIds.map((cid) =>
+              this.stripe.invoices.list({
+                customer: cid,
+                limit: 50,
+              }),
+            );
+
+            const allInvoiceResults = await Promise.all(invoicePromises);
+            
+            for (const result of allInvoiceResults) {
+              const mappedInvoices = result.data.map((invoice) => ({
+                date: new Date(invoice.created * 1000),
+                name: invoice.customer_name || doctor.email,
+                transactionId: invoice.number || invoice.id,
+                stripeInvoiceId: invoice.id,
+                stripeCustomerId: invoice.customer as string,
+                status:
+                  invoice.status === 'paid'
+                    ? 'Paid'
+                    : invoice.status === 'open'
+                      ? 'Pending'
+                      : 'Failed',
+                payAmount: `${(invoice.amount_paid / 100).toFixed(2)} ${invoice.currency.toUpperCase()}`,
+                amount: invoice.amount_paid / 100,
+                currency: invoice.currency.toUpperCase(),
+                invoiceUrl: invoice.hosted_invoice_url,
+                planType: invoice.lines.data[0]?.description || 'Subscription',
+              }));
+              stripeInvoices.push(...mappedInvoices);
+            }
+          }
         }
       } catch (stripeError) {
         console.error('Error fetching Stripe invoices:', stripeError.message);
