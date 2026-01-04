@@ -820,10 +820,10 @@ export class SubscriptionService implements OnModuleInit {
   // Get invoices/transactions
   async getInvoices(userId: string, role: string = 'DOCTOR') {
     try {
-      const isAdmin = role === 'ADMIN';
+      const isAdmin = role.toUpperCase() === 'ADMIN';
 
       if (isAdmin) {
-        const invoices = await this.stripe.invoices.list({ limit: 50 });
+        const invoices = await this.stripe.invoices.list({ limit: 100 });
         return invoices.data.map((invoice) => ({
           date: new Date(invoice.created * 1000),
           name: invoice.customer_name || invoice.customer_email || 'Customer',
@@ -870,7 +870,7 @@ export class SubscriptionService implements OnModuleInit {
   // Get all user purchases/transactions
   async getUserPurchases(userId: string, role: string = 'DOCTOR') {
     try {
-      const isAdmin = role === 'ADMIN';
+      const isAdmin = role.toUpperCase() === 'ADMIN';
 
       // Get user's subscription record (needed for customerId)
       const subscription = await this.prisma.subscription.findUnique({
@@ -902,27 +902,35 @@ export class SubscriptionService implements OnModuleInit {
       let stripeInvoices: any[] = [];
       try {
         if (isAdmin) {
-          // Admin sees all invoices (last 100 across all customers)
-          const invoices = await this.stripe.invoices.list({ limit: 100 });
-          stripeInvoices = invoices.data.map((invoice) => ({
-            date: new Date(invoice.created * 1000),
-            name: invoice.customer_name || invoice.customer_email || 'Customer',
-            email: invoice.customer_email || 'N/A',
-            transactionId: invoice.number || invoice.id,
-            stripeInvoiceId: invoice.id,
-            stripeCustomerId: invoice.customer as string,
-            status:
-              invoice.status === 'paid'
-                ? 'Paid'
-                : invoice.status === 'open'
-                  ? 'Pending'
-                  : 'Failed',
-            payAmount: `${(invoice.amount_paid / 100).toFixed(2)} ${invoice.currency.toUpperCase()}`,
-            amount: invoice.amount_paid / 100,
-            currency: invoice.currency.toUpperCase(),
-            invoiceUrl: invoice.hosted_invoice_url,
-            planType: invoice.lines.data[0]?.description || 'Subscription',
-          }));
+          // Admin sees all invoices - use auto-paging to get all history
+          const allInvoices: any[] = [];
+          
+          // Using a higher limit per page and auto-paging
+          for await (const invoice of this.stripe.invoices.list({ limit: 100 })) {
+            allInvoices.push({
+              date: new Date(invoice.created * 1000),
+              name: invoice.customer_name || invoice.customer_email || 'Customer',
+              email: invoice.customer_email || 'N/A',
+              transactionId: invoice.number || invoice.id,
+              stripeInvoiceId: invoice.id,
+              stripeCustomerId: invoice.customer as string,
+              status:
+                invoice.status === 'paid'
+                  ? 'Paid'
+                  : invoice.status === 'open'
+                    ? 'Pending'
+                    : 'Failed',
+              payAmount: `${(invoice.amount_paid / 100).toFixed(2)} ${invoice.currency.toUpperCase()}`,
+              amount: invoice.amount_paid / 100,
+              currency: invoice.currency.toUpperCase(),
+              invoiceUrl: invoice.hosted_invoice_url,
+              planType: invoice.lines.data[0]?.description || 'Subscription',
+            });
+            
+            // Safety break if there are thousands of invoices to prevent memory issues
+            if (allInvoices.length >= 1000) break;
+          }
+          stripeInvoices = allInvoices;
         } else {
           // Doctor sees only their invoices
           // Fetch doctor's email
