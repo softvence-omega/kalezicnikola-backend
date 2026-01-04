@@ -941,6 +941,7 @@ export class AiAgentService {
         callEndedAt: dto.call_ended_at ? new Date(dto.call_ended_at) : null,
 
         // New fields
+        agentId: dto.agent_id,
         callStatus: callStatus,
         wasTransferred: dto.was_transferred || callStatus === 'TRANSFERRED',
         reasonForCalling: reasonForCalling,
@@ -1079,6 +1080,7 @@ export class AiAgentService {
           audioUrl: audioUrl,
           duration: duration ? Math.round(duration) : undefined, // Ensure integer
           callSid: incomingCallSid, // UPDATE to the real ID so next time it matches!
+          agentId: realData.agent_id || dto.agent_id || existing.agentId,
           // Update phone number if we found it and existing record doesn't have one
           phoneNumber: callerPhoneNumber || existing.phoneNumber,
           // Only update transcript if missing
@@ -1153,6 +1155,7 @@ export class AiAgentService {
         doctorId: finalDoctorId,
         patientId,
         callSid: incomingCallSid,
+        agentId: realData.agent_id || dto.agent_id,
         phoneNumber: callerPhoneNumber,
         duration: tempDto.duration,
         audioUrl: audioUrl,
@@ -1838,6 +1841,143 @@ export class AiAgentService {
       success: true,
       updatedCount: updated.count,
       message: `${updated.count} call review statuses updated successfully`,
+    };
+  }
+
+  // =============== PERFORMANCE STATISTICS ===============
+  async getAgentPerformanceStats(doctorId?: string, agentId?: string) {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+    const where: any = {};
+    if (doctorId) where.doctorId = doctorId;
+    if (agentId) where.agentId = agentId;
+
+    // Current 30 days metrics
+    const currentMetrics = await this.prisma.callTranscription.findMany({
+      where: {
+        ...where,
+        createdAt: { gte: thirtyDaysAgo },
+      },
+      select: {
+        duration: true,
+        appointmentId: true,
+        wasTransferred: true,
+        createdAt: true,
+      },
+    });
+
+    // Previous 30 days metrics for comparison
+    const previousMetrics = await this.prisma.callTranscription.findMany({
+      where: {
+        ...where,
+        createdAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo },
+      },
+      select: {
+        duration: true,
+        appointmentId: true,
+        wasTransferred: true,
+      },
+    });
+
+    const calculateStats = (metrics: any[]) => {
+      const total = metrics.length;
+      if (total === 0)
+        return { total: 0, successRate: 0, avgDuration: 0, escalationRate: 0 };
+
+      const successful = metrics.filter((m) => m.appointmentId).length;
+      const transferred = metrics.filter((m) => m.wasTransferred).length;
+      const totalDuration = metrics.reduce(
+        (acc, m) => acc + (m.duration || 0),
+        0,
+      );
+
+      return {
+        total,
+        successRate: (successful / total) * 100,
+        avgDuration: totalDuration / total / 60, // in minutes
+        escalationRate: (transferred / total) * 100,
+      };
+    };
+
+    const currentStats = calculateStats(currentMetrics);
+    const previousStats = calculateStats(previousMetrics);
+
+    const calculateChange = (current: number, previous: number) => {
+      if (previous === 0) return current > 0 ? 100 : 0;
+      return ((current - previous) / previous) * 100;
+    };
+
+    // 7-day trend data
+    const trendData: any[] = [];
+    const counts: number[] = [];
+    const dates: Date[] = [];
+
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+      date.setHours(0, 0, 0, 0);
+      dates.push(date);
+
+      const nextDate = new Date(date);
+      nextDate.setDate(nextDate.getDate() + 1);
+
+      const count = await this.prisma.callTranscription.count({
+        where: {
+          ...where,
+          createdAt: { gte: date, lt: nextDate },
+        },
+      });
+      counts.push(count);
+    }
+
+    const maxCalls = Math.max(...counts, 0);
+
+    for (let i = 0; i < counts.length; i++) {
+      const date = dates[i];
+      const count = counts[i];
+      trendData.push({
+        day: date
+          .toLocaleDateString('en-US', { weekday: 'short' })
+          .toUpperCase(),
+        date: date.toISOString().split('T')[0],
+        calls: count,
+        valuePercentage:
+          maxCalls > 0 ? parseFloat(((count / maxCalls) * 100).toFixed(1)) : 0,
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        totalCalls: {
+          value: currentStats.total,
+          change: calculateChange(currentStats.total, previousStats.total),
+        },
+        appointmentSuccessRate: {
+          value: parseFloat(currentStats.successRate.toFixed(1)),
+          change: calculateChange(
+            currentStats.successRate,
+            previousStats.successRate,
+          ),
+        },
+        avgCallDuration: {
+          value: parseFloat(currentStats.avgDuration.toFixed(1)),
+          change: calculateChange(
+            currentStats.avgDuration,
+            previousStats.avgDuration,
+          ),
+        },
+        escalationRate: {
+          value: parseFloat(currentStats.escalationRate.toFixed(1)),
+          change: calculateChange(
+            currentStats.escalationRate,
+            previousStats.escalationRate,
+          ),
+        },
+        callVolumeTrend: trendData,
+      },
     };
   }
 }

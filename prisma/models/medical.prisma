@@ -200,6 +200,7 @@ model CallTranscription {
 
   // Call metadata
   callSid     String? @unique // ElevenLabs/Twilio call identifier
+  agentId     String? // ElevenLabs Agent Identifier
   phoneNumber String?
   duration    Int? // Duration in seconds
 
@@ -239,6 +240,7 @@ model CallTranscription {
 
   @@index([doctorId, createdAt])
   @@index([patientId, createdAt])
+  @@index([agentId])
   @@map("call_transcriptions")
 }
 

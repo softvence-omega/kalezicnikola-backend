@@ -13,6 +13,7 @@ import {
   Patch,
 } from '@nestjs/common';
 import { DoctorGuard } from 'src/common/guard/doctor.guard';
+import { AdminOrDoctorGuard } from 'src/common/guard/admin-or-doctor.guard';
 import { Response } from 'express';
 import { AiAgentService } from './ai-agent.service';
 import { WebhookAuthGuard } from './guards/webhook-auth.guard';
@@ -162,5 +163,22 @@ export class AiAgentController {
   ) {
     const doctorId = req.doctor.id;
     return this.aiAgentService.bulkUpdateCallReviewStatus(ids, isReviewed, doctorId);
+  }
+
+  @Get('statistics')
+  @UseGuards(AdminOrDoctorGuard)
+  async getAgentStatistics(
+    @Req() req: any,
+    @Query('agent_id') agentId?: string,
+    @Query('doctor_id') queryDoctorId?: string,
+  ) {
+    let doctorId = queryDoctorId;
+
+    if (req.role === 'doctor') {
+      doctorId = req.user.id;
+    }
+
+    // Admins can see all stats (doctorId undefined) or specific doctor stats
+    return this.aiAgentService.getAgentPerformanceStats(doctorId, agentId);
   }
 }
