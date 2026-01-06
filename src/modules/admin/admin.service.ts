@@ -180,17 +180,12 @@ export class AdminService {
       let mrr = 0;
 
       if (subscription) {
-        // Determine subscription status
-        if (subscription.isActive) {
-          if (subscription.status === 'ACTIVE') {
-            status = 'Active';
-          } else if (subscription.planType === 'TRIAL') {
-            status = 'Trial';
-          } else {
-            status = 'Active';
-          }
-        } else {
-          status = 'Inactive';
+        // Show actual subscription status
+        status = subscription.status || 'Unknown';
+        
+        // For trial plans, show "Trial" regardless of status
+        if (subscription.planType === 'TRIAL') {
+          status = 'Trial';
         }
 
         plan = subscription.planType || 'N/A';
@@ -200,10 +195,16 @@ export class AdminService {
       // Apply status filter if provided
       if (query.status) {
         const normalizedStatus = query.status.toLowerCase();
-        if (normalizedStatus === 'active' && status !== 'Active' && status !== 'Trial') {
-          return null;
-        } else if (normalizedStatus === 'inactive' && status !== 'Inactive' && status !== 'No Subscription') {
-          return null;
+        if (normalizedStatus === 'active') {
+          // Keep ACTIVE and TRIAL subscriptions
+          if (status !== 'ACTIVE' && status !== 'Trial') {
+            return null;
+          }
+        } else if (normalizedStatus === 'inactive') {
+          // Keep CANCELLED, PAST_DUE, PENDING and No Subscription
+          if (status === 'ACTIVE' || status === 'Trial') {
+            return null;
+          }
         }
       }
 
