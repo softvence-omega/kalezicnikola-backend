@@ -10,7 +10,7 @@ import {
 import { Type } from 'class-transformer';
 import { WeekDay } from 'generated/prisma';
 
-class SlotDto {
+class HalfDayDto {
   @IsString()
   @Matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, {
     message: 'startTime must be in HH:mm format (e.g., 09:00)',
@@ -25,17 +25,21 @@ class SlotDto {
 }
 
 export class CreateScheduleDto {
-  @Matches(/^(SATURDAY|SUNDAY|MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY)$/i, {
-    message: 'day must match a valid weekday name',
-  })
-  day: WeekDay;
+  @IsArray()
+  @IsEnum(WeekDay, { each: true })
+  days: WeekDay[];
 
   @IsOptional()
   @IsBoolean()
   isClosed?: boolean;
 
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => SlotDto)
-  slots: SlotDto[];
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => HalfDayDto)
+  firstHalf?: HalfDayDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => HalfDayDto)
+  secondHalf?: HalfDayDto;
 }

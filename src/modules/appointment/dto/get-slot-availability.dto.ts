@@ -6,5 +6,5 @@ export class GetSlotAvailabilityDto {
 
   @IsOptional()
   @IsUUID()
-  scheduleSlotId?: string; // Optional: check specific slot, otherwise check all slots
+  appointmentTypeId?: string; // Optional: check availability for a specific type
 }

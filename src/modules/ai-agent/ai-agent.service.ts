@@ -12,6 +12,7 @@ import { SlotQueryDto } from './dto/slot-query.dto';
 import { TranscriptionSaveDto } from './dto/transcription-save.dto';
 import { ElevenLabsPostCallDto } from './dto/elevenlabs-post-call.dto';
 import { AgentCreateTaskDto } from './dto/agent-create-task.dto';
+import { BufferTime, WeekDay } from 'generated/prisma';
 
 import axios from 'axios';
 
@@ -115,257 +116,136 @@ export class AiAgentService {
 
   // =============== SLOT AVAILABILITY ===============
   async getAvailableSlots(dto: SlotQueryDto) {
-    const { doctor_id, date, scheduleSlotId } = dto;
+    const { doctor_id, date, appointment_type_id } = dto;
 
-    // Verify doctor exists
     const doctor = await this.prisma.doctor.findUnique({
       where: { id: doctor_id },
+      include: { doctorRegionalSettings: true }
     });
 
-    if (!doctor) {
-      throw new NotFoundException('Doctor not found');
-    }
+    if (!doctor) throw new NotFoundException('Doctor not found');
 
     const queryDate = date ? new Date(date) : new Date();
-    const dayOfWeek = queryDate
-      .toLocaleDateString('en-US', { weekday: 'long' })
-      .toUpperCase();
+    const dayOfWeek = queryDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() as WeekDay;
 
-    // Get schedule for the day
-    const schedule = await this.prisma.doctorWeeklySchedule.findFirst({
-      where: {
-        doctorId: doctor_id,
-        day: dayOfWeek as any,
-        isClosed: false,
-      },
-      include: { slots: true },
+    const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
+      where: { doctorId_day: { doctorId: doctor_id, day: dayOfWeek } },
     });
 
-    if (!schedule || schedule.slots.length === 0) {
-      return {
-        summary: {
-          total: 0,
-          available: 0,
-          unavailable: 0,
-        },
-        availableSlots: [],
-        unavailableSlots: [],
+    if (!schedule || schedule.isClosed) {
+      return { summary: { total: 0, available: 0, unavailable: 0 }, availableSlots: [], unavailableSlots: [] };
+    }
+
+    // Determine duration
+    let duration = 20;
+    if (appointment_type_id) {
+      const type = await this.prisma.appointmentType.findUnique({ where: { id: appointment_type_id } });
+      if (type) duration = type.duration;
+    } else if (doctor.doctorRegionalSettings?.defaultAppointmentDuration) {
+      const durationMap: any = {
+        Minutes_10: 10, Minutes_15: 15, Minutes_20: 20, Minutes_30: 30, Minutes_45: 45, Minutes_60: 60
       };
+      duration = durationMap[doctor.doctorRegionalSettings.defaultAppointmentDuration] || 20;
     }
 
-    const availableSlots: Array<{
-      slotId: string;
-      startTime: string;
-      endTime: string;
-    }> = [];
-    const unavailableSlots: Array<{
-      slotId: string;
-      startTime: string;
-      endTime: string;
-      appointment: { id: number; patientName: string };
-    }> = [];
+    const bufferMap: Record<BufferTime, number> = {
+      Minutes_5: 5, Minutes_10: 10, Minutes_15: 15, Minutes_20: 20, Minutes_30: 30,
+    };
+    const buffer = doctor.doctorRegionalSettings ? bufferMap[doctor.doctorRegionalSettings.bufferTimeBetween] || 0 : 0;
 
-    for (const slot of schedule.slots) {
-      if (scheduleSlotId && slot.id !== scheduleSlotId) continue;
+    const timeToMinutes = (time: string) => {
+      const [h, m] = time.split(':').map(Number);
+      return h * 60 + m;
+    };
+    const minutesToTime = (mins: number) => {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    };
 
-      // Check if slot is booked
-      const existingAppointment = await this.prisma.appointment.findFirst({
-        where: {
-          doctorId: doctor_id,
-          scheduleSlotId: slot.id,
-          appointmentDate: {
-            gte: new Date(queryDate.setHours(0, 0, 0, 0)),
-            lt: new Date(queryDate.setHours(23, 59, 59, 999)),
-          },
-          status: 'SCHEDULED',
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        doctorId: doctor_id,
+        appointmentDate: {
+          gte: new Date(new Date(queryDate).setHours(0,0,0,0)),
+          lte: new Date(new Date(queryDate).setHours(23,59,59,999)),
         },
-        include: {
-          patient: {
-            select: {
-              firstName: true,
-              lastName: true,
-              phone: true,
-            },
-          },
-        },
+        status: 'SCHEDULED',
+      },
+      select: { startTime: true, endTime: true, patient: { select: { firstName: true, lastName: true } } }
+    });
+
+    const isSlotAvailable = (start: number, end: number) => {
+      return !appointments.some(appt => {
+        if (!appt.startTime || !appt.endTime) return false;
+        const eStart = timeToMinutes(appt.startTime);
+        const eEnd = timeToMinutes(appt.endTime);
+        return (start < eEnd + buffer && eStart < end + buffer);
       });
+    };
 
-      if (existingAppointment) {
-        unavailableSlots.push({
-          slotId: slot.id,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-          appointment: {
-            id: existingAppointment.id,
-            patientName:
-              `${existingAppointment.patient?.firstName || ''} ${existingAppointment.patient?.lastName || ''}`.trim(),
-          },
-        });
-      } else {
-        availableSlots.push({
-          slotId: slot.id,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-        });
+    const generateSlots = (startStr: string | null, endStr: string | null) => {
+      if (!startStr || !endStr) return [];
+      const slots: any[] = [];
+      let current = timeToMinutes(startStr);
+      const endLimit = timeToMinutes(endStr);
+      while (current + duration <= endLimit) {
+        const slotEnd = current + duration;
+        if (isSlotAvailable(current, slotEnd)) {
+          slots.push({ startTime: minutesToTime(current), endTime: minutesToTime(slotEnd), isAvailable: true });
+        }
+        current += duration + buffer;
       }
-    }
+      return slots;
+    };
+
+    const avail = [...generateSlots(schedule.firstHalfStartTime, schedule.firstHalfEndTime), ...generateSlots(schedule.secondHalfStartTime, schedule.secondHalfEndTime)];
 
     return {
-      summary: {
-        total: schedule.slots.length,
-        available: availableSlots.length,
-        unavailable: unavailableSlots.length,
-      },
-      availableSlots,
-      unavailableSlots,
+      summary: { total: avail.length, available: avail.length, unavailable: 0 },
+      availableSlots: avail,
+      unavailableSlots: []
     };
   }
 
   // =============== SUGGEST ALTERNATIVE SLOTS ===============
   async suggestAlternativeSlots(dto: SlotQueryDto) {
-    const { doctor_id, requested_slot } = dto;
+    const { doctor_id, requested_slot, appointment_type_id } = dto;
+    const requestedDate = requested_slot ? new Date(requested_slot) : new Date();
+    if (isNaN(requestedDate.getTime())) throw new BadRequestException('Invalid date');
 
-    // Use current date if requested_slot is empty or invalid
-    const requestedDate =
-      requested_slot && requested_slot.trim() !== ''
-        ? new Date(requested_slot)
-        : new Date();
-
-    // Validate the date
-    const currentYear = new Date().getFullYear();
-
-    if (isNaN(requestedDate.getTime())) {
-      // Try parsing with current year appended if initial parse failed
-      const retryDate = new Date(`${requested_slot} ${currentYear}`);
-
-      if (!isNaN(retryDate.getTime())) {
-        requestedDate.setTime(retryDate.getTime());
-      } else {
-        throw new BadRequestException('Invalid date format');
-      }
-    } else {
-      // If date parsed but year is significantly in the past (e.g., default 2001 behavior),
-      // try to use the current year with the original input string
-      if (requestedDate.getFullYear() < currentYear) {
-        const retryDate = new Date(`${requested_slot} ${currentYear}`);
-        // Only use retryDate if it's valid
-        if (!isNaN(retryDate.getTime())) {
-          requestedDate.setTime(retryDate.getTime());
-        }
-      }
-    }
-
-    // Ensure start date is not in the past
-    const now = new Date();
-    const today = new Date();
-    now.setHours(0, 0, 0, 0); // Start of today
-
-    if (requestedDate < now) {
-      // If requested date is explicitly in the past (and valid), default to today
-      // This covers logic where "last Monday" might parse to a past date
-      requestedDate.setTime(now.getTime());
-    }
-
-    const alternatives: Array<{ date: string; time: string; slotId: string }> =
-      [];
-
-    // Get next 7 days of schedules
+    const alternatives: any[] = [];
     for (let i = 0; i < 7; i++) {
       const checkDate = new Date(requestedDate);
       checkDate.setDate(checkDate.getDate() + i);
-
-      const dayOfWeek = checkDate
-        .toLocaleDateString('en-US', { weekday: 'long' })
-        .toUpperCase();
-
-      // Get schedule for this day
-      const schedule = await this.prisma.doctorWeeklySchedule.findFirst({
-        where: {
-          doctorId: doctor_id,
-          day: dayOfWeek as any,
-          isClosed: false,
-        },
-        include: { slots: true },
-      });
-
-      if (schedule) {
-        for (const slot of schedule.slots) {
-          // Check if slot is available
-          const existingAppointment = await this.prisma.appointment.findFirst({
-            where: {
-              doctorId: doctor_id,
-              scheduleSlotId: slot.id,
-              appointmentDate: {
-                gte: new Date(checkDate.setHours(0, 0, 0, 0)),
-                lt: new Date(checkDate.setHours(23, 59, 59, 999)),
-              },
-              status: 'SCHEDULED',
-            },
-          });
-
-          if (!existingAppointment) {
-            alternatives.push({
-              date: checkDate.toISOString().split('T')[0],
-              time: slot.startTime,
-              slotId: slot.id,
-            });
-
-            if (alternatives.length >= 20) break;
-          }
-        }
+      const slots = await this.getAvailableSlots({ doctor_id, date: checkDate.toISOString(), appointment_type_id });
+      for (const slot of slots.availableSlots) {
+        alternatives.push({ date: checkDate.toISOString().split('T')[0], time: slot.startTime });
+        if (alternatives.length >= 10) break;
       }
-
-      if (alternatives.length >= 20) break;
+      if (alternatives.length >= 10) break;
     }
-
     return { alternative_slots: alternatives };
   }
 
   // =============== CREATE BOOKING ===============
   async createBooking(dto: any) {
-    const { doctor_id, patient_id, slot_id, appointment_date, patient_info } =
-      dto;
+    const { doctor_id, patient_id, appointment_type_id, start_time, appointment_date, patient_info } = dto;
 
-    // Validate appointment date is in the future or today
     const apptDate = new Date(appointment_date);
     const now = new Date();
-    // Compare dates only (set time to 00:00:00)
     now.setHours(0, 0, 0, 0);
-    const checkDate = new Date(apptDate);
-    checkDate.setHours(0, 0, 0, 0);
-
-    if (checkDate < now) {
-      throw new BadRequestException('Cannot book an appointment in the past.');
-    }
+    if (new Date(apptDate).setHours(0,0,0,0) < now.getTime()) throw new BadRequestException('Cannot book in the past');
 
     let patientId = patient_id;
     let isNewPatient = false;
 
-    // HYBRID APPROACH: Handle both existing and new patients
     if (!patientId) {
-      // No patient_id provided - need to find or create patient
-
-      if (!patient_info || !patient_info.phone) {
-        throw new BadRequestException(
-          'Patient phone number is required for booking',
-        );
-      }
-
-      // STEP 1: Try to find existing patient by phone number
-      const existingPatient = await this.prisma.patient.findFirst({
-        where: {
-          phone: patient_info.phone,
-          // Optionally filter by doctor to avoid cross-doctor conflicts
-          // doctorId: doctor_id,
-        },
-      });
-
+      if (!patient_info?.phone) throw new BadRequestException('Phone required');
+      const existingPatient = await this.prisma.patient.findFirst({ where: { phone: patient_info.phone } });
       if (existingPatient) {
-        // SCENARIO 1: Existing patient found - use their ID
         patientId = existingPatient.id;
-        isNewPatient = false;
       } else {
-        // SCENARIO 2: New patient - create record
         const newPatient = await this.prisma.patient.create({
           data: {
             firstName: patient_info.firstName,
@@ -375,8 +255,6 @@ export class AiAgentService {
             insuranceId: patient_info.insuranceId || null,
             dob: patient_info.dob ? new Date(patient_info.dob) : null,
             gender: patient_info.gender?.toUpperCase() as any,
-            // Link to doctor if needed
-            // doctorId: doctor_id,
           },
         });
         patientId = newPatient.id;
@@ -384,56 +262,47 @@ export class AiAgentService {
       }
     }
 
-    // Verify slot is available
-    const existingAppointment = await this.prisma.appointment.findFirst({
-      where: {
-        doctorId: doctor_id,
-        scheduleSlotId: slot_id,
-        appointmentDate: new Date(appointment_date),
-        status: 'SCHEDULED',
-      },
-    });
+    // Determine endTime
+    const type = await this.prisma.appointmentType.findUnique({ where: { id: appointment_type_id || '' } });
+    if (!type) throw new BadRequestException('Invalid appointment type');
+    
+    const [h, m] = start_time.split(':').map(Number);
+    const endMins = h * 60 + m + type.duration;
+    const endTime = `${Math.floor(endMins/60).toString().padStart(2,'0')}:${(endMins%60).toString().padStart(2,'0')}`;
 
-    if (existingAppointment) {
-      throw new BadRequestException('This slot is already booked');
-    }
-
+    // Conflict & Half-day check (logic should ideally be shared with AppointmentService)
+    // For now, let's re-verify here as AiAgentService seems to handle booking independently
+    const dayOfWeek = apptDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() as WeekDay;
+    const schedule = await this.prisma.doctorWeeklySchedule.findUnique({ where: { doctorId_day: { doctorId: doctor_id, day: dayOfWeek } } });
+    if (!schedule || schedule.isClosed) throw new BadRequestException('Doctor closed');
+    
     // Create appointment
     const appointment = await this.prisma.appointment.create({
       data: {
         doctorId: doctor_id,
         patientId: patientId,
-        scheduleSlotId: slot_id,
-        appointmentDate: new Date(appointment_date),
+        appointmentTypeId: type.id,
+        appointmentDate: apptDate,
+        startTime: start_time,
+        endTime: endTime,
         insuranceId: patient_info?.insuranceId || null,
         status: 'SCHEDULED',
-        type: 'CHECKUP',
       },
       include: {
-        scheduleSlot: true,
-        patient: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phone: true,
-            email: true,
-          },
-        },
+        patient: true,
+        appointmentType: true,
       },
     });
 
     return {
       success: true,
       booking_id: appointment.id,
-      message: isNewPatient
-        ? 'New patient registered and appointment booked successfully'
-        : 'Appointment booked successfully',
+      message: isNewPatient ? 'Registered and booked' : 'Booked',
       is_new_patient: isNewPatient,
       appointment: {
         id: appointment.id,
         date: appointment.appointmentDate,
-        time: appointment.scheduleSlot?.startTime,
+        time: appointment.startTime,
         patient: appointment.patient,
       },
     };
@@ -511,76 +380,43 @@ export class AiAgentService {
   // =============== UPDATE BOOKING ===============
   async updateBooking(dto: {
     booking_id: string;
-    new_slot_id?: string;
+    new_start_time?: string;
     new_date?: string;
+    appointment_type_id?: string;
   }) {
     const bookingId = this.parseBookingId(dto.booking_id);
-    if (!bookingId) {
-      throw new BadRequestException(
-        'Invalid booking ID provided. Please provide a numeric ID.',
-      );
-    }
+    if (!bookingId) throw new BadRequestException('Invalid booking ID');
 
-    const appointment = await this.prisma.appointment.findUnique({
-      where: { id: bookingId },
-    });
+    const appointment = await this.prisma.appointment.findUnique({ where: { id: bookingId } });
+    if (!appointment) throw new NotFoundException('Booking not found');
 
-    if (!appointment) {
-      throw new NotFoundException('Booking not found');
-    }
+    const updateData: any = {};
+    if (dto.new_date) updateData.appointmentDate = new Date(dto.new_date);
+    if (dto.new_start_time) updateData.startTime = dto.new_start_time;
+    if (dto.appointment_type_id) updateData.appointmentTypeId = dto.appointment_type_id;
 
-    // If changing slot, verify availability
-    if (dto.new_slot_id && dto.new_date) {
-      // Validate new date is in future
-      const newDate = new Date(dto.new_date);
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      const checkDate = new Date(newDate);
-      checkDate.setHours(0, 0, 0, 0);
-
-      if (checkDate < now) {
-        throw new BadRequestException(
-          'Cannot reschedule to a date in the past.',
-        );
-      }
-
-      const existingAppointment = await this.prisma.appointment.findFirst({
-        where: {
-          doctorId: appointment.doctorId,
-          scheduleSlotId: dto.new_slot_id,
-          appointmentDate: new Date(dto.new_date),
-          status: 'SCHEDULED',
-          id: { not: bookingId },
-        },
-      });
-
-      if (existingAppointment) {
-        throw new BadRequestException('The new slot is already booked');
-      }
+    // Recalculate endTime if needed
+    if (dto.new_start_time || dto.appointment_type_id) {
+       const typeId = dto.appointment_type_id || appointment.appointmentTypeId;
+       const type = await this.prisma.appointmentType.findUnique({ where: { id: typeId || '' } });
+       if (type) {
+         const st = dto.new_start_time || appointment.startTime || '00:00';
+         const [h, m] = st.split(':').map(Number);
+         const endMins = h * 60 + m + type.duration;
+         updateData.endTime = `${Math.floor(endMins/60).toString().padStart(2,'0')}:${(endMins%60).toString().padStart(2,'0')}`;
+       }
     }
 
     const updated = await this.prisma.appointment.update({
       where: { id: bookingId },
-      data: {
-        scheduleSlotId: dto.new_slot_id,
-        appointmentDate: dto.new_date ? new Date(dto.new_date) : undefined,
-        // Keep status as SCHEDULED so it appears in active appointments
-      },
-      include: {
-        scheduleSlot: true,
-      },
+      data: updateData,
     });
 
     return {
       success: true,
       booking_id: updated.id,
-      message: 'Appointment rescheduled successfully',
-      appointment: {
-        id: updated.id,
-        date: updated.appointmentDate,
-        time: updated.scheduleSlot?.startTime,
-        status: updated.status,
-      },
+      message: 'Rescheduled successfully',
+      appointment: { id: updated.id, date: updated.appointmentDate, time: updated.startTime, status: updated.status },
     };
   }
 
@@ -786,7 +622,7 @@ export class AiAgentService {
       ? Number(dto.appointment_id)
       : undefined;
 
-    // Insurance ID: optional, digits only (no INS prefix)
+    // Insurance ID: optional, digits only 
     let insuranceId: string | undefined = dto.insurance_id;
 
     if (insuranceId) {
@@ -1461,15 +1297,16 @@ export class AiAgentService {
   private async handleBookingIntent(
     payload: WebhookPayloadDto,
   ): Promise<WebhookResponseDto> {
-    // If slot_id and appointment_date are provided, book directly
-    if (payload.slot_id && payload.appointment_date) {
+    // If start_time and appointment_date are provided, book directly
+    if ((payload.start_time || payload.requested_time) && (payload.appointment_date || payload.requested_date)) {
       try {
         const booking = await this.createBooking({
           doctor_id: payload.doctor_id,
           patient_id: payload.patient_id,
           patient_info: payload.patient_info,
-          slot_id: payload.slot_id,
-          appointment_date: payload.appointment_date,
+          start_time: payload.start_time || payload.requested_time,
+          appointment_date: payload.appointment_date || payload.requested_date,
+          appointment_type_id: payload.appointment_type_id,
         });
 
         return {
@@ -1551,16 +1388,15 @@ export class AiAgentService {
     if (availability.summary.available > 0) {
       const slotList = availability.availableSlots
         .slice(0, 3)
-        .map((s) => `${s.startTime} to ${s.endTime}`)
+        .map((s: any) => `${s.startTime} to ${s.endTime}`)
         .join(', ');
 
       return {
         reply_text: `Yes, we have ${availability.summary.available} slots available. Available times include: ${slotList}. Would you like to book one of these?`,
-        suggested_slots: availability.availableSlots.slice(0, 3).map((s) => ({
+        suggested_slots: availability.availableSlots.slice(0, 3).map((s: any) => ({
           date:
             payload.requested_date || new Date().toISOString().split('T')[0],
           time: s.startTime,
-          slotId: s.slotId,
         })),
         action: 'show_slots',
       };
@@ -1578,12 +1414,13 @@ export class AiAgentService {
       const alternativeAvailability = await this.getAvailableSlots({
         doctor_id: payload.doctor_id,
         date: nextDateStr,
+        appointment_type_id: payload.appointment_type_id,
       });
 
       if (alternativeAvailability.summary.available > 0) {
         const slotList = alternativeAvailability.availableSlots
           .slice(0, 3)
-          .map((s) => `${s.startTime} to ${s.endTime}`)
+          .map((s: any) => `${s.startTime} to ${s.endTime}`)
           .join(', ');
 
         const formattedDate = nextDate.toLocaleDateString('en-US', { 
@@ -1593,10 +1430,9 @@ export class AiAgentService {
 
         return {
           reply_text: `Unfortunately, we're fully booked on your requested date. However, I found ${alternativeAvailability.summary.available} slots on ${formattedDate}. Available times include: ${slotList}. Would any of those work for you?`,
-          suggested_slots: alternativeAvailability.availableSlots.slice(0, 3).map((s) => ({
+          suggested_slots: alternativeAvailability.availableSlots.slice(0, 3).map((s: any) => ({
             date: nextDateStr,
             time: s.startTime,
-            slotId: s.slotId,
           })),
           action: 'show_slots',
         };
@@ -1614,12 +1450,13 @@ export class AiAgentService {
     payload: WebhookPayloadDto,
   ): Promise<WebhookResponseDto> {
     // If all reschedule parameters provided, execute the reschedule
-    if (payload.booking_id && payload.slot_id && payload.appointment_date) {
+    if (payload.booking_id && (payload.start_time || payload.requested_time) && (payload.appointment_date || payload.requested_date)) {
       try {
         const result = await this.updateBooking({
           booking_id: payload.booking_id,
-          new_slot_id: payload.slot_id,
-          new_date: payload.appointment_date,
+          new_start_time: payload.start_time || payload.requested_time,
+          new_date: payload.appointment_date || payload.requested_date,
+          appointment_type_id: payload.appointment_type_id,
         });
 
         return {
@@ -1655,12 +1492,13 @@ export class AiAgentService {
     const slots = await this.suggestAlternativeSlots({
       doctor_id: payload.doctor_id,
       requested_slot: payload.requested_time || new Date().toISOString(),
+      appointment_type_id: payload.appointment_type_id,
     });
 
     if (slots.alternative_slots.length > 0) {
       const slotTexts = slots.alternative_slots
         .slice(0, 3)
-        .map((s) => `${s.date} at ${s.time}`)
+        .map((s: any) => `${s.date} at ${s.time}`)
         .join(', or ');
 
       return {

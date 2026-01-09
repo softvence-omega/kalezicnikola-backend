@@ -61,7 +61,8 @@ model Doctor {
 
   staff Staff[]
 
-  weeklySchedules DoctorWeeklySchedule[]
+  weeklySchedules  DoctorWeeklySchedule[]
+  appointmentTypes AppointmentType[]
 
   // Settings Relations
   doctorNotificationSettings DoctorNotificationSettings?

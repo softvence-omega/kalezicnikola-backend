@@ -12,7 +12,7 @@ import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { GetAllAppointmentsDto } from './dto/get-all-appointments.dto';
 import { GetSlotAvailabilityDto } from './dto/get-slot-availability.dto';
-import { AppointmentStatus } from 'generated/prisma';
+import { AppointmentStatus, BufferTime, WeekDay } from 'generated/prisma';
 
 @Injectable()
 export class AppointmentService {
@@ -24,7 +24,6 @@ export class AppointmentService {
 
   // ----------------- CREATE APPOINTMENT -------------------
   async createAppointment(accessToken: string, dto: CreateAppointmentDto) {
-    // 1. Verify doctor is authenticated
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
       include: { doctor: true },
@@ -36,27 +35,24 @@ export class AppointmentService {
 
     const doctorId = session.doctorId;
 
-    // 2. Lookup patient by insuranceId
+    // 1. Fetch AppointmentType to get duration
+    const appointmentType = await this.prisma.appointmentType.findUnique({
+      where: { id: dto.appointmentTypeId },
+    });
+
+    if (!appointmentType) {
+      throw new BadRequestException('Invalid appointment type');
+    }
+
+    // 2. Lookup/Create Patient
     let patient = await this.prisma.patient.findUnique({
       where: { insuranceId: dto.insuranceId },
     });
 
-    // 3. If patient not found, create a new one
     if (!patient) {
-      // Validate required fields for new patient
-      if (
-        !dto.firstName ||
-        !dto.lastName ||
-        !dto.phone ||
-        !dto.dob ||
-        !dto.gender ||
-        !dto.bloodGroup
-      ) {
-        throw new BadRequestException(
-          'Patient does not exist with this insurance ID. Please provide patient details (firstName, lastName, phone, dob, gender, bloodGroup) to create a new patient.',
-        );
+      if (!dto.firstName || !dto.lastName || !dto.phone || !dto.dob || !dto.gender || !dto.bloodGroup) {
+        throw new BadRequestException('New patient details required');
       }
-
       patient = await this.prisma.patient.create({
         data: {
           firstName: dto.firstName,
@@ -71,74 +67,100 @@ export class AppointmentService {
       });
     }
 
-    // 4. Verify scheduleSlotId exists and is a valid DoctorScheduleSlot
-    const scheduleSlot = await this.prisma.doctorScheduleSlot.findUnique({
-      where: { id: dto.scheduleSlotId },
-      include: {
-        schedule: true,
-      },
+    // 3. Time Calculations
+    const timeToMinutes = (time: string) => {
+      const [h, m] = time.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const minutesToTime = (mins: number) => {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    };
+
+    const startMins = timeToMinutes(dto.startTime);
+    const endMins = startMins + appointmentType.duration;
+    const endTime = minutesToTime(endMins);
+
+    // 4. Verify Schedule fits in Half-Days
+    const appointmentDate = new Date(dto.appointmentDate);
+    const dayOfWeek = appointmentDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() as WeekDay;
+
+    const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
+      where: { doctorId_day: { doctorId, day: dayOfWeek } },
     });
 
-    if (!scheduleSlot) {
-      throw new NotFoundException('Schedule slot not found');
+    if (!schedule || schedule.isClosed) {
+      throw new BadRequestException('Doctor is not available on this day');
     }
 
-    // 5. Verify the schedule slot belongs to the authenticated doctor
-    if (scheduleSlot.schedule.doctorId !== doctorId) {
-      throw new UnauthorizedException(
-        'This schedule slot does not belong to you',
-      );
+    let fitsInHalf = false;
+    const halves = [
+      { start: schedule.firstHalfStartTime, end: schedule.firstHalfEndTime },
+      { start: schedule.secondHalfStartTime, end: schedule.secondHalfEndTime }
+    ];
+
+    for (const half of halves) {
+      if (half.start && half.end) {
+        const hStart = timeToMinutes(half.start);
+        const hEnd = timeToMinutes(half.end);
+        if (startMins >= hStart && endMins <= hEnd) {
+          fitsInHalf = true;
+          break;
+        }
+      }
     }
 
-    // 6. Extract day of week from appointmentDate and verify it matches the schedule's day
-    const appointmentDate = new Date(dto.appointmentDate);
-    const dayOfWeek = appointmentDate
-      .toLocaleDateString('en-US', {
-        weekday: 'long',
-      })
-      .toUpperCase();
-
-    if (dayOfWeek !== scheduleSlot.schedule.day) {
-      throw new BadRequestException(
-        `Appointment date (${dayOfWeek}) does not match schedule day (${scheduleSlot.schedule.day})`,
-      );
+    if (!fitsInHalf) {
+      throw new BadRequestException('Appointment must fit entirely within either the first or second half of the doctor\'s schedule');
     }
 
-    // 7. Ensure appointmentDate is in the future
-    const now = new Date();
-    now.setHours(0, 0, 0, 0); // Reset time to start of day for comparison
-    appointmentDate.setHours(0, 0, 0, 0);
+    // 5. Conflict Check with Buffer
+    const regionalSettings = await this.prisma.doctorRegionalSettings.findUnique({
+      where: { doctorId },
+    });
 
-    if (appointmentDate < now) {
-      throw new BadRequestException('Appointment date must be in the future');
-    }
+    const bufferMap: Record<BufferTime, number> = {
+      Minutes_5: 5,
+      Minutes_10: 10,
+      Minutes_15: 15,
+      Minutes_20: 20,
+      Minutes_30: 30,
+    };
+    const buffer = regionalSettings ? bufferMap[regionalSettings.bufferTimeBetween] || 0 : 0;
 
-    // 8. Check for conflicting appointments (same doctor, same slot, same date)
-    // Only SCHEDULED appointments block the slot; COMPLETED and CANCELLED free it up
-    const conflictingAppointment = await this.prisma.appointment.findFirst({
+    const existingAppointments = await this.prisma.appointment.findMany({
       where: {
         doctorId,
-        scheduleSlotId: dto.scheduleSlotId,
         appointmentDate: new Date(dto.appointmentDate),
         status: 'SCHEDULED',
       },
+      select: { startTime: true, endTime: true }
     });
 
-    if (conflictingAppointment) {
-      throw new ConflictException(
-        'This time slot is already booked for the selected date',
-      );
+    for (const appt of existingAppointments) {
+      if (appt.startTime && appt.endTime) {
+        const eStart = timeToMinutes(appt.startTime);
+        const eEnd = timeToMinutes(appt.endTime);
+
+        // Conflict formula: new_start < existing_end + buffer AND existing_start < new_end + buffer
+        if (startMins < eEnd + buffer && eStart < endMins + buffer) {
+          throw new ConflictException('Time slot conflicts with an existing appointment (including buffer time)');
+        }
+      }
     }
 
-    // 9. Create appointment with auto-populated patient information
+    // 6. Create Appointment
     const appointment = await this.prisma.appointment.create({
       data: {
         doctorId,
         patientId: patient.id,
-        scheduleSlotId: dto.scheduleSlotId,
+        appointmentTypeId: appointmentType.id,
         appointmentDate: new Date(dto.appointmentDate),
+        startTime: dto.startTime,
+        endTime: endTime,
         insuranceId: dto.insuranceId,
-        // Auto-populate patient information for historical reference
         firstName: patient.firstName,
         lastName: patient.lastName,
         email: patient.email,
@@ -146,34 +168,17 @@ export class AppointmentService {
         dob: patient.dob,
         gender: patient.gender,
         bloodGroup: patient.bloodGroup,
-        // Optional fields
         appointmentDetails: dto.appointmentDetails,
         address: dto.address || patient.address,
         status: dto.status || 'SCHEDULED',
       },
       include: {
-        patient: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-          },
-        },
-        scheduleSlot: {
-          select: {
-            id: true,
-            startTime: true,
-            endTime: true,
-          },
-        },
+        patient: true,
+        appointmentType: true,
       },
     });
 
-    return {
-      appointment,
-    };
+    return { appointment };
   }
 
   // ----------------- GET ALL APPOINTMENTS -------------------
@@ -234,13 +239,7 @@ export class AppointmentService {
     const appointments = await this.prisma.appointment.findMany({
       where,
       include: {
-        scheduleSlot: {
-          select: {
-            id: true,
-            startTime: true,
-            endTime: true,
-          },
-        },
+        appointmentType: true,
         patient: {
           select: {
             id: true,
@@ -306,16 +305,10 @@ export class AppointmentService {
         },
       },
       include: {
-        scheduleSlot: {
-          select: {
-            id: true,
-            startTime: true,
-            endTime: true,
-          },
-        },
+        appointmentType: true,
       },
       orderBy: {
-        createdAt: 'asc',
+        startTime: 'asc',
       },
     });
 
@@ -339,146 +332,111 @@ export class AppointmentService {
     };
   }
 
-  // ----------------- GET SLOT AVAILABILITY -------------------
   async getSlotAvailability(
     accessToken: string,
-    query: { date: string; scheduleSlotId?: string },
+    query: GetSlotAvailabilityDto,
   ) {
-    // Verify doctor is authenticated
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
-      include: { doctor: true },
+      include: { doctor: { include: { doctorRegionalSettings: true } } },
     });
 
-    if (!session || !session.doctorId || !session.doctor) {
-      throw new UnauthorizedException('Invalid session or doctor not found');
-    }
-
+    if (!session?.doctorId || !session.doctor) throw new UnauthorizedException();
     const doctorId = session.doctorId;
 
-    // Parse the date
-    const targetDate = new Date(query.date);
-    const startOfDay = new Date(targetDate.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(targetDate.setHours(23, 59, 59, 999));
+    const appointmentDate = new Date(query.date);
+    const dayOfWeek = appointmentDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() as WeekDay;
 
-    // Get the day of week for the target date
-    const dayOfWeek = new Date(query.date)
-      .toLocaleDateString('en-US', { weekday: 'long' })
-      .toUpperCase();
-
-    // Build where clause for slots
-    const slotWhere: any = {
-      schedule: {
-        doctorId,
-        day: dayOfWeek as any,
-        isClosed: false,
-      },
-    };
-
-    // If specific slot requested, filter by it
-    if (query.scheduleSlotId) {
-      slotWhere.id = query.scheduleSlotId;
-    }
-
-    // Get all schedule slots for this doctor on this day
-    const slots = await this.prisma.doctorScheduleSlot.findMany({
-      where: slotWhere,
-      include: {
-        schedule: {
-          select: {
-            day: true,
-            isClosed: true,
-          },
-        },
-        appointments: {
-          where: {
-            appointmentDate: {
-              gte: startOfDay,
-              lte: endOfDay,
-            },
-            status: AppointmentStatus.SCHEDULED,
-          },
-          include: {
-            patient: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                phone: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        startTime: 'asc',
-      },
+    const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
+      where: { doctorId_day: { doctorId, day: dayOfWeek } },
     });
 
-    // Categorize slots as available or unavailable
-    const availableSlots: any[] = [];
-    const unavailableSlots: any[] = [];
+    if (!schedule || schedule.isClosed) {
+      return { message: 'Doctor is closed on this day', data: { date: query.date, availableSlots: [] } };
+    }
 
-    for (const slot of slots) {
-      const slotInfo = {
-        slotId: slot.id,
-        startTime: slot.startTime,
-        endTime: slot.endTime,
-        day: slot.schedule.day,
+    // Determine duration: from provided type or default settings
+    let duration = 20; // fallback
+    if (query.appointmentTypeId) {
+      const type = await this.prisma.appointmentType.findUnique({ where: { id: query.appointmentTypeId } });
+      if (type) duration = type.duration;
+    } else if (session.doctor.doctorRegionalSettings?.defaultAppointmentDuration) {
+      // Map enum Minutes_20 to number 20
+      const durationMap: any = {
+        Minutes_10: 10, Minutes_15: 15, Minutes_20: 20, Minutes_30: 30, Minutes_45: 45, Minutes_60: 60
       };
+      duration = durationMap[session.doctor.doctorRegionalSettings.defaultAppointmentDuration] || 20;
+    }
 
-      if (slot.appointments.length > 0) {
-        // Slot is booked
-        unavailableSlots.push({
-          ...slotInfo,
-          isAvailable: false,
-          appointment: {
-            id: slot.appointments[0].id,
-            patientName: `${slot.appointments[0].firstName} ${slot.appointments[0].lastName}`,
-            appointmentDetails: slot.appointments[0].appointmentDetails,
-            status: slot.appointments[0].status,
-            type: slot.appointments[0].type,
-          },
-        });
-      } else {
-        // Slot is available
-        availableSlots.push({
-          ...slotInfo,
-          isAvailable: true,
-        });
+    const bufferMap: Record<BufferTime, number> = {
+      Minutes_5: 5, Minutes_10: 10, Minutes_15: 15, Minutes_20: 20, Minutes_30: 30,
+    };
+    const buffer = session.doctor.doctorRegionalSettings ? bufferMap[session.doctor.doctorRegionalSettings.bufferTimeBetween] || 0 : 0;
+
+    const timeToMinutes = (time: string) => {
+      const [h, m] = time.split(':').map(Number);
+      return h * 60 + m;
+    };
+    const minutesToTime = (mins: number) => {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    };
+
+    // Get existing appointments to check for conflicts
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        doctorId,
+        appointmentDate: {
+          gte: new Date(new Date(query.date).setHours(0,0,0,0)),
+          lte: new Date(new Date(query.date).setHours(23,59,59,999)),
+        },
+        status: 'SCHEDULED',
+      },
+      select: { startTime: true, endTime: true }
+    });
+
+    const isSlotAvailable = (start: number, end: number) => {
+      return !appointments.some(appt => {
+        if (!appt.startTime || !appt.endTime) return false;
+        const eStart = timeToMinutes(appt.startTime);
+        const eEnd = timeToMinutes(appt.endTime);
+        return (start < eEnd + buffer && eStart < end + buffer);
+      });
+    };
+
+    const generateSlots = (startStr: string | null, endStr: string | null) => {
+      if (!startStr || !endStr) return [];
+      const slots: any[] = [];
+      let current = timeToMinutes(startStr);
+      const endLimit = timeToMinutes(endStr);
+
+      while (current + duration <= endLimit) {
+        const slotEnd = current + duration;
+        if (isSlotAvailable(current, slotEnd)) {
+          slots.push({
+            startTime: minutesToTime(current),
+            endTime: minutesToTime(slotEnd),
+            isAvailable: true
+          });
+        }
+        current += duration + buffer;
       }
-    }
+      return slots;
+    };
 
-    const totalSlots = slots.length;
-    const availableCount = availableSlots.length;
-    const unavailableCount = unavailableSlots.length;
+    const firstHalfSlots = generateSlots(schedule.firstHalfStartTime, schedule.firstHalfEndTime);
+    const secondHalfSlots = generateSlots(schedule.secondHalfStartTime, schedule.secondHalfEndTime);
 
-    // Build message
-    let message = '';
-    if (totalSlots === 0) {
-      message = `No schedule slots found for ${dayOfWeek}`;
-    } else if (availableCount === 0) {
-      message = `All ${totalSlots} slot(s) are booked for ${query.date}`;
-    } else if (unavailableCount === 0) {
-      message = `All ${totalSlots} slot(s) are available for ${query.date}`;
-    } else {
-      message = `${availableCount} of ${totalSlots} slot(s) available for ${query.date}`;
-    }
+    const allSlots = [...firstHalfSlots, ...secondHalfSlots];
 
     return {
-      message,
+      message: `Found ${allSlots.length} available slots`,
       data: {
         date: query.date,
         dayOfWeek,
-        summary: {
-          total: totalSlots,
-          available: availableCount,
-          unavailable: unavailableCount,
-        },
-        availableSlots,
-        unavailableSlots,
-      },
+        availableSlots: allSlots,
+      }
     };
   }
 
@@ -513,18 +471,7 @@ export class AppointmentService {
             address: true,
           },
         },
-        scheduleSlot: {
-          select: {
-            id: true,
-            startTime: true,
-            endTime: true,
-            schedule: {
-              select: {
-                day: true,
-              },
-            },
-          },
-        },
+        appointmentType: true,
       },
     });
 
@@ -549,184 +496,129 @@ export class AppointmentService {
     appointmentId: number,
     dto: UpdateAppointmentDto,
   ) {
-    // Verify doctor is authenticated
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
       include: { doctor: true },
     });
 
-    if (!session || !session.doctorId || !session.doctor) {
-      throw new UnauthorizedException('Invalid session or doctor not found');
-    }
-
+    if (!session?.doctorId) throw new UnauthorizedException();
     const doctorId = session.doctorId;
 
-    // Fetch existing appointment
     const existingAppointment = await this.prisma.appointment.findUnique({
       where: { id: appointmentId },
-      include: {
-        patient: true,
-      },
     });
 
-    if (!existingAppointment) {
+    if (!existingAppointment || existingAppointment.doctorId !== doctorId) {
       throw new NotFoundException('Appointment not found');
     }
 
-    if (existingAppointment.doctorId !== doctorId) {
-      throw new UnauthorizedException(
-        'You do not have permission to update this appointment',
-      );
-    }
-
-    // Prepare update data
     const updateData: any = {};
 
-    // If patientId is being updated, verify new patient and insurance
-    if (dto.patientId && dto.patientId !== existingAppointment.patientId) {
-      const newPatient = await this.prisma.patient.findUnique({
-        where: { id: dto.patientId },
+    // 1. Handle Appointment Type / Duration Change
+    let duration = 20;
+    if (dto.appointmentTypeId) {
+      const type = await this.prisma.appointmentType.findUnique({ where: { id: dto.appointmentTypeId } });
+      if (!type) throw new BadRequestException('Invalid appointment type');
+      updateData.appointmentTypeId = dto.appointmentTypeId;
+      duration = type.duration;
+    } else {
+      const currentType = await this.prisma.appointmentType.findUnique({ 
+        where: { id: existingAppointment.appointmentTypeId || '' } 
       });
-
-      if (!newPatient) {
-        throw new NotFoundException('New patient not found');
-      }
-
-      updateData.patientId = dto.patientId;
-      // Auto-update patient information
-      updateData.firstName = newPatient.firstName;
-      updateData.lastName = newPatient.lastName;
-      updateData.email = newPatient.email;
-      updateData.phone = newPatient.phone;
-      updateData.dob = newPatient.dob;
-      updateData.gender = newPatient.gender;
-      updateData.bloodGroup = newPatient.bloodGroup;
+      duration = currentType?.duration || 20;
     }
 
-    // Verify insuranceId if provided
-    if (dto.insuranceId) {
-      const patientToCheck = dto.patientId
-        ? await this.prisma.patient.findUnique({ where: { id: dto.patientId } })
-        : existingAppointment.patient;
+    // 2. Handle Time/Date Change
+    const startTime = dto.startTime || existingAppointment.startTime;
+    const appointmentDateArray = dto.appointmentDate ? new Date(dto.appointmentDate) : existingAppointment.appointmentDate;
+    const appointmentDate = appointmentDateArray ? new Date(appointmentDateArray) : null;
 
-      if (dto.insuranceId !== patientToCheck?.insuranceId) {
-        throw new BadRequestException(
-          "Insurance ID does not match patient's insurance ID",
-        );
-      }
-      updateData.insuranceId = dto.insuranceId;
-    }
+    if (startTime && appointmentDate) {
+      const timeToMinutes = (time: string) => {
+        const [h, m] = time.split(':').map(Number);
+        return h * 60 + m;
+      };
+      const minutesToTime = (mins: number) => {
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+      };
 
-    // If scheduleSlotId is being updated, validate it
-    if (dto.scheduleSlotId) {
-      const scheduleSlot = await this.prisma.doctorScheduleSlot.findUnique({
-        where: { id: dto.scheduleSlotId },
-        include: { schedule: true },
-      });
+      const startMins = timeToMinutes(startTime);
+      const endMins = startMins + duration;
+      const endTime = minutesToTime(endMins);
 
-      if (!scheduleSlot) {
-        throw new NotFoundException('Schedule slot not found');
-      }
-
-      if (scheduleSlot.schedule.doctorId !== doctorId) {
-        throw new UnauthorizedException(
-          'This schedule slot does not belong to you',
-        );
-      }
-
-      updateData.scheduleSlotId = dto.scheduleSlotId;
-
-      // If appointmentDate is also being updated, verify day matches
-      if (dto.appointmentDate) {
-        const appointmentDate = new Date(dto.appointmentDate);
-        const dayOfWeek = appointmentDate
-          .toLocaleDateString('en-US', { weekday: 'long' })
-          .toUpperCase();
-
-        if (dayOfWeek !== scheduleSlot.schedule.day) {
-          throw new BadRequestException(
-            `Appointment date (${dayOfWeek}) does not match schedule day (${scheduleSlot.schedule.day})`,
-          );
-        }
-      }
-    }
-
-    // If appointmentDate is being updated
-    if (dto.appointmentDate) {
-      const appointmentDate = new Date(dto.appointmentDate);
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      appointmentDate.setHours(0, 0, 0, 0);
-
-      if (appointmentDate < now) {
-        throw new BadRequestException('Appointment date must be in the future');
-      }
-
+      updateData.startTime = startTime;
+      updateData.endTime = endTime;
       updateData.appointmentDate = appointmentDate;
 
-      // Check for conflicts if date or slot changed
-      // Only SCHEDULED appointments block the slot; COMPLETED and CANCELLED free it up
-      if (dto.scheduleSlotId || dto.appointmentDate) {
-        const conflictingAppointment = await this.prisma.appointment.findFirst({
-          where: {
-            doctorId,
-            scheduleSlotId:
-              dto.scheduleSlotId || existingAppointment.scheduleSlotId,
-            appointmentDate: appointmentDate,
-            status: 'SCHEDULED',
-            id: { not: appointmentId }, // Exclude current appointment
-          },
-        });
+      // 3. Half-Day Check
+      const dayOfWeek = appointmentDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() as WeekDay;
+      const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
+        where: { doctorId_day: { doctorId, day: dayOfWeek } },
+      });
 
-        if (conflictingAppointment) {
-          throw new ConflictException(
-            'This time slot is already booked for the selected date',
-          );
+      if (!schedule || schedule.isClosed) throw new BadRequestException('Doctor is not available on this day');
+
+      let fitsInHalf = false;
+      const halves = [
+        { start: schedule.firstHalfStartTime, end: schedule.firstHalfEndTime },
+        { start: schedule.secondHalfStartTime, end: schedule.secondHalfEndTime }
+      ];
+
+      for (const half of halves) {
+        if (half.start && half.end) {
+          const hStart = timeToMinutes(half.start);
+          const hEnd = timeToMinutes(half.end);
+          if (startMins >= hStart && endMins <= hEnd) {
+            fitsInHalf = true;
+            break;
+          }
+        }
+      }
+      if (!fitsInHalf) throw new BadRequestException('Appointment must fit in a half-day block');
+
+      // 4. Conflict Check with Buffer
+      const regionalSettings = await this.prisma.doctorRegionalSettings.findUnique({ where: { doctorId } });
+      const bufferMap: Record<BufferTime, number> = {
+        Minutes_5: 5, Minutes_10: 10, Minutes_15: 15, Minutes_20: 20, Minutes_30: 30,
+      };
+      const buffer = regionalSettings ? bufferMap[regionalSettings.bufferTimeBetween] || 0 : 0;
+
+      const conflicts = await this.prisma.appointment.findMany({
+        where: {
+          doctorId,
+          appointmentDate: {
+            gte: new Date(new Date(appointmentDate).setHours(0,0,0,0)),
+            lte: new Date(new Date(appointmentDate).setHours(23,59,59,999)),
+          },
+          status: 'SCHEDULED',
+          id: { not: appointmentId }
+        }
+      });
+
+      for (const appt of conflicts) {
+        if (appt.startTime && appt.endTime) {
+          const eStart = timeToMinutes(appt.startTime);
+          const eEnd = timeToMinutes(appt.endTime);
+          if (startMins < eEnd + buffer && eStart < endMins + buffer) {
+            throw new ConflictException('Time slot conflict (including buffer)');
+          }
         }
       }
     }
 
-    // Update optional fields
-    if (dto.appointmentDetails !== undefined) {
-      updateData.appointmentDetails = dto.appointmentDetails;
-    }
-    if (dto.address !== undefined) {
-      updateData.address = dto.address;
-    }
-    if (dto.type !== undefined) {
-      updateData.type = dto.type;
-    }
-    if (dto.status !== undefined) {
-      updateData.status = dto.status;
-    }
+    if (dto.appointmentDetails !== undefined) updateData.appointmentDetails = dto.appointmentDetails;
+    if (dto.address !== undefined) updateData.address = dto.address;
+    if (dto.status !== undefined) updateData.status = dto.status;
 
-    // Update appointment
-    const updatedAppointment = await this.prisma.appointment.update({
+    const updated = await this.prisma.appointment.update({
       where: { id: appointmentId },
       data: updateData,
-      include: {
-        patient: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-          },
-        },
-        scheduleSlot: {
-          select: {
-            id: true,
-            startTime: true,
-            endTime: true,
-          },
-        },
-      },
+      include: { patient: true, appointmentType: true },
     });
 
-    return {
-      appointment: updatedAppointment,
-    };
+    return { appointment: updated };
   }
 
   // ----------------- DELETE APPOINTMENT -------------------

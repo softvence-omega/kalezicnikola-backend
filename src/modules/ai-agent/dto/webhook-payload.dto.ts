@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsDateString, IsObject, IsInt, ValidateIf } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsObject, IsInt } from 'class-validator';
 
 export class WebhookPayloadDto {
   @IsString()
@@ -53,7 +53,15 @@ export class WebhookPayloadDto {
 
   @IsString()
   @IsOptional()
-  slot_id?: string;
+  slot_id?: string; // Legacy
+
+  @IsString()
+  @IsOptional()
+  start_time?: string;
+
+  @IsString()
+  @IsOptional()
+  appointment_type_id?: string;
 
   @IsString()
   @IsOptional()
@@ -64,5 +72,5 @@ export class WebhookPayloadDto {
   booking_id?: string;
 
   @IsOptional()
-  agent_busy?: boolean | string; // Accept both boolean and string from ElevenLabs
+  agent_busy?: boolean | string;
 }

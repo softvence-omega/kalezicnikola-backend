@@ -343,6 +343,7 @@ export class PatientService {
         doctorId, // Ensure only this doctor's appointments with the patient
       },
       include: {
+        appointmentType: true,
         scheduleSlot: {
           select: {
             id: true,
@@ -367,14 +368,14 @@ export class PatientService {
         ? `No appointments found for ${patient.firstName} ${patient.lastName}`
         : `Found ${appointments.length} appointment${appointments.length > 1 ? 's' : ''} for ${patient.firstName} ${patient.lastName}`;
 
-        const formattedAppointments = appointments.map(a => ({
-  id: a.id,
-  type: a.type,
-  appointmentDate: a.appointmentDate,
-  startTime: a.scheduleSlot?.startTime,
-  endTime: a.scheduleSlot?.endTime,
-  status: a.status,
-}));
+    const formattedAppointments = appointments.map(a => ({
+      id: a.id,
+      type: a.appointmentType?.name || 'Standard',
+      appointmentDate: a.appointmentDate,
+      startTime: a.startTime || a.scheduleSlot?.startTime,
+      endTime: a.endTime || a.scheduleSlot?.endTime,
+      status: a.status,
+    }));
 
 
     return {

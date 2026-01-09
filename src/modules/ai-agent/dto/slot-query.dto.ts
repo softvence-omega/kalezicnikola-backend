@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsUUID } from 'class-validator';
 
 export class SlotQueryDto {
   @IsString()
@@ -10,7 +10,11 @@ export class SlotQueryDto {
 
   @IsString()
   @IsOptional()
-  scheduleSlotId?: string;
+  scheduleSlotId?: string; // Legacy
+
+  @IsUUID()
+  @IsOptional()
+  appointment_type_id?: string;
 
   @IsString()
   @IsOptional()

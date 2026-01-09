@@ -9,7 +9,6 @@ import {
 } from 'class-validator';
 import {
   AppointmentStatus,
-  AppointmentType,
   BloodGroup,
   Gender,
 } from 'generated/prisma';
@@ -19,11 +18,21 @@ export class CreateAppointmentDto {
   @IsUUID()
   patientId?: string;
 
+  @IsOptional()
   @IsUUID()
-  scheduleSlotId: string;
+  scheduleSlotId?: string;
+
+  @IsUUID()
+  appointmentTypeId: string;
 
   @IsDateString()
   appointmentDate: string; // ISO date string, e.g., "2025-12-10"
+
+  @IsString()
+  @Matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, {
+    message: 'startTime must be in HH:mm format (e.g., 08:00)',
+  })
+  startTime: string;
 
   @IsString()
   insuranceId: string;
@@ -31,10 +40,6 @@ export class CreateAppointmentDto {
   @IsOptional()
   @IsString()
   appointmentDetails?: string;
-
-  @IsOptional()
-  @IsEnum(AppointmentType)
-  type?: AppointmentType;
 
   @IsOptional()
   @IsString()
