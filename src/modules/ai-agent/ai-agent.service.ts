@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
@@ -270,11 +271,68 @@ export class AiAgentService {
     const endMins = h * 60 + m + type.duration;
     const endTime = `${Math.floor(endMins/60).toString().padStart(2,'0')}:${(endMins%60).toString().padStart(2,'0')}`;
 
-    // Conflict & Half-day check (logic should ideally be shared with AppointmentService)
-    // For now, let's re-verify here as AiAgentService seems to handle booking independently
+    // Conflict & Half-day check
     const dayOfWeek = apptDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() as WeekDay;
-    const schedule = await this.prisma.doctorWeeklySchedule.findUnique({ where: { doctorId_day: { doctorId: doctor_id, day: dayOfWeek } } });
-    if (!schedule || schedule.isClosed) throw new BadRequestException('Doctor closed');
+    const doctor = await this.prisma.doctor.findUnique({
+      where: { id: doctor_id },
+      include: { doctorRegionalSettings: true }
+    });
+    if (!doctor) throw new NotFoundException('Doctor not found');
+
+    const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
+      where: { doctorId_day: { doctorId: doctor_id, day: dayOfWeek } },
+    });
+    if (!schedule || schedule.isClosed) throw new BadRequestException('Doctor closed on this day');
+
+    const startMins = h * 60 + m;
+    const endMinsFull = startMins + type.duration;
+
+    // Half-Day check
+    let fitsInHalf = false;
+    const halves = [
+      { start: schedule.firstHalfStartTime, end: schedule.firstHalfEndTime },
+      { start: schedule.secondHalfStartTime, end: schedule.secondHalfEndTime }
+    ];
+    for (const half of halves) {
+      if (half.start && half.end) {
+        const [sh, sm] = half.start.split(':').map(Number);
+        const [eh, em] = half.end.split(':').map(Number);
+        if (startMins >= (sh*60+sm) && endMinsFull <= (eh*60+em)) {
+          fitsInHalf = true;
+          break;
+        }
+      }
+    }
+    if (!fitsInHalf) throw new BadRequestException('Appointment must fit in a half-day block');
+
+    // Conflict check
+    const bufferMap: Record<BufferTime, number> = {
+      Minutes_5: 5, Minutes_10: 10, Minutes_15: 15, Minutes_20: 20, Minutes_30: 30,
+    };
+    const buffer = doctor.doctorRegionalSettings ? bufferMap[doctor.doctorRegionalSettings.bufferTimeBetween] || 0 : 0;
+
+    const existing = await this.prisma.appointment.findMany({
+      where: {
+        doctorId: doctor_id,
+        appointmentDate: {
+          gte: new Date(new Date(apptDate).setHours(0,0,0,0)),
+          lte: new Date(new Date(apptDate).setHours(23,59,59,999)),
+        },
+        status: 'SCHEDULED',
+      }
+    });
+
+    for (const appt of existing) {
+      if (appt.startTime && appt.endTime) {
+        const [ash, asm] = appt.startTime.split(':').map(Number);
+        const [aeh, aem] = appt.endTime.split(':').map(Number);
+        const eStart = ash * 60 + asm;
+        const eEnd = aeh * 60 + aem;
+        if (startMins < eEnd + buffer && eStart < endMinsFull + buffer) {
+          throw new ConflictException(`Time slot conflicts with an existing appointment (including ${buffer} min buffer time)`);
+        }
+      }
+    }
     
     // Create appointment
     const appointment = await this.prisma.appointment.create({
@@ -405,6 +463,79 @@ export class AiAgentService {
          const endMins = h * 60 + m + type.duration;
          updateData.endTime = `${Math.floor(endMins/60).toString().padStart(2,'0')}:${(endMins%60).toString().padStart(2,'0')}`;
        }
+    }
+
+    // Conflict & Half-day check (if time or date changed)
+    if (dto.new_date || dto.new_start_time || dto.appointment_type_id) {
+        const checkDate = dto.new_date ? new Date(dto.new_date) : appointment.appointmentDate;
+        const checkStart = dto.new_start_time || appointment.startTime;
+        const typeId = dto.appointment_type_id || appointment.appointmentTypeId;
+
+        if (checkDate && checkStart && typeId) {
+            const type = await this.prisma.appointmentType.findUnique({ where: { id: typeId } });
+            if (!type) throw new BadRequestException('Invalid type');
+
+            const dayOfWeek = new Date(checkDate).toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() as WeekDay;
+            const doctor = await this.prisma.doctor.findUnique({
+                where: { id: appointment.doctorId || '' },
+                include: { doctorRegionalSettings: true }
+            });
+
+            const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
+                where: { doctorId_day: { doctorId: appointment.doctorId || '', day: dayOfWeek } },
+            });
+            if (!schedule || schedule.isClosed) throw new BadRequestException('Doctor closed on this day');
+
+            const [h, m] = checkStart.split(':').map(Number);
+            const startMins = h * 60 + m;
+            const endMinsFull = startMins + type.duration;
+
+            let fitsInHalf = false;
+            const halves = [
+                { start: schedule.firstHalfStartTime, end: schedule.firstHalfEndTime },
+                { start: schedule.secondHalfStartTime, end: schedule.secondHalfEndTime }
+            ];
+            for (const half of halves) {
+                if (half.start && half.end) {
+                    const [sh, sm] = half.start.split(':').map(Number);
+                    const [eh, em] = half.end.split(':').map(Number);
+                    if (startMins >= (sh*60+sm) && endMinsFull <= (eh*60+em)) {
+                        fitsInHalf = true;
+                        break;
+                    }
+                }
+            }
+            if (!fitsInHalf) throw new BadRequestException('Appointment must fit in a half-day block');
+
+            const bufferMap: Record<BufferTime, number> = {
+                Minutes_5: 5, Minutes_10: 10, Minutes_15: 15, Minutes_20: 20, Minutes_30: 30,
+            };
+            const buffer = doctor?.doctorRegionalSettings ? bufferMap[doctor.doctorRegionalSettings.bufferTimeBetween] || 0 : 0;
+
+            const existing = await this.prisma.appointment.findMany({
+                where: {
+                    doctorId: appointment.doctorId,
+                    appointmentDate: {
+                        gte: new Date(new Date(checkDate).setHours(0,0,0,0)),
+                        lte: new Date(new Date(checkDate).setHours(23,59,59,999)),
+                    },
+                    status: 'SCHEDULED',
+                    id: { not: bookingId }
+                }
+            });
+
+            for (const appt of existing) {
+                if (appt.startTime && appt.endTime) {
+                    const [ash, asm] = appt.startTime.split(':').map(Number);
+                    const [aeh, aem] = appt.endTime.split(':').map(Number);
+                    const eStart = ash * 60 + asm;
+                    const eEnd = aeh * 60 + aem;
+                    if (startMins < eEnd + buffer && eStart < endMinsFull + buffer) {
+                        throw new ConflictException(`Time slot conflicts with an existing appointment (including ${buffer} min buffer time)`);
+                    }
+                }
+            }
+        }
     }
 
     const updated = await this.prisma.appointment.update({

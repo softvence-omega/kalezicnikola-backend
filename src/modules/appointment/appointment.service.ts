@@ -146,7 +146,7 @@ export class AppointmentService {
 
         // Conflict formula: new_start < existing_end + buffer AND existing_start < new_end + buffer
         if (startMins < eEnd + buffer && eStart < endMins + buffer) {
-          throw new ConflictException('Time slot conflicts with an existing appointment (including buffer time)');
+          throw new ConflictException(`Time slot conflicts with an existing appointment (including ${buffer} min buffer time)`);
         }
       }
     }
@@ -602,7 +602,7 @@ export class AppointmentService {
           const eStart = timeToMinutes(appt.startTime);
           const eEnd = timeToMinutes(appt.endTime);
           if (startMins < eEnd + buffer && eStart < endMins + buffer) {
-            throw new ConflictException('Time slot conflict (including buffer)');
+            throw new ConflictException(`Time slot conflict (including ${buffer} min buffer)`);
           }
         }
       }
