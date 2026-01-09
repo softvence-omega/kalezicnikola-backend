@@ -68,24 +68,32 @@ export class AppointmentService {
     }
 
     // 3. Time Calculations
-    const timeToMinutes = (time: string) => {
-      const [h, m] = time.split(':').map(Number);
+    const parseTimeToMinutes = (timeStr: string) => {
+      if (!timeStr) return 0;
+      const clean = timeStr.trim().toUpperCase();
+      const isPM = clean.includes('PM');
+      const isAM = clean.includes('AM');
+      let [h, m] = clean.replace(/[AP]M/, '').split(':').map(Number);
+      if (isNaN(h)) return 0;
+      if (isNaN(m)) m = 0;
+      if (isPM && h < 12) h += 12;
+      if (isAM && h === 12) h = 0;
       return h * 60 + m;
     };
 
+    const startMins = parseTimeToMinutes(dto.startTime);
+    const endMins = startMins + appointmentType.duration;
+    
     const minutesToTime = (mins: number) => {
       const h = Math.floor(mins / 60);
       const m = mins % 60;
       return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
     };
-
-    const startMins = timeToMinutes(dto.startTime);
-    const endMins = startMins + appointmentType.duration;
     const endTime = minutesToTime(endMins);
 
     // 4. Verify Schedule fits in Half-Days
     const appointmentDate = new Date(dto.appointmentDate);
-    const dayOfWeek = appointmentDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() as WeekDay;
+    const dayOfWeek = appointmentDate.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' }).toUpperCase() as WeekDay;
 
     const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
       where: { doctorId_day: { doctorId, day: dayOfWeek } },
@@ -103,8 +111,8 @@ export class AppointmentService {
 
     for (const half of halves) {
       if (half.start && half.end) {
-        const hStart = timeToMinutes(half.start);
-        const hEnd = timeToMinutes(half.end);
+        const hStart = parseTimeToMinutes(half.start);
+        const hEnd = parseTimeToMinutes(half.end);
         if (startMins >= hStart && endMins <= hEnd) {
           fitsInHalf = true;
           break;
@@ -130,10 +138,18 @@ export class AppointmentService {
     };
     const buffer = regionalSettings ? bufferMap[regionalSettings.bufferTimeBetween] || 0 : 0;
 
+    const dayStart = new Date(dto.appointmentDate);
+    dayStart.setUTCHours(0,0,0,0);
+    const dayEnd = new Date(dto.appointmentDate);
+    dayEnd.setUTCHours(23,59,59,999);
+
     const existingAppointments = await this.prisma.appointment.findMany({
       where: {
         doctorId,
-        appointmentDate: new Date(dto.appointmentDate),
+        appointmentDate: {
+          gte: dayStart,
+          lte: dayEnd,
+        },
         status: 'SCHEDULED',
       },
       select: { startTime: true, endTime: true }
@@ -141,8 +157,8 @@ export class AppointmentService {
 
     for (const appt of existingAppointments) {
       if (appt.startTime && appt.endTime) {
-        const eStart = timeToMinutes(appt.startTime);
-        const eEnd = timeToMinutes(appt.endTime);
+        const eStart = parseTimeToMinutes(appt.startTime);
+        const eEnd = parseTimeToMinutes(appt.endTime);
 
         // Conflict formula: new_start < existing_end + buffer AND existing_start < new_end + buffer
         if (startMins < eEnd + buffer && eStart < endMins + buffer) {
@@ -344,8 +360,8 @@ export class AppointmentService {
     if (!session?.doctorId || !session.doctor) throw new UnauthorizedException();
     const doctorId = session.doctorId;
 
-    const appointmentDate = new Date(query.date);
-    const dayOfWeek = appointmentDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() as WeekDay;
+    const queryDate = query.date ? new Date(query.date) : new Date();
+    const dayOfWeek = queryDate.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' }).toUpperCase() as WeekDay;
 
     const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
       where: { doctorId_day: { doctorId, day: dayOfWeek } },
@@ -373,10 +389,20 @@ export class AppointmentService {
     };
     const buffer = session.doctor.doctorRegionalSettings ? bufferMap[session.doctor.doctorRegionalSettings.bufferTimeBetween] || 0 : 0;
 
-    const timeToMinutes = (time: string) => {
-      const [h, m] = time.split(':').map(Number);
+    const parseTimeToMinutes = (timeStr: string) => {
+      if (!timeStr) return 0;
+      const clean = timeStr.trim().toUpperCase();
+      const isPM = clean.includes('PM');
+      const isAM = clean.includes('AM');
+      let [h, m] = clean.replace(/[AP]M/, '').split(':').map(Number);
+      if (isNaN(h)) return 0;
+      if (isNaN(m)) m = 0;
+      if (isPM && h < 12) h += 12;
+      if (isAM && h === 12) h = 0;
       return h * 60 + m;
     };
+    const timeToMinutes = parseTimeToMinutes;
+
     const minutesToTime = (mins: number) => {
       const h = Math.floor(mins / 60);
       const m = mins % 60;
@@ -384,12 +410,17 @@ export class AppointmentService {
     };
 
     // Get existing appointments to check for conflicts
+    const dayStart = new Date(queryDate);
+    dayStart.setUTCHours(0,0,0,0);
+    const dayEnd = new Date(queryDate);
+    dayEnd.setUTCHours(23,59,59,999);
+
     const appointments = await this.prisma.appointment.findMany({
       where: {
         doctorId,
         appointmentDate: {
-          gte: new Date(new Date(query.date).setHours(0,0,0,0)),
-          lte: new Date(new Date(query.date).setHours(23,59,59,999)),
+          gte: dayStart,
+          lte: dayEnd,
         },
         status: 'SCHEDULED',
       },
