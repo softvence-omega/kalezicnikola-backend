@@ -116,8 +116,8 @@ export class AiAgentService {
   }
 
   // =============== SLOT AVAILABILITY ===============
-  async getAvailableSlots(dto: SlotQueryDto) {
-    const { doctor_id, date, appointment_type_id } = dto;
+  async getAvailableSlots(dto: SlotQueryDto & { step?: number }) {
+    const { doctor_id, date, appointment_type_id, step: customStep } = dto;
 
     const doctor = await this.prisma.doctor.findUnique({
       where: { id: doctor_id },
@@ -205,12 +205,21 @@ export class AiAgentService {
       const slots: any[] = [];
       let current = timeToMinutes(startStr);
       const endLimit = timeToMinutes(endStr);
+      
+      // Use 5-minute granularity by default to allow "any time" booking
+      // Use customStep if provided (e.g. for broader suggestions)
+      const step = customStep || 5; 
+      
       while (current + duration <= endLimit) {
         const slotEnd = current + duration;
         if (isSlotAvailable(current, slotEnd)) {
-          slots.push({ startTime: minutesToTime(current), endTime: minutesToTime(slotEnd), isAvailable: true });
+          slots.push({ 
+            startTime: minutesToTime(current), 
+            endTime: minutesToTime(slotEnd), 
+            isAvailable: true 
+          });
         }
-        current += duration + buffer;
+        current += step; // Granular step
       }
       return slots;
     };
@@ -234,7 +243,13 @@ export class AiAgentService {
     for (let i = 0; i < 7; i++) {
       const checkDate = new Date(requestedDate);
       checkDate.setDate(checkDate.getDate() + i);
-      const slots = await this.getAvailableSlots({ doctor_id, date: checkDate.toISOString(), appointment_type_id });
+      // Use a larger step (30 mins) for suggestions to show diverse times
+      const slots = await this.getAvailableSlots({ 
+        doctor_id, 
+        date: checkDate.toISOString(), 
+        appointment_type_id, 
+        step: 30 
+      });
       for (const slot of slots.availableSlots) {
         alternatives.push({ date: checkDate.toISOString().split('T')[0], time: slot.startTime });
         if (alternatives.length >= 10) break;
@@ -953,10 +968,10 @@ export class AiAgentService {
         phoneNumber: phoneNumber,
         duration: callDuration || dto.duration,
         audioUrl: dto.audio_url,
-        transcription: dto.transcription,
+        transcription: this.wordsToDigits(dto.transcription),
         intent: (dto.intent?.toUpperCase() as any) || 'GENERAL',
         sentiment: (dto.sentiment?.toUpperCase() as any) || 'NEUTRAL',
-        summary: dto.summary,
+        summary: this.wordsToDigits(dto.summary),
         appointmentId: appointmentId,
         fallbackNumber: dto.fallback_number || this.fallbackNumber,
         callStartedAt: dto.call_started_at
@@ -1015,9 +1030,14 @@ export class AiAgentService {
       console.log(`Caller phone from SIP metadata: ${callerPhoneNumber}`);
     }
     // Also check in main metadata object
-    else if (realData.metadata?.from_number) {
-      callerPhoneNumber = realData.metadata?.from_number;
+    else if (realData.metadata?.from_number || realData.metadata?.caller_id || realData.metadata?.phone_number || realData.metadata?.customer_number) {
+      callerPhoneNumber = realData.metadata?.from_number || realData.metadata?.caller_id || realData.metadata?.phone_number || realData.metadata?.customer_number;
       console.log(`Caller phone from metadata: ${callerPhoneNumber}`);
+    }
+    // Final fallback: Top level from_number
+    else if (realData.from_number) {
+      callerPhoneNumber = realData.from_number;
+      console.log(`Caller phone from top-level: ${callerPhoneNumber}`);
     }
 
     // Format transcript if available
@@ -1108,9 +1128,11 @@ export class AiAgentService {
           // Update phone number if we found it and existing record doesn't have one
           phoneNumber: callerPhoneNumber || existing.phoneNumber,
           // Only update transcript if missing
-          transcription: existing.transcription ? undefined : transcriptionText,
+          transcription: existing.transcription ? undefined : this.wordsToDigits(transcriptionText),
           // ALWAYS update summary with ElevenLabs summary when available (overwrite existing)
-          summary: realData.analysis?.transcript_summary || existing.summary,
+          summary: realData.analysis?.transcript_summary 
+            ? this.wordsToDigits(realData.analysis.transcript_summary) 
+            : existing.summary,
           // Merge insurance ID if missing
           insuranceId: existing.insuranceId || extractedInfo.insuranceId,
           // Update reason for calling if missing
@@ -1183,8 +1205,8 @@ export class AiAgentService {
         phoneNumber: callerPhoneNumber,
         duration: tempDto.duration,
         audioUrl: audioUrl,
-        transcription: tempDto.transcription,
-        summary: tempDto.summary,
+        transcription: this.wordsToDigits(tempDto.transcription),
+        summary: this.wordsToDigits(tempDto.summary),
         callStatus: callStatus,
         wasTransferred: callStatus === 'TRANSFERRED',
         intent: detectedIntent as any,
@@ -1253,21 +1275,18 @@ export class AiAgentService {
     }
 
     // Extract phone number - support multiple formats
-    // 1. Spoken format with explicit trigger (highest priority)
+    // Use wordsToDigits to normalize spoken words
+    const normalizedText = this.wordsToDigits(text);
+
+    // 1. Spoken format with explicit trigger
     const explicitPhonePatterns = [
-      /(?:phone\s+number\s+is|my\s+number\s+is|call\s+me\s+at)\s+([zero|one|two|three|four|five|six|seven|eight|nine|\s|,]+)/i,
+      /(?:phone\s+number\s+is|my\s+number\s+is|call\s+me\s+at)\s+([\d\s,]+)/i,
     ];
 
     for (const pattern of explicitPhonePatterns) {
-      const match = text.match(pattern);
+      const match = normalizedText.match(pattern);
       if (match && match[1]) {
-        let phoneDigits = '';
-        const words = match[1].toLowerCase().split(/[\s,]+/);
-        for (const word of words) {
-          if (digitWords[word.trim()]) {
-            phoneDigits += digitWords[word.trim()];
-          }
-        }
+        const phoneDigits = match[1].replace(/[\s,]/g, '');
         if (phoneDigits.length >= 10 && phoneDigits.length <= 14) {
           result.phone = phoneDigits;
           break;
@@ -1277,15 +1296,11 @@ export class AiAgentService {
 
     if (!result.phone) {
       // 2. Standard digits (with optional +, spaces, or hyphens)
-      // Tightened: must NOT be exactly 10 digits if we already looked for insurance, 
-      // but here we just ensure it's a plausible phone number sequence.
-      // Usually phone numbers in this context are 11 digits (Bangladesh) or 10.
-      const standardPhoneMatch = text.match(/(?:\+?88)?01[3-9]\d{8}/); // Specific to BD mobile numbers for better accuracy
+      const standardPhoneMatch = normalizedText.match(/(?:\+?88)?01[3-9]\d{8}/);
       if (standardPhoneMatch) {
         result.phone = standardPhoneMatch[0].replace(/[\s-]/g, '');
       } else {
-        // Fallback to broader digit sequence if not found
-        const broaderMatch = text.match(/(?:\+?88)?0?\d{9,13}/);
+        const broaderMatch = normalizedText.match(/(?:\+?88)?0?\d{9,13}/);
         if (broaderMatch && broaderMatch[0] !== result.insuranceId) {
           result.phone = broaderMatch[0].replace(/[\s-]/g, '');
         }
@@ -1294,20 +1309,13 @@ export class AiAgentService {
     
     // 1. Spoken format: "one zero five..."
     const insurancePatterns = [
-      /(?:insurance\s+id\s+is|id\s+number\s+is|insurance\s+is|id\s+as)\s+([zero|one|two|three|four|five|six|seven|eight|nine|\s|,]+)/i,
+      /(?:insurance\s+id\s+is|id\s+number\s+is|insurance\s+is|id\s+as)\s+([\d\s,]+)/i,
     ];
 
     for (const pattern of insurancePatterns) {
-      const spokenMatch = text.match(pattern);
+      const spokenMatch = normalizedText.match(pattern);
       if (spokenMatch) {
-        const spokenText = spokenMatch[1];
-        let idDigits = '';
-        const words = spokenText.toLowerCase().split(/[\s,]+/);
-        for (const word of words) {
-          if (digitWords[word.trim()]) {
-            idDigits += digitWords[word.trim()];
-          }
-        }
+        const idDigits = spokenMatch[1].replace(/[\s,]/g, '');
         if (idDigits.length === 10) {
           result.insuranceId = idDigits;
           break;
@@ -1317,7 +1325,7 @@ export class AiAgentService {
 
     // 2. Direct digit sequence (10 digits) if not found by spoken pattern
     if (!result.insuranceId) {
-      const digitMatch = text.match(/\b\d{10}\b/);
+      const digitMatch = normalizedText.match(/\b\d{10}\b/);
       if (digitMatch) {
         result.insuranceId = digitMatch[0];
       }
@@ -1402,7 +1410,7 @@ export class AiAgentService {
 
   // Helper to map descriptive strings to AppointmentType UUIDs
   private async resolveAppointmentType(doctorId: string, input?: string): Promise<string | null> {
-    if (!input || input === 'not_provided' || input === 'unknown') return null;
+    if (!input || input === 'not_provided' || input === 'unknown' || input.trim().length < 3) return null;
 
     // Check if it's already a UUID
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1414,24 +1422,55 @@ export class AiAgentService {
 
     if (types.length === 0) return null;
 
-    const cleanInput = input.toLowerCase().replace(/_/g, ' ');
+    const cleanInput = input.toLowerCase().trim().replace(/_/g, ' ');
 
     // 1. Exact Name Match
     const exact = types.find(t => t.name.toLowerCase() === cleanInput);
     if (exact) return exact.id;
 
     // 2. Contains Match 
-    const contains = types.find(t => t.name.toLowerCase().includes(cleanInput) || cleanInput.includes(t.name.toLowerCase()));
+    const contains = types.find(t => 
+      t.name.toLowerCase().includes(cleanInput) || 
+      cleanInput.includes(t.name.toLowerCase())
+    );
     if (contains) return contains.id;
 
-    // 3. Keyword Match (e.g. "blood" matches "Blood Checkup")
-    const keywords = cleanInput.split(' ').filter(word => word.length > 3);
-    for (const kw of keywords) {
-      const kwMatch = types.find(t => t.name.toLowerCase().includes(kw));
-      if (kwMatch) return kwMatch.id;
+    // 3. Spoken Words / Keywords Match
+    // Handle cases like "I want to book an appointment for blood checkup"
+    const cleanedText = cleanInput.replace(/[^a-z0-9\s]/g, '');
+    for (const type of types) {
+      const typeLow = type.name.toLowerCase();
+      // If the transcript contains the full name of the appointment type
+      if (cleanedText.includes(typeLow)) return type.id;
+      
+      // If significant keywords match
+      const typeWords = typeLow.split(' ').filter(w => w.length > 3);
+      for (const word of typeWords) {
+        if (cleanedText.includes(word)) return type.id;
+      }
     }
 
     return null;
+  }
+
+  // Helper to convert spoken words to digits (e.g. "zero" -> "0")
+  private wordsToDigits(text?: string): string {
+    if (!text) return '';
+    const digitWords: Record<string, string> = {
+      'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+      'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
+    };
+    
+    let result = text.toLowerCase();
+    
+    // Replace standalone words with digits
+    // Use regex with word boundaries to avoid partial matches (e.g. "someone" -> "some1")
+    Object.entries(digitWords).forEach(([word, digit]) => {
+      const regex = new RegExp(`\\b${word}\\b`, 'gi');
+      result = result.replace(regex, digit);
+    });
+    
+    return result;
   }
 
   // Helper method to extract reason for calling from transcript or summary
@@ -1515,23 +1554,69 @@ export class AiAgentService {
     };
   }
 
+  async updateBufferSetting(doctorId: string, bufferMinutes: number) {
+    // Map number to BufferTime enum string safely
+    const bufferMap: Record<number, string> = {
+      5: 'Minutes_5',
+      10: 'Minutes_10',
+      15: 'Minutes_15',
+      20: 'Minutes_20',
+      30: 'Minutes_30',
+    };
+
+    const bufferValue = bufferMap[Number(bufferMinutes)];
+    
+    if (!bufferValue) {
+      throw new BadRequestException(`Invalid buffer time. Allowed values are: 5, 10, 15, 20, 30 minutes.`);
+    }
+
+    console.log(`[AiAgentService] Updating buffer time for doctor ${doctorId} to ${bufferValue}`);
+
+    // Update the regional settings
+    return this.prisma.doctorRegionalSettings.upsert({
+      where: { doctorId },
+      update: { bufferTimeBetween: bufferValue as any },
+      create: { 
+        doctorId,
+        bufferTimeBetween: bufferValue as any,
+        timezone: 'Asia_Dhaka', // Default required field
+        dateFormat: 'DD_MM_YYYY',
+        timeFormat: 'HOUR_24',
+        language: 'English'
+      }
+    });
+  }
+
   // =============== INTENT HANDLERS ===============
   private async handleBookingIntent(
     payload: WebhookPayloadDto,
   ): Promise<WebhookResponseDto> {
     // Resolve Appointment Type ID from string if needed
-    const resolvedTypeId = await this.resolveAppointmentType(payload.doctor_id, payload.appointment_type_id) || undefined;
-    const updatedPayload = { ...payload, appointment_type_id: resolvedTypeId || payload.appointment_type_id };
+    // Use full transcription as context if appointment_type_id is blank or generic
+    const typeContext = (payload.appointment_type_id && payload.appointment_type_id !== 'not_provided') 
+      ? payload.appointment_type_id 
+      : (payload.transcription || payload.query || '');
+    
+    const resolvedTypeId = await this.resolveAppointmentType(payload.doctor_id, typeContext) || undefined;
+    
+    // Normalize date extraction
+    let appointmentDate = payload.appointment_date || payload.requested_date;
+    if (!appointmentDate && payload.requested_time && payload.requested_time.includes('-')) {
+      appointmentDate = payload.requested_time;
+    }
+    
+    const startTime = payload.start_time || payload.requested_time;
+    const updatedPayload = { ...payload, appointment_type_id: resolvedTypeId || payload.appointment_type_id, appointment_date: appointmentDate, start_time: startTime };
 
     // If start_time and appointment_date are provided, book directly
-    if ((payload.start_time || payload.requested_time) && (payload.appointment_date || payload.requested_date)) {
+    if (startTime && appointmentDate && !startTime.includes('-')) {
       try {
         const booking = await this.createBooking({
           doctor_id: payload.doctor_id,
           patient_id: payload.patient_id,
           patient_info: payload.patient_info,
-          start_time: payload.start_time || payload.requested_time,
-          appointment_date: payload.appointment_date || payload.requested_date,
+          start_time: startTime,
+          appointment_date: appointmentDate,
           appointment_type_id: resolvedTypeId,
         });
 
@@ -1607,25 +1692,41 @@ export class AiAgentService {
   private async handleAvailabilityIntent(
     payload: WebhookPayloadDto,
   ): Promise<WebhookResponseDto> {
-    const resolvedTypeId = await this.resolveAppointmentType(payload.doctor_id, payload.appointment_type_id) || undefined;
+    const typeContext = (payload.appointment_type_id && payload.appointment_type_id !== 'not_provided') 
+      ? payload.appointment_type_id 
+      : (payload.transcription || payload.query || '');
+      
+    const resolvedTypeId = await this.resolveAppointmentType(payload.doctor_id, typeContext) || undefined;
     
+    let requestedDate = payload.requested_date || payload.appointment_date;
+    if (!requestedDate && payload.requested_time && payload.requested_time.includes('-')) {
+      requestedDate = payload.requested_time;
+    }
+    if (!requestedDate) {
+      requestedDate = new Date().toISOString().split('T')[0];
+    }
+
     const availability = await this.getAvailableSlots({
       doctor_id: payload.doctor_id,
-      date: payload.requested_date || new Date().toISOString().split('T')[0],
+      date: requestedDate,
       appointment_type_id: resolvedTypeId,
     });
 
     if (availability.summary.available > 0) {
-      const slotList = availability.availableSlots
-        .slice(0, 3)
-        .map((s: any) => `${s.startTime} to ${s.endTime}`)
+      // Show more slots (up to 6) and mention there are more
+      const displaySlots = availability.availableSlots.slice(0, 6);
+      const slotList = displaySlots
+        .map((s: any) => `${s.startTime}`)
         .join(', ');
 
+      const moreText = availability.summary.available > 6 
+        ? `. We have many more slots available throughout the day until ${availability.availableSlots[availability.availableSlots.length-1].startTime}.`
+        : '.';
+
       return {
-        reply_text: `Yes, we have ${availability.summary.available} slots available. Available times include: ${slotList}. Would you like to book one of these?`,
-        suggested_slots: availability.availableSlots.slice(0, 3).map((s: any) => ({
-          date:
-            payload.requested_date || new Date().toISOString().split('T')[0],
+        reply_text: `Yes, we have ${availability.summary.available} slots available on ${requestedDate}. Available times include: ${slotList}${moreText} Which time works best for you?`,
+        suggested_slots: availability.availableSlots.slice(0, 20).map((s: any) => ({
+          date: requestedDate,
           time: s.startTime,
         })),
         action: 'show_slots',
@@ -1634,23 +1735,23 @@ export class AiAgentService {
 
     // If no slots on requested date, look for next available days (up to 7 days ahead)
     const MAX_DAYS_TO_CHECK = 7;
-    const requestedDate = new Date(payload.requested_date || new Date());
+    const baseDate = new Date(requestedDate);
     
     for (let i = 1; i <= MAX_DAYS_TO_CHECK; i++) {
-      const nextDate = new Date(requestedDate);
+      const nextDate = new Date(baseDate);
       nextDate.setDate(nextDate.getDate() + i);
       const nextDateStr = nextDate.toISOString().split('T')[0];
       
       const alternativeAvailability = await this.getAvailableSlots({
         doctor_id: payload.doctor_id,
         date: nextDateStr,
-        appointment_type_id: resolvedTypeId, // Use resolvedTypeId here
+        appointment_type_id: resolvedTypeId,
       });
 
       if (alternativeAvailability.summary.available > 0) {
-        const slotList = alternativeAvailability.availableSlots
-          .slice(0, 3)
-          .map((s: any) => `${s.startTime} to ${s.endTime}`)
+        const displaySlots = alternativeAvailability.availableSlots.slice(0, 3);
+        const slotList = displaySlots
+          .map((s: any) => `${s.startTime}`)
           .join(', ');
 
         const formattedDate = nextDate.toLocaleDateString('en-US', { 
@@ -1660,7 +1761,7 @@ export class AiAgentService {
 
         return {
           reply_text: `Unfortunately, we're fully booked on your requested date. However, I found ${alternativeAvailability.summary.available} slots on ${formattedDate}. Available times include: ${slotList}. Would any of those work for you?`,
-          suggested_slots: alternativeAvailability.availableSlots.slice(0, 3).map((s: any) => ({
+          suggested_slots: alternativeAvailability.availableSlots.slice(0, 20).map((s: any) => ({
             date: nextDateStr,
             time: s.startTime,
           })),
