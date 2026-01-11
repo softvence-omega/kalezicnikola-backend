@@ -324,10 +324,11 @@ enum WeekDay {
 }
 
 // appointment
-enum AppointmentType {
-  CHECKUP
-  FOLLOWUP
-}
+// Deprecated: use AppointmentType model
+// enum AppointmentType {
+//   CHECKUP
+//   FOLLOWUP
+// }
 
 enum PrescriptionTime {
   MORNING

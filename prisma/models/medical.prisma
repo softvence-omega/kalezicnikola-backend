@@ -11,21 +11,24 @@ model Appointment {
   dob                DateTime?
   gender             Gender?
   bloodGroup         BloodGroup?
-  scheduleSlotId     String?
   appointmentDate    DateTime? // Specific date for the appointment
+  startTime          String?   // e.g., "08:00"
+  endTime            String?   // e.g., "08:20"
+  scheduleSlotId     String?
+  appointmentTypeId  String?
   appointmentDetails String?
   address            String?
   status             AppointmentStatus? @default(SCHEDULED)
-  type               AppointmentType?   @default(CHECKUP)
 
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt
   deletedAt DateTime?
 
   // Relations
-  doctor       Doctor?             @relation("DoctorAppointments", fields: [doctorId], references: [id])
-  patient      Patient?            @relation("PatientAppointments", fields: [patientId], references: [id])
-  scheduleSlot DoctorScheduleSlot? @relation("AppointmentScheduleSlot", fields: [scheduleSlotId], references: [id])
+  doctor          Doctor?          @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  patient         Patient?         @relation("PatientAppointments", fields: [patientId], references: [id])
+  scheduleSlot    DoctorScheduleSlot? @relation("AppointmentScheduleSlot", fields: [scheduleSlotId], references: [id])
+  appointmentType AppointmentType? @relation(fields: [appointmentTypeId], references: [id])
 
   prescriptions      Prescription[]
   labs               Lab[]
@@ -41,7 +44,12 @@ model DoctorWeeklySchedule {
   day      WeekDay
   isClosed Boolean @default(false)
 
-  // One-to-many: multiple time slots allowed
+  firstHalfStartTime String? // e.g., "08:00"
+  firstHalfEndTime   String? // e.g., "12:00"
+  secondHalfStartTime String? // e.g., "13:00"
+  secondHalfEndTime   String? // e.g., "17:00"
+
+  // One-to-many: legacy slots
   slots DoctorScheduleSlot[]
 
   doctor Doctor @relation(fields: [doctorId], references: [id])
@@ -267,4 +275,19 @@ model DoctorKnowledgeBase {
   @@index([doctorId, category])
   @@index([doctorId, isActive])
   @@map("doctor_knowledge_base")
+}
+
+model AppointmentType {
+  id       String @id @default(uuid())
+  doctorId String
+  name     String
+  duration Int // in minutes
+
+  doctor       Doctor        @relation(fields: [doctorId], references: [id])
+  appointments Appointment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("appointment_types")
 }

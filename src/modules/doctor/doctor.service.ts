@@ -14,8 +14,8 @@ import { UpdateStaffDto } from './dto/update-staff.dto';
 import { CheckEmploymentIdDto } from './dto/check-employment-id.dto';
 import { CreateScheduleDto } from './dto/create-schedule.dto';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
-import { CreateSlotDto } from './dto/create-slot.dto';
-import { UpdateSlotDto } from './dto/update-slot.dto';
+import { CreateAppointmentTypeDto } from './dto/create-appointment-type.dto';
+import { UpdateAppointmentTypeDto } from './dto/update-appointment-type.dto';
 import { GetAllSchedulesDto } from './dto/get-all-schedules.dto';
 import { deleteFileFromUploads } from 'src/utils/file-delete.util';
 
@@ -831,7 +831,6 @@ export class DoctorService {
 
   // ----------------- CREATE SCHEDULE -------------------
   async createSchedule(accessToken: string, dto: CreateScheduleDto) {
-    // Find session to get doctor ID
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
       include: { doctor: true },
@@ -843,86 +842,73 @@ export class DoctorService {
 
     const doctorId = session.doctorId;
 
-    // Check if schedule for this day already exists
-    const existingSchedule = await this.prisma.doctorWeeklySchedule.findUnique({
-      where: {
-        doctorId_day: {
-          doctorId,
-          day: dto.day,
-        },
-      },
-    });
-
-    if (existingSchedule) {
-      throw new ConflictException(`Schedule for ${dto.day} already exists`);
-    }
-
-    // Validate time slots
-    for (const slot of dto.slots) {
-      const [startHour, startMin] = slot.startTime.split(':').map(Number);
-      const [endHour, endMin] = slot.endTime.split(':').map(Number);
-
+    // Helper to validate time range HH:mm
+    const validateTimeRange = (startTime: string, endTime: string, label: string) => {
+      const [startHour, startMin] = startTime.split(':').map(Number);
+      const [endHour, endMin] = endTime.split(':').map(Number);
       const startMinutes = startHour * 60 + startMin;
       const endMinutes = endHour * 60 + endMin;
 
       if (endMinutes <= startMinutes) {
         throw new BadRequestException(
-          `End time must be after start time for slot ${slot.startTime} - ${slot.endTime}`,
+          `End time must be after start time for ${label}: ${startTime} - ${endTime}`,
         );
       }
-    }
+      return { startMinutes, endMinutes };
+    };
 
-    // Validate for overlapping time slots
-    for (let i = 0; i < dto.slots.length; i++) {
-      for (let j = i + 1; j < dto.slots.length; j++) {
-        const slot1 = dto.slots[i];
-        const slot2 = dto.slots[j];
+    // Validate halves if provided
+    if (!dto.isClosed) {
+      let firstRange, secondRange;
+      if (dto.firstHalf) {
+        firstRange = validateTimeRange(dto.firstHalf.startTime, dto.firstHalf.endTime, 'First Half');
+      }
+      if (dto.secondHalf) {
+        secondRange = validateTimeRange(dto.secondHalf.startTime, dto.secondHalf.endTime, 'Second Half');
+      }
 
-        const [start1Hour, start1Min] = slot1.startTime.split(':').map(Number);
-        const [end1Hour, end1Min] = slot1.endTime.split(':').map(Number);
-        const [start2Hour, start2Min] = slot2.startTime.split(':').map(Number);
-        const [end2Hour, end2Min] = slot2.endTime.split(':').map(Number);
-
-        const start1Minutes = start1Hour * 60 + start1Min;
-        const end1Minutes = end1Hour * 60 + end1Min;
-        const start2Minutes = start2Hour * 60 + start2Min;
-        const end2Minutes = end2Hour * 60 + end2Min;
-
-        // Check for overlap: slot1 starts before slot2 ends AND slot2 starts before slot1 ends
-        if (start1Minutes < end2Minutes && start2Minutes < end1Minutes) {
-          throw new BadRequestException(
-            `Time slots overlap: ${slot1.startTime}-${slot1.endTime} overlaps with ${slot2.startTime}-${slot2.endTime}`,
-          );
+      // Check for overlap between halves
+      if (firstRange && secondRange) {
+        if (
+          (firstRange.startMinutes < secondRange.endMinutes && secondRange.startMinutes < firstRange.endMinutes)
+        ) {
+          throw new BadRequestException('First half and second half cannot overlap');
         }
       }
     }
 
-    // Create schedule with slots
-    const schedule = await this.prisma.doctorWeeklySchedule.create({
-      data: {
-        doctorId,
-        day: dto.day,
-        isClosed: dto.isClosed || false,
-        slots: {
-          create: dto.slots.map((slot) => ({
-            startTime: slot.startTime,
-            endTime: slot.endTime,
-          })),
-        },
-      },
-      include: {
-        slots: true,
-      },
+    // Use transaction for bulk creation
+    const results = await this.prisma.$transaction(async (tx) => {
+      const createdSchedules: any[] = [];
+      for (const day of dto.days) {
+        // Upsert behavior: Delete existing and create new
+        await tx.doctorWeeklySchedule.deleteMany({
+          where: { doctorId, day },
+        });
+
+        const schedule = await tx.doctorWeeklySchedule.create({
+          data: {
+            doctorId,
+            day,
+            isClosed: dto.isClosed || false,
+            firstHalfStartTime: dto.firstHalf?.startTime,
+            firstHalfEndTime: dto.firstHalf?.endTime,
+            secondHalfStartTime: dto.secondHalf?.startTime,
+            secondHalfEndTime: dto.secondHalf?.endTime,
+          },
+        });
+        createdSchedules.push(schedule);
+      }
+      return createdSchedules;
     });
 
     return {
-      schedule,
+      schedules: results,
     };
   }
 
   // ----------------- GET ALL SCHEDULES -------------------
   async getAllSchedules(accessToken: string, query: GetAllSchedulesDto) {
-    // Find session to get doctor ID
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
       include: { doctor: true },
@@ -934,27 +920,12 @@ export class DoctorService {
 
     const doctorId = session.doctorId;
 
-    // Build where clause
     const where: any = { doctorId };
+    if (query.day) where.day = query.day;
+    if (query.isClosed !== undefined) where.isClosed = query.isClosed;
 
-    if (query.day) {
-      where.day = query.day;
-    }
-
-    if (query.isClosed !== undefined) {
-      where.isClosed = query.isClosed;
-    }
-
-    // Fetch schedules with slots
     const schedules = await this.prisma.doctorWeeklySchedule.findMany({
       where,
-      include: {
-        slots: {
-          orderBy: {
-            startTime: 'asc',
-          },
-        },
-      },
       orderBy: {
         day: 'asc',
       },
@@ -968,7 +939,6 @@ export class DoctorService {
 
   // ----------------- GET SINGLE SCHEDULE -------------------
   async getSingleSchedule(accessToken: string, scheduleId: string) {
-    // Find session to get doctor ID
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
       include: { doctor: true },
@@ -980,16 +950,8 @@ export class DoctorService {
 
     const doctorId = session.doctorId;
 
-    // Fetch schedule with slots
     const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
       where: { id: scheduleId },
-      include: {
-        slots: {
-          orderBy: {
-            startTime: 'asc',
-          },
-        },
-      },
     });
 
     if (!schedule) {
@@ -1013,7 +975,6 @@ export class DoctorService {
     scheduleId: string,
     dto: UpdateScheduleDto,
   ) {
-    // Find session to get doctor ID
     const session = await this.prisma.session.findUnique({
       where: { accessToken },
       include: { doctor: true },
@@ -1025,10 +986,8 @@ export class DoctorService {
 
     const doctorId = session.doctorId;
 
-    // Fetch existing schedule
     const existingSchedule = await this.prisma.doctorWeeklySchedule.findUnique({
       where: { id: scheduleId },
-      include: { slots: true },
     });
 
     if (!existingSchedule) {
@@ -1041,86 +1000,72 @@ export class DoctorService {
       );
     }
 
-    // Validate time slots if provided
-    if (dto.slots) {
-      for (const slot of dto.slots) {
-        const [startHour, startMin] = slot.startTime.split(':').map(Number);
-        const [endHour, endMin] = slot.endTime.split(':').map(Number);
+    // Helper to validate time range HH:mm
+    const validateTimeRange = (startTime: string, endTime: string, label: string) => {
+      const [startHour, startMin] = startTime.split(':').map(Number);
+      const [endHour, endMin] = endTime.split(':').map(Number);
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
 
-        const startMinutes = startHour * 60 + startMin;
-        const endMinutes = endHour * 60 + endMin;
-
-        if (endMinutes <= startMinutes) {
-          throw new BadRequestException(
-            `End time must be after start time for slot ${slot.startTime} - ${slot.endTime}`,
-          );
-        }
+      if (endMinutes <= startMinutes) {
+        throw new BadRequestException(
+          `End time must be after start time for ${label}: ${startTime} - ${endTime}`,
+        );
       }
-
-      // Validate for overlapping time slots
-      for (let i = 0; i < dto.slots.length; i++) {
-        for (let j = i + 1; j < dto.slots.length; j++) {
-          const slot1 = dto.slots[i];
-          const slot2 = dto.slots[j];
-
-          const [start1Hour, start1Min] = slot1.startTime
-            .split(':')
-            .map(Number);
-          const [end1Hour, end1Min] = slot1.endTime.split(':').map(Number);
-          const [start2Hour, start2Min] = slot2.startTime
-            .split(':')
-            .map(Number);
-          const [end2Hour, end2Min] = slot2.endTime.split(':').map(Number);
-
-          const start1Minutes = start1Hour * 60 + start1Min;
-          const end1Minutes = end1Hour * 60 + end1Min;
-          const start2Minutes = start2Hour * 60 + start2Min;
-          const end2Minutes = end2Hour * 60 + end2Min;
-
-          // Check for overlap: slot1 starts before slot2 ends AND slot2 starts before slot1 ends
-          if (start1Minutes < end2Minutes && start2Minutes < end1Minutes) {
-            throw new BadRequestException(
-              `Time slots overlap: ${slot1.startTime}-${slot1.endTime} overlaps with ${slot2.startTime}-${slot2.endTime}`,
-            );
-          }
-        }
-      }
-    }
+      return { startMinutes, endMinutes };
+    };
 
     // Prepare update data
     const updateData: any = {};
+    if (dto.isClosed !== undefined) updateData.isClosed = dto.isClosed;
 
-    if (dto.isClosed !== undefined) {
-      updateData.isClosed = dto.isClosed;
-    }
+    if (!dto.isClosed) {
+      // Validate and update halves
+      let firstRange, secondRange;
+      
+      // Use existing values if not provided in dto but needed for overlap check
+      const firstHalf = dto.firstHalf || (dto.isClosed === false ? { startTime: existingSchedule.firstHalfStartTime, endTime: existingSchedule.firstHalfEndTime } : null);
+      const secondHalf = dto.secondHalf || (dto.isClosed === false ? { startTime: existingSchedule.secondHalfStartTime, endTime: existingSchedule.secondHalfEndTime } : null);
 
-    // If slots are provided, delete old slots and create new ones
-    if (dto.slots) {
-      // Delete existing slots
-      await this.prisma.doctorScheduleSlot.deleteMany({
-        where: { scheduleId },
-      });
+      if (dto.firstHalf) {
+        validateTimeRange(dto.firstHalf.startTime, dto.firstHalf.endTime, 'First Half');
+        updateData.firstHalfStartTime = dto.firstHalf.startTime;
+        updateData.firstHalfEndTime = dto.firstHalf.endTime;
+      }
+      if (dto.secondHalf) {
+        validateTimeRange(dto.secondHalf.startTime, dto.secondHalf.endTime, 'Second Half');
+        updateData.secondHalfStartTime = dto.secondHalf.startTime;
+        updateData.secondHalfEndTime = dto.secondHalf.endTime;
+      }
 
-      // Create new slots
-      updateData.slots = {
-        create: dto.slots.map((slot) => ({
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-        })),
+      // Overlap check (needs both halves' current/new values)
+      const currentFirst = {
+        start: dto.firstHalf?.startTime || existingSchedule.firstHalfStartTime,
+        end: dto.firstHalf?.endTime || existingSchedule.firstHalfEndTime
       };
+      const currentSecond = {
+        start: dto.secondHalf?.startTime || existingSchedule.secondHalfStartTime,
+        end: dto.secondHalf?.endTime || existingSchedule.secondHalfEndTime
+      };
+
+      if (currentFirst.start && currentFirst.end && currentSecond.start && currentSecond.end) {
+        const r1 = validateTimeRange(currentFirst.start, currentFirst.end, 'First Half');
+        const r2 = validateTimeRange(currentSecond.start, currentSecond.end, 'Second Half');
+        if (r1.startMinutes < r2.endMinutes && r2.startMinutes < r1.endMinutes) {
+          throw new BadRequestException('First half and second half cannot overlap');
+        }
+      }
+    } else {
+      // If closed, clear halves
+      updateData.firstHalfStartTime = null;
+      updateData.firstHalfEndTime = null;
+      updateData.secondHalfStartTime = null;
+      updateData.secondHalfEndTime = null;
     }
 
-    // Update schedule
     const updatedSchedule = await this.prisma.doctorWeeklySchedule.update({
       where: { id: scheduleId },
       data: updateData,
-      include: {
-        slots: {
-          orderBy: {
-            startTime: 'asc',
-          },
-        },
-      },
     });
 
     return {
@@ -1526,5 +1471,80 @@ export class DoctorService {
         requiresCallback: overallRequiresCallback,
       },
     };
+  }
+
+  // ==================== APPOINTMENT TYPE MANAGEMENT ====================
+
+  async createAppointmentType(accessToken: string, dto: CreateAppointmentTypeDto) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+    });
+    if (!session?.doctorId) throw new UnauthorizedException();
+
+    const type = await this.prisma.appointmentType.create({
+      data: {
+        doctorId: session.doctorId,
+        name: dto.name,
+        duration: dto.duration,
+      },
+    });
+
+    return { success: true, data: type };
+  }
+
+  async getAllAppointmentTypes(accessToken: string) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+    });
+    if (!session?.doctorId) throw new UnauthorizedException();
+
+    const types = await this.prisma.appointmentType.findMany({
+      where: { doctorId: session.doctorId },
+      orderBy: { name: 'asc' },
+    });
+
+    return { success: true, data: types };
+  }
+
+  async updateAppointmentType(
+    accessToken: string,
+    typeId: string,
+    dto: UpdateAppointmentTypeDto,
+  ) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+    });
+    if (!session?.doctorId) throw new UnauthorizedException();
+
+    const existing = await this.prisma.appointmentType.findFirst({
+      where: { id: typeId, doctorId: session.doctorId },
+    });
+    if (!existing) throw new NotFoundException('Appointment type not found');
+
+    const updated = await this.prisma.appointmentType.update({
+      where: { id: typeId },
+      data: {
+        name: dto.name,
+        duration: dto.duration,
+      },
+    });
+
+    return { success: true, data: updated };
+  }
+
+  async deleteAppointmentType(accessToken: string, typeId: string) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+    });
+    if (!session?.doctorId) throw new UnauthorizedException();
+
+    const existing = await this.prisma.appointmentType.findFirst({
+      where: { id: typeId, doctorId: session.doctorId },
+    });
+    if (!existing) throw new NotFoundException('Appointment type not found');
+
+    await this.prisma.appointmentType.delete({ where: { id: typeId } });
+
+    return { success: true, message: 'Appointment type deleted successfully' };
   }
 }
