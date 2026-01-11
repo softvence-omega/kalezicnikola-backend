@@ -26,8 +26,8 @@ import { UpdateStaffDto } from './dto/update-staff.dto';
 import { GetAllStaffsDto } from './dto/get-all-staffs.dto';
 import { CreateScheduleDto } from './dto/create-schedule.dto';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
-import { CreateSlotDto } from './dto/create-slot.dto';
-import { UpdateSlotDto } from './dto/update-slot.dto';
+import { CreateAppointmentTypeDto } from './dto/create-appointment-type.dto';
+import { UpdateAppointmentTypeDto } from './dto/update-appointment-type.dto';
 import { GetAllSchedulesDto } from './dto/get-all-schedules.dto';
 import { fileStorage, imageFileFilter } from 'src/utils/file-upload.util';
 
@@ -723,6 +723,65 @@ export class DoctorController {
       statusCode: HttpStatus.OK,
       message: 'Dashboard statistics retrieved successfully',
       data: result,
+    };
+  }
+
+  // ==================== APPOINTMENT TYPE MANAGEMENT ====================
+
+  @Post('appointment-types/create')
+  @UseGuards(DoctorGuard)
+  async createAppointmentType(
+    @Headers('authorization') authorization: string,
+    @Body() dto: CreateAppointmentTypeDto,
+  ) {
+    const token = authorization.split(' ')[1];
+    const result = await this.doctorService.createAppointmentType(token, dto);
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: 'Appointment type created successfully',
+      data: result,
+    };
+  }
+
+  @Get('appointment-types/all')
+  @UseGuards(DoctorGuard)
+  async getAllAppointmentTypes(@Headers('authorization') authorization: string) {
+    const token = authorization.split(' ')[1];
+    const result = await this.doctorService.getAllAppointmentTypes(token);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Appointment types retrieved successfully',
+      data: result,
+    };
+  }
+
+  @Patch('appointment-types/update/:id')
+  @UseGuards(DoctorGuard)
+  async updateAppointmentType(
+    @Headers('authorization') authorization: string,
+    @Param('id') typeId: string,
+    @Body() dto: UpdateAppointmentTypeDto,
+  ) {
+    const token = authorization.split(' ')[1];
+    const result = await this.doctorService.updateAppointmentType(token, typeId, dto);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Appointment type updated successfully',
+      data: result,
+    };
+  }
+
+  @Delete('appointment-types/delete/:id')
+  @UseGuards(DoctorGuard)
+  async deleteAppointmentType(
+    @Headers('authorization') authorization: string,
+    @Param('id') typeId: string,
+  ) {
+    const token = authorization.split(' ')[1];
+    const result = await this.doctorService.deleteAppointmentType(token, typeId);
+    return {
+      statusCode: HttpStatus.OK,
+      message: result.message,
     };
   }
 }
