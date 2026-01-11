@@ -1,4 +1,7 @@
 -- CreateEnum
+CREATE TYPE "public"."BillingCycle" AS ENUM ('MONTHLY', 'YEARLY', 'LIFETIME');
+
+-- CreateEnum
 CREATE TYPE "public"."UserRole" AS ENUM ('ADMIN', 'DOCTOR');
 
 -- CreateEnum
@@ -26,10 +29,16 @@ CREATE TYPE "public"."TaskStatus" AS ENUM ('TODO', 'IN_PROGRESS', 'DONE');
 CREATE TYPE "public"."Priority" AS ENUM ('LOW', 'MEDIUM', 'HIGH');
 
 -- CreateEnum
+CREATE TYPE "public"."EventType" AS ENUM ('EVENT', 'TASK', 'APPOINTMENT_SCHEDULE');
+
+-- CreateEnum
+CREATE TYPE "public"."EventLocationType" AS ENUM ('ONLINE', 'OFFLINE');
+
+-- CreateEnum
 CREATE TYPE "public"."Plan" AS ENUM ('BASIC', 'PROFESSIONAL', 'ENTERPRISE');
 
 -- CreateEnum
-CREATE TYPE "public"."PlanType" AS ENUM ('BASIC', 'PROFESSIONAL', 'ENTERPRISE');
+CREATE TYPE "public"."PlanType" AS ENUM ('TRIAL', 'STANDARD', 'PREMIUM', 'ENTERPRISE');
 
 -- CreateEnum
 CREATE TYPE "public"."SubscriptionStatus" AS ENUM ('ACTIVE', 'PAST_DUE', 'CANCELLED', 'PENDING');
@@ -116,9 +125,6 @@ CREATE TYPE "public"."BloodGroup" AS ENUM ('A_POS', 'A_NEG', 'B_POS', 'B_NEG', '
 CREATE TYPE "public"."WeekDay" AS ENUM ('SATURDAY', 'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY');
 
 -- CreateEnum
-CREATE TYPE "public"."AppointmentType" AS ENUM ('CHECKUP', 'FOLLOWUP');
-
--- CreateEnum
 CREATE TYPE "public"."PrescriptionTime" AS ENUM ('MORNING', 'AFTERNOON', 'NIGHT');
 
 -- CreateEnum
@@ -134,6 +140,7 @@ CREATE TYPE "public"."ConversationStatus" AS ENUM ('OPEN', 'IN_PROGRESS', 'RESOL
 CREATE TABLE "public"."subscription_plans" (
     "id" TEXT NOT NULL,
     "planType" "public"."PlanType" NOT NULL,
+    "billingCycle" "public"."BillingCycle" NOT NULL,
     "name" TEXT NOT NULL,
     "price" INTEGER NOT NULL,
     "stripePriceId" TEXT NOT NULL,
@@ -154,6 +161,7 @@ CREATE TABLE "public"."subscriptions" (
     "stripeSubscriptionId" TEXT,
     "plan" "public"."Plan",
     "planType" "public"."PlanType",
+    "billingCycle" "public"."BillingCycle",
     "status" "public"."SubscriptionStatus",
     "minutesAllocated" INTEGER,
     "minutesUsed" INTEGER DEFAULT 0,
@@ -171,6 +179,8 @@ CREATE TABLE "public"."subscriptions" (
 CREATE TABLE "public"."invoices" (
     "id" TEXT NOT NULL,
     "stripeInvoiceId" TEXT,
+    "stripeCustomerId" TEXT,
+    "planType" "public"."PlanType",
     "invoiceNo" TEXT,
     "amountDue" INTEGER,
     "amountPaid" INTEGER,
@@ -201,6 +211,7 @@ CREATE TABLE "public"."admin_conversations" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "userRole" "public"."UserRole" NOT NULL,
+    "doctorId" TEXT NOT NULL,
     "adminId" TEXT,
     "status" "public"."ConversationStatus" NOT NULL DEFAULT 'OPEN',
     "subject" TEXT,
@@ -299,8 +310,53 @@ CREATE TABLE "public"."data_requests" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."appointments" (
+CREATE TABLE "public"."events" (
     "id" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "eventType" "public"."EventType" NOT NULL DEFAULT 'EVENT',
+    "startDate" TIMESTAMP(3) NOT NULL,
+    "startTime" TEXT NOT NULL,
+    "endTime" TEXT NOT NULL,
+    "isAllDay" BOOLEAN NOT NULL DEFAULT false,
+    "locationType" "public"."EventLocationType" NOT NULL DEFAULT 'OFFLINE',
+    "location" TEXT,
+    "meetingLink" TEXT,
+    "description" TEXT,
+    "coverImage" TEXT,
+    "createdById" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "events_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."event_guests" (
+    "id" TEXT NOT NULL,
+    "eventId" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "notificationSent" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "event_guests_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."event_attachments" (
+    "id" TEXT NOT NULL,
+    "eventId" TEXT NOT NULL,
+    "url" TEXT NOT NULL,
+    "title" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "event_attachments_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."appointments" (
+    "id" SERIAL NOT NULL,
     "patientId" TEXT,
     "insuranceId" TEXT,
     "doctorId" TEXT,
@@ -311,12 +367,14 @@ CREATE TABLE "public"."appointments" (
     "dob" TIMESTAMP(3),
     "gender" "public"."Gender",
     "bloodGroup" "public"."BloodGroup",
-    "scheduleSlotId" TEXT,
     "appointmentDate" TIMESTAMP(3),
+    "startTime" TEXT,
+    "endTime" TEXT,
+    "scheduleSlotId" TEXT,
+    "appointmentTypeId" TEXT,
     "appointmentDetails" TEXT,
     "address" TEXT,
     "status" "public"."AppointmentStatus" DEFAULT 'SCHEDULED',
-    "type" "public"."AppointmentType" DEFAULT 'CHECKUP',
     "createdAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3),
     "deletedAt" TIMESTAMP(3),
@@ -330,6 +388,10 @@ CREATE TABLE "public"."doctor_weekly_schedules" (
     "doctorId" TEXT NOT NULL,
     "day" "public"."WeekDay" NOT NULL,
     "isClosed" BOOLEAN NOT NULL DEFAULT false,
+    "firstHalfStartTime" TEXT,
+    "firstHalfEndTime" TEXT,
+    "secondHalfStartTime" TEXT,
+    "secondHalfEndTime" TEXT,
 
     CONSTRAINT "doctor_weekly_schedules_pkey" PRIMARY KEY ("id")
 );
@@ -389,7 +451,7 @@ CREATE TABLE "public"."labs" (
     "id" TEXT NOT NULL,
     "patientId" TEXT,
     "doctorId" TEXT,
-    "appointmentId" TEXT,
+    "appointmentId" INTEGER,
     "testDate" TIMESTAMP(3),
     "additionalNotes" TEXT,
     "createdAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
@@ -418,7 +480,7 @@ CREATE TABLE "public"."prescriptions" (
     "id" TEXT NOT NULL,
     "patientId" TEXT,
     "doctorId" TEXT,
-    "appointmentId" TEXT,
+    "appointmentId" INTEGER,
     "prescriptionNo" TEXT,
     "status" "public"."PrescriptionStatus" DEFAULT 'ACTIVE',
     "instructions" TEXT,
@@ -451,6 +513,7 @@ CREATE TABLE "public"."call_transcriptions" (
     "doctorId" TEXT NOT NULL,
     "patientId" TEXT,
     "callSid" TEXT,
+    "agentId" TEXT,
     "phoneNumber" TEXT,
     "duration" INTEGER,
     "audioUrl" TEXT,
@@ -461,9 +524,11 @@ CREATE TABLE "public"."call_transcriptions" (
     "callStatus" "public"."CallStatus",
     "reasonForCalling" TEXT,
     "insuranceId" TEXT,
-    "appointmentId" TEXT,
+    "callerName" TEXT,
+    "appointmentId" INTEGER,
     "fallbackNumber" TEXT,
     "wasTransferred" BOOLEAN DEFAULT false,
+    "isReviewed" BOOLEAN NOT NULL DEFAULT false,
     "callStartedAt" TIMESTAMP(3),
     "callEndedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -486,6 +551,18 @@ CREATE TABLE "public"."doctor_knowledge_base" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "doctor_knowledge_base_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."appointment_types" (
+    "id" TEXT NOT NULL,
+    "doctorId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "duration" INTEGER NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "appointment_types_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -612,11 +689,14 @@ CREATE TABLE "public"."tasks" (
     "title" TEXT,
     "description" TEXT,
     "status" "public"."TaskStatus",
-    "priority" "public"."Priority",
+    "priority" "public"."Flag",
     "time" TEXT,
     "dueDate" TIMESTAMP(3),
     "patientId" TEXT,
     "insuranceId" TEXT,
+    "callerName" TEXT,
+    "doctorId" TEXT,
+    "phone" TEXT,
     "createdAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3),
     "deletedAt" TIMESTAMP(3),
@@ -729,7 +809,7 @@ CREATE TABLE "public"."users" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "subscription_plans_planType_key" ON "public"."subscription_plans"("planType");
+CREATE UNIQUE INDEX "subscription_plans_planType_billingCycle_key" ON "public"."subscription_plans"("planType", "billingCycle");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "subscriptions_userId_key" ON "public"."subscriptions"("userId");
@@ -747,10 +827,16 @@ CREATE UNIQUE INDEX "invoices_stripeInvoiceId_key" ON "public"."invoices"("strip
 CREATE INDEX "admin_conversations_userId_idx" ON "public"."admin_conversations"("userId");
 
 -- CreateIndex
+CREATE INDEX "admin_conversations_doctorId_idx" ON "public"."admin_conversations"("doctorId");
+
+-- CreateIndex
 CREATE INDEX "admin_conversations_adminId_idx" ON "public"."admin_conversations"("adminId");
 
 -- CreateIndex
 CREATE INDEX "admin_conversations_status_idx" ON "public"."admin_conversations"("status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "admin_conversations_doctorId_key" ON "public"."admin_conversations"("doctorId");
 
 -- CreateIndex
 CREATE INDEX "support_messages_conversationId_idx" ON "public"."support_messages"("conversationId");
@@ -760,6 +846,24 @@ CREATE INDEX "support_messages_senderId_idx" ON "public"."support_messages"("sen
 
 -- CreateIndex
 CREATE UNIQUE INDEX "key_managements_version_key" ON "public"."key_managements"("version");
+
+-- CreateIndex
+CREATE INDEX "events_createdById_idx" ON "public"."events"("createdById");
+
+-- CreateIndex
+CREATE INDEX "events_startDate_idx" ON "public"."events"("startDate");
+
+-- CreateIndex
+CREATE INDEX "events_eventType_idx" ON "public"."events"("eventType");
+
+-- CreateIndex
+CREATE INDEX "event_guests_eventId_idx" ON "public"."event_guests"("eventId");
+
+-- CreateIndex
+CREATE INDEX "event_guests_email_idx" ON "public"."event_guests"("email");
+
+-- CreateIndex
+CREATE INDEX "event_attachments_eventId_idx" ON "public"."event_attachments"("eventId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "doctor_weekly_schedules_doctorId_day_key" ON "public"."doctor_weekly_schedules"("doctorId", "day");
@@ -775,6 +879,9 @@ CREATE INDEX "call_transcriptions_doctorId_createdAt_idx" ON "public"."call_tran
 
 -- CreateIndex
 CREATE INDEX "call_transcriptions_patientId_createdAt_idx" ON "public"."call_transcriptions"("patientId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "call_transcriptions_agentId_idx" ON "public"."call_transcriptions"("agentId");
 
 -- CreateIndex
 CREATE INDEX "doctor_knowledge_base_doctorId_category_idx" ON "public"."doctor_knowledge_base"("doctorId", "category");
@@ -834,6 +941,9 @@ ALTER TABLE "public"."subscriptions" ADD CONSTRAINT "subscriptions_userId_fkey" 
 ALTER TABLE "public"."admin_conversations" ADD CONSTRAINT "admin_conversations_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "public"."admin_conversations" ADD CONSTRAINT "admin_conversations_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "public"."doctors"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "public"."admin_conversations" ADD CONSTRAINT "admin_conversations_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "public"."users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -858,6 +968,15 @@ ALTER TABLE "public"."audit_logs" ADD CONSTRAINT "audit_logs_doctorId_fkey" FORE
 ALTER TABLE "public"."data_requests" ADD CONSTRAINT "data_requests_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "public"."patients"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "public"."events" ADD CONSTRAINT "events_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."doctors"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."event_guests" ADD CONSTRAINT "event_guests_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "public"."events"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."event_attachments" ADD CONSTRAINT "event_attachments_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "public"."events"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "public"."appointments" ADD CONSTRAINT "appointments_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "public"."doctors"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -865,6 +984,9 @@ ALTER TABLE "public"."appointments" ADD CONSTRAINT "appointments_patientId_fkey"
 
 -- AddForeignKey
 ALTER TABLE "public"."appointments" ADD CONSTRAINT "appointments_scheduleSlotId_fkey" FOREIGN KEY ("scheduleSlotId") REFERENCES "public"."doctor_schedule_slots"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."appointments" ADD CONSTRAINT "appointments_appointmentTypeId_fkey" FOREIGN KEY ("appointmentTypeId") REFERENCES "public"."appointment_types"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."doctor_weekly_schedules" ADD CONSTRAINT "doctor_weekly_schedules_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "public"."doctors"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -921,6 +1043,9 @@ ALTER TABLE "public"."call_transcriptions" ADD CONSTRAINT "call_transcriptions_a
 ALTER TABLE "public"."doctor_knowledge_base" ADD CONSTRAINT "doctor_knowledge_base_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "public"."doctors"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "public"."appointment_types" ADD CONSTRAINT "appointment_types_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "public"."doctors"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "public"."doctor_notification_settings" ADD CONSTRAINT "doctor_notification_settings_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "public"."doctors"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -934,6 +1059,9 @@ ALTER TABLE "public"."staffs" ADD CONSTRAINT "staffs_doctorId_fkey" FOREIGN KEY 
 
 -- AddForeignKey
 ALTER TABLE "public"."tasks" ADD CONSTRAINT "tasks_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "public"."patients"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."tasks" ADD CONSTRAINT "tasks_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "public"."doctors"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."sessions" ADD CONSTRAINT "sessions_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "public"."admins"("id") ON DELETE SET NULL ON UPDATE CASCADE;
