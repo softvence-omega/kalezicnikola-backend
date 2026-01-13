@@ -181,4 +181,15 @@ export class AiAgentController {
     // Admins can see all stats (doctorId undefined) or specific doctor stats
     return this.aiAgentService.getAgentPerformanceStats(doctorId, agentId);
   }
+
+  // =============== SETTINGS MANAGEMENT ===============
+  @Patch('settings/buffer')
+  @UseGuards(DoctorGuard)
+  async updateBufferTime(
+    @Req() req: any,
+    @Body('buffer_minutes') bufferMinutes: number,
+  ) {
+    const doctorId = req.doctor.id;
+    return this.aiAgentService.updateBufferSetting(doctorId, bufferMinutes);
+  }
 }
