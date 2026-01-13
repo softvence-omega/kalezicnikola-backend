@@ -1469,6 +1469,13 @@ export class AiAgentService {
       const regex = new RegExp(`\\b${word}\\b`, 'gi');
       result = result.replace(regex, digit);
     });
+
+    // Join single digit sequences
+    // Matches: "0, 6, 6" -> "066", "1 2 3" -> "123"
+    // We look for digits separated by spaces or commas
+    result = result.replace(/\b\d\b(?:[\s,]+\d\b)+/g, (match) => {
+      return match.replace(/[\s,]/g, '');
+    });
     
     return result;
   }
