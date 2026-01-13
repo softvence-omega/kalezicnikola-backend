@@ -116,6 +116,11 @@ export class AiAgentService {
   }
 
   // =============== SLOT AVAILABILITY ===============
+  private normalizeInsuranceId(id: string | undefined): string | undefined {
+    if (!id) return undefined;
+    return id.trim().replace(/\D/g, '');
+  }
+
   async getAvailableSlots(dto: SlotQueryDto & { step?: number }) {
     const { doctor_id, date, appointment_type_id, step: customStep } = dto;
 
@@ -251,12 +256,45 @@ export class AiAgentService {
         step: 30 
       });
       for (const slot of slots.availableSlots) {
-        alternatives.push({ date: checkDate.toISOString().split('T')[0], time: slot.startTime });
-        if (alternatives.length >= 10) break;
+        alternatives.push({ 
+          date: checkDate.toDateString(), 
+          time: slot.startTime,
+          originalDate: checkDate.toISOString().split('T')[0]
+        });
+        if (alternatives.length >= 20) break;
       }
-      if (alternatives.length >= 10) break;
+      if (alternatives.length >= 20) break;
     }
-    return { alternative_slots: alternatives };
+
+    // Sort by proximity to requested slot if provided
+    if (requested_slot && alternatives.length > 0) {
+      // requested_slot could be a full ISO date or just a time
+      const requestedTimeStr = requested_slot.includes('T') 
+        ? requested_slot.split('T')[1].substring(0, 5) 
+        : requested_slot;
+      
+      const parseTimeToMinutes = (timeStr: string) => {
+        if (!timeStr) return 0;
+        const clean = timeStr.trim().toUpperCase();
+        const isPM = clean.includes('PM');
+        const isAM = clean.includes('AM');
+        let [h, m] = clean.replace(/[AP]M/, '').split(':').map(Number);
+        if (isNaN(h)) return 0;
+        if (isNaN(m)) m = 0;
+        if (isPM && h < 12) h += 12;
+        if (isAM && h === 12) h = 0;
+        return h * 60 + m;
+      };
+
+      const targetMins = parseTimeToMinutes(requestedTimeStr);
+      alternatives.sort((a, b) => {
+        const diffA = Math.abs(parseTimeToMinutes(a.time) - targetMins);
+        const diffB = Math.abs(parseTimeToMinutes(b.time) - targetMins);
+        return diffA - diffB;
+      });
+    }
+
+    return { alternative_slots: alternatives.slice(0, 20) };
   }
 
   // =============== CREATE BOOKING ===============
@@ -271,36 +309,60 @@ export class AiAgentService {
     let patientId = patient_id;
     let isNewPatient = false;
 
+    // Caller number fallback from payload if explicitly provided
+    const callerNumber = dto.caller_phone_number;
+
     if (!patientId) {
       let existingPatient;
 
       // Priority 1: Lookup by insurance ID
-      if (patient_info?.insuranceId) {
+      const insuranceId = this.normalizeInsuranceId(patient_info?.insuranceId);
+      if (insuranceId) {
         existingPatient = await this.prisma.patient.findUnique({
-          where: { insuranceId: patient_info.insuranceId },
+          where: { insuranceId: insuranceId },
         });
       }
 
-      // Priority 2: Fallback to phone number if not found by insurance ID
+      // Priority 2: Fallback to explicit patient info phone
       if (!existingPatient && patient_info?.phone) {
         existingPatient = await this.prisma.patient.findFirst({
           where: { phone: patient_info.phone },
         });
       }
 
+      // Priority 3: Fallback to caller phone number (SID info)
+      if (!existingPatient && callerNumber) {
+        existingPatient = await this.prisma.patient.findFirst({
+          where: { phone: callerNumber },
+        });
+      }
+
       if (existingPatient) {
         patientId = existingPatient.id;
+
+        // Sync insurance ID if provided and missing
+        if (patient_info?.insuranceId && !existingPatient.insuranceId) {
+          await this.prisma.patient.update({
+            where: { id: patientId },
+            data: { insuranceId: patient_info.insuranceId }
+          });
+        }
       } else {
-        if (!patient_info?.phone) throw new BadRequestException('Phone required');
+        // If no patient found, we need at least one identifier to create one
+        const finalPhone = patient_info?.phone || callerNumber;
+        if (!finalPhone && !patient_info?.insuranceId) {
+          throw new BadRequestException('Phone number or Insurance ID required for registration');
+        }
+
         const newPatient = await this.prisma.patient.create({
           data: {
-            firstName: patient_info.firstName,
-            lastName: patient_info.lastName,
-            phone: patient_info.phone,
-            email: patient_info.email,
-            insuranceId: patient_info.insuranceId || null,
-            dob: patient_info.dob ? new Date(patient_info.dob) : null,
-            gender: patient_info.gender?.toUpperCase() as any,
+            firstName: patient_info?.firstName,
+            lastName: patient_info?.lastName,
+            phone: finalPhone,
+            email: patient_info?.email,
+            insuranceId: this.normalizeInsuranceId(patient_info?.insuranceId) || null,
+            dob: patient_info?.dob ? new Date(patient_info?.dob) : null,
+            gender: patient_info?.gender?.toUpperCase() as any,
           },
         });
         patientId = newPatient.id;
@@ -844,7 +906,7 @@ export class AiAgentService {
       : undefined;
 
     // Insurance ID: Priority 1: DTO, Priority 2: Extracted
-    let insuranceId: string | undefined = dto.insurance_id;
+    let insuranceId: string | undefined = this.normalizeInsuranceId(dto.insurance_id);
 
     // Extract patient info from transcription/summary (including phone, name, email)
     const patientInfo = this.extractPatientInfoFromText(
@@ -852,13 +914,8 @@ export class AiAgentService {
     );
 
     if (!insuranceId && patientInfo.insuranceId) {
-      insuranceId = patientInfo.insuranceId;
+      insuranceId = this.normalizeInsuranceId(patientInfo.insuranceId);
       console.log(`Using extracted insuranceId for transcription save: ${insuranceId}`);
-    }
-
-    if (insuranceId) {
-      // Remove whitespace and keep only digits
-      insuranceId = insuranceId.trim().replace(/\D/g, '');
     }
 
     // Use extracted phone if not provided in DTO
@@ -1657,7 +1714,7 @@ export class AiAgentService {
   }> {
     const { doctor_id, patient_id, patient_info, booking_id, requested_date, appointment_date } = payload;
     const phoneNumber = payload.phone_number || patient_info?.phone;
-    const insuranceId = patient_info?.insuranceId;
+    const insuranceId = this.normalizeInsuranceId(patient_info?.insuranceId);
 
     // 1. If booking_id is provided, use it directly
     if (booking_id) {
@@ -1681,16 +1738,26 @@ export class AiAgentService {
       if (!patient && phoneNumber) {
         patient = await this.prisma.patient.findFirst({ where: { phone: phoneNumber } });
       }
-      if (!patient) return { error: "I couldn't find your patient record. Could you please provide your insurance ID or phone number?" };
+      // Fallback: Name-based lookup if ID/Phone fail
+      if (!patient && patient_info?.firstName && patient_info?.lastName) {
+        patient = await this.prisma.patient.findFirst({
+          where: {
+            firstName: { contains: patient_info.firstName, mode: 'insensitive' },
+            lastName: { contains: patient_info.lastName, mode: 'insensitive' },
+          }
+        });
+      }
+      
+      if (!patient) return { error: "I couldn't find your patient record. Could you please provide your insurance ID, phone number, or full name?" };
       resolvedPatientId = patient.id;
     }
 
-    // 3. Fetch all SCHEDULED appointments for this patient and doctor
+    // 3. Fetch all SCHEDULED or RESCHEDULED appointments for this patient and doctor
     const appointments = await this.prisma.appointment.findMany({
       where: {
         doctorId: doctor_id,
         patientId: resolvedPatientId,
-        status: 'SCHEDULED',
+        status: { in: ['SCHEDULED', 'RESCHEDULED'] },
       },
       orderBy: { appointmentDate: 'asc' },
     });
@@ -1831,7 +1898,8 @@ export class AiAgentService {
           patient_info: payload.patient_info,
           start_time: startTime,
           appointment_date: appointmentDate,
-          appointment_type_id: resolvedTypeId,
+          appointment_type_id: resolvedTypeId || payload.appointment_type_id,
+          caller_phone_number: payload.phone_number,
         });
 
         return {
@@ -2077,8 +2145,8 @@ export class AiAgentService {
     if (!payload.booking_id && !appointmentToReschedule) {
       return {
         reply_text:
-          'I can help you reschedule. Can you provide your appointment confirmation number or the date of your current appointment?',
-        action: 'ask_booking_id',
+          'I can help you reschedule. Could you please provide your appointment confirmation number, phone number, or insurance ID so I can find your appointment?',
+        action: 'ask_identity',
       };
     }
 
@@ -2161,8 +2229,8 @@ export class AiAgentService {
     // If no identifying information provided, ask for it
     return {
       reply_text:
-        'I can help you cancel your appointment. Can you provide your appointment confirmation number or the date of your appointment?',
-      action: 'ask_booking_id',
+        'I can help you cancel your appointment. Could you please provide your appointment confirmation number, phone number, or insurance ID so I can find your appointment?',
+      action: 'ask_identity',
     };
   }
 
