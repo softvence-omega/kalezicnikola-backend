@@ -513,6 +513,9 @@ export class AiAgentService {
     if (dto.new_date) updateData.appointmentDate = new Date(dto.new_date);
     if (dto.new_start_time) updateData.startTime = dto.new_start_time;
     if (dto.appointment_type_id) updateData.appointmentTypeId = dto.appointment_type_id;
+    
+    // Set status to RESCHEDULED
+    updateData.status = 'RESCHEDULED';
 
     // Recalculate endTime if needed
     if (dto.new_start_time || dto.appointment_type_id) {
@@ -840,23 +843,23 @@ export class AiAgentService {
       ? Number(dto.appointment_id)
       : undefined;
 
-    // Insurance ID: optional, digits only 
+    // Insurance ID: Priority 1: DTO, Priority 2: Extracted
     let insuranceId: string | undefined = dto.insurance_id;
-
-    if (insuranceId) {
-      // Remove whitespace just in case
-      insuranceId = insuranceId.trim();
-
-      // Optional extra safety: keep only digits
-      insuranceId = insuranceId.replace(/\D/g, '');
-
-      // At this point DTO already guarantees length === 10
-    }
 
     // Extract patient info from transcription/summary (including phone, name, email)
     const patientInfo = this.extractPatientInfoFromText(
       dto.transcription || dto.summary || '',
     );
+
+    if (!insuranceId && patientInfo.insuranceId) {
+      insuranceId = patientInfo.insuranceId;
+      console.log(`Using extracted insuranceId for transcription save: ${insuranceId}`);
+    }
+
+    if (insuranceId) {
+      // Remove whitespace and keep only digits
+      insuranceId = insuranceId.trim().replace(/\D/g, '');
+    }
 
     // Use extracted phone if not provided in DTO
     let phoneNumber = dto.phone_number || patientInfo.phone;
@@ -1029,6 +1032,8 @@ export class AiAgentService {
     // 1. Normalize Data (Handle nested "data" wrapper from ElevenLabs)
     const realData = dto.data || dto;
     const incomingCallSid = realData.conversation_id;
+    const finalDoctorId = doctorId || dto.doctor_id;
+
     // Construct proxy Audio URL (easier for frontend to use)
     // Use environment variable or fallback to localhost for development
     const backendBaseUrl =
@@ -1120,24 +1125,37 @@ export class AiAgentService {
       where: { callSid: incomingCallSid },
     });
 
-    // If not found by ID, try finding by Phone Number extracted from tool calls or transcription
+    // If not found by ID, try finding by Insurance ID OR Phone Number extracted from tool calls or transcription
     // (This handles cases where the Tool saved with a "temp_" ID because config was broken)
-    if (!existing && callerPhoneNumber) {
-      console.log(`Attempting to link call via phone number: ${callerPhoneNumber}`);
-      // Find most recent temp record for this phone (last 15 mins)
+    if (!existing) {
+      console.log(`Attempting to link call via fallback identifiers (Insurance: ${extractedInfo.insuranceId}, Phone: ${callerPhoneNumber})`);
+      // Find most recent temp record for this patient/phone and doctor (last 15 mins)
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
-      existing = await this.prisma.callTranscription.findFirst({
+      
+      const query: any = {
         where: {
-          phoneNumber: callerPhoneNumber,
+          doctorId: finalDoctorId || undefined,
           callSid: { startsWith: 'temp_' },
           createdAt: { gt: fifteenMinsAgo },
+          OR: []
         },
         orderBy: { createdAt: 'desc' },
-      });
+      };
+
+      if (extractedInfo.insuranceId) {
+        query.where.OR.push({ insuranceId: extractedInfo.insuranceId });
+      }
+      if (callerPhoneNumber) {
+        query.where.OR.push({ phoneNumber: callerPhoneNumber });
+      }
+
+      if (query.where.OR.length > 0) {
+        existing = await this.prisma.callTranscription.findFirst(query);
+      }
 
       if (existing) {
         console.log(
-          `Found linked record via phone! ID: ${existing.id}, TempSID: ${existing.callSid}`,
+          `Found linked record via fallback! ID: ${existing.id}, TempSID: ${existing.callSid}, Match: ${existing.insuranceId === extractedInfo.insuranceId ? 'Insurance' : 'Phone'}`,
         );
       }
     }
@@ -1181,12 +1199,26 @@ export class AiAgentService {
       console.log(
         `Updated CallTranscription ${existing.id} with audio and duration.`,
       );
+
+      // SYNC: Update patient's insurance ID if we extracted one and they don't have it
+      if (existing.patientId) {
+        const insuranceIdToSync = existing.insuranceId || extractedInfo.insuranceId;
+        if (insuranceIdToSync) {
+          const patient = await this.prisma.patient.findUnique({ where: { id: existing.patientId } });
+          if (patient && !patient.insuranceId) {
+            console.log(`[Webhook] Syncing insuranceId ${insuranceIdToSync} to patient ${existing.patientId}`);
+            await this.prisma.patient.update({
+              where: { id: existing.patientId },
+              data: { insuranceId: insuranceIdToSync },
+            });
+          }
+        }
+      }
+
       return { success: true, message: 'Updated existing transcription' };
     }
 
     // If still no record, create a new one (Fallback)
-    const finalDoctorId = doctorId || dto.doctor_id;
-
     if (!finalDoctorId) {
       console.warn('Cannot create new transcription: Missing Doctor ID');
       return { success: false, message: 'Missing Doctor ID' };
@@ -1380,6 +1412,10 @@ export class AiAgentService {
       if (match && match[1]) {
         let fullName = match[1].trim();
         
+        // Remove trailing punctuation like ". AI" or "..."
+        fullName = fullName.replace(/[.\s]+AI$/i, '').trim();
+        fullName = fullName.replace(/[.!?,]+$/, '').trim();
+        
         // Smart Slicing: Cut the name if a boundary stop word is found
         const words = fullName.split(/\s+/);
         const cleanedParts: string[] = [];
@@ -1416,7 +1452,12 @@ export class AiAgentService {
       const genericPattern = /\b([A-Z][a-z.]+\s+[A-Z][a-z.]+)\b/g;
       let match;
       while ((match = genericPattern.exec(text)) !== null) {
-        const fullName = match[1];
+        let fullName = match[1];
+        
+        // Remove trailing punctuation like ". AI"
+        fullName = fullName.replace(/[.\s]+AI$/i, '').trim();
+        fullName = fullName.replace(/[.!?,]+$/, '').trim();
+
         const parts = fullName.split(/\s+/);
         
         const isBlocked = parts.some(part => 
@@ -1663,22 +1704,40 @@ export class AiAgentService {
     }
 
     // 4. Handle multiple appointments with context
-    const targetDateStr = appointment_date || requested_date;
-    if (targetDateStr) {
-      const searchDate = new Date(targetDateStr);
-      if (!isNaN(searchDate.getTime())) {
-          const filtered = appointments.filter((apt) => {
-            if (!apt.appointmentDate) return false;
-            const aptDate = new Date(apt.appointmentDate);
-            return (
-              aptDate.toISOString().split('T')[0] ===
-              searchDate.toISOString().split('T')[0]
-            );
-          });
+    // Support month/range matching (e.g., "in March", "this month")
+    const searchDateStr = payload.intent?.toLowerCase().includes('reschedule') 
+      ? appointment_date 
+      : (appointment_date || requested_date || payload.transcription || payload.query);
 
-          if (filtered.length === 1) {
-            return { appointment: filtered[0] };
-          }
+    if (searchDateStr) {
+      const lowerSearch = searchDateStr.toLowerCase();
+      const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+      const monthIdx = months.findIndex(m => lowerSearch.includes(m));
+
+      const filtered = appointments.filter((apt) => {
+        if (!apt.appointmentDate) return false;
+        const aptDate = new Date(apt.appointmentDate);
+        const aptDateStr = aptDate.toISOString().split('T')[0];
+
+        // Specific date match
+        const searchDate = new Date(searchDateStr);
+        if (!isNaN(searchDate.getTime()) && aptDateStr === searchDate.toISOString().split('T')[0]) {
+          return true;
+        }
+
+        // Month match
+        if (monthIdx !== -1 && aptDate.getUTCMonth() === monthIdx) {
+          return true;
+        }
+
+        return false;
+      });
+
+      if (filtered.length === 1) {
+        return { appointment: filtered[0] };
+      }
+      if (filtered.length > 1) {
+        return { multipleOptions: filtered };
       }
     }
 
@@ -1949,11 +2008,11 @@ export class AiAgentService {
 
     if (targetResolution.multipleOptions) {
       const options = targetResolution.multipleOptions
-        .map((a) => `${a.appointmentDate ? new Date(a.appointmentDate).toDateString() : 'unknown date'} at ${a.startTime || 'unknown time'}`)
-        .join(', or ');
+        .map((a, idx) => `${idx + 1}. ${a.appointmentDate ? new Date(a.appointmentDate).toDateString() : 'unknown date'} at ${a.startTime || 'unknown time'}`)
+        .join('\n');
       return {
-        reply_text: `I see you have multiple appointments scheduled: ${options}. Which one would you like to reschedule?`,
-        action: 'ask_booking_id',
+        reply_text: `I see you have multiple appointments scheduled:\n${options}\nWhich one would you like to reschedule? You can just say the date.`,
+        action: 'ask_identity',
       };
     }
 
@@ -2010,6 +2069,8 @@ export class AiAgentService {
           booking_id: appointmentToReschedule.id.toString(),
         };
       }
+    } else {
+      console.log(`[handleRescheduleIntent] No appointment uniquely resolved yet. Current payload:`, payload);
     }
 
     // Fallback: If booking_id missing and resolution didn't find anything (should be covered by targetResolution.error or multipleOptions, but just in case)
@@ -2065,11 +2126,11 @@ export class AiAgentService {
 
     if (targetResolution.multipleOptions) {
       const options = targetResolution.multipleOptions
-        .map((a) => `${a.appointmentDate ? new Date(a.appointmentDate).toDateString() : 'unknown date'} at ${a.startTime || 'unknown time'}`)
-        .join(', or ');
+        .map((a, idx) => `${idx + 1}. ${a.appointmentDate ? new Date(a.appointmentDate).toDateString() : 'unknown date'} at ${a.startTime || 'unknown time'}`)
+        .join('\n');
       return {
-        reply_text: `I found multiple appointments for you: ${options}. Which one would you like to cancel?`,
-        action: 'ask_booking_id',
+        reply_text: `I found multiple appointments for you:\n${options}\nWhich one would you like to cancel? You can just say the date.`,
+        action: 'ask_identity',
       };
     }
 
@@ -2081,7 +2142,7 @@ export class AiAgentService {
       });
 
       return {
-        reply_text: `Your appointment for ${appointmentToCancel.appointmentDate ? new Date(appointmentToCancel.appointmentDate).toDateString() : 'unknown date'} at ${appointmentToCancel.startTime || 'unknown time'} has been successfully cancelled.`,
+        reply_text: `I have successfully found your appointment for ${appointmentToCancel.appointmentDate ? new Date(appointmentToCancel.appointmentDate).toDateString() : 'that date'} at ${appointmentToCancel.startTime || 'unknown time'} and cancelled it for you.`,
         action: 'cancellation_confirmed',
         booking_id: result.appointment.id,
         success: true,

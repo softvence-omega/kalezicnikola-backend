@@ -13,6 +13,7 @@ enum AppointmentStatus {
   SCHEDULED
   COMPLETED
   CANCELLED
+  RESCHEDULED
 }
 
 enum CallStatus {

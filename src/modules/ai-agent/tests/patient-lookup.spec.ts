@@ -191,10 +191,51 @@ describe('AiAgentService - Patient Lookup', () => {
       const response = await (service as any).handleCancelIntent(payload);
       
       expect(response.reply_text).toContain('I found multiple appointments for you');
-      expect(response.action).toBe('ask_booking_id');
+      expect(response.action).toBe('ask_identity');
     });
 
-    it('should resolve to specific appointment if date context is provided', async () => {
+    it('should set status to RESCHEDULED when successfully rescheduling', async () => {
+      const mockPatient = { id: patientId, insuranceId: '1234567890' };
+      const targetDate = '2026-01-20';
+      const mockAppointment = { id: 101, appointmentDate: new Date(targetDate), startTime: '10:00 AM', status: 'SCHEDULED', doctorId };
+      
+      (prisma.patient.findUnique as jest.Mock).mockResolvedValue(mockPatient);
+      (prisma.appointment.findUnique as jest.Mock).mockResolvedValue(mockAppointment);
+      (prisma.appointment.findMany as jest.Mock)
+        .mockResolvedValueOnce([mockAppointment]) // For resolveTargetAppointment
+        .mockResolvedValue([]); // For updateBooking conflict check
+      (prisma.appointmentType.findUnique as jest.Mock).mockResolvedValue({ id: 'type-1', duration: 30 });
+      (prisma.doctor.findUnique as jest.Mock).mockResolvedValue({ id: doctorId });
+      (prisma.doctorWeeklySchedule.findUnique as jest.Mock).mockResolvedValue({ 
+        day: 'TUESDAY', 
+        firstHalfStartTime: '08:00', 
+        firstHalfEndTime: '12:00' 
+      });
+      (prisma.appointment.update as jest.Mock).mockResolvedValue({ 
+        id: 101, 
+        appointmentDate: new Date(targetDate), 
+        startTime: '11:00 AM', 
+        status: 'RESCHEDULED' 
+      });
+
+      const payload = {
+        doctor_id: doctorId,
+        patient_info: { insuranceId: '1234567890' },
+        appointment_date: targetDate, // The "old" date
+        requested_date: '2026-01-20', // The "new" date
+        start_time: '11:00 AM',
+        intent: 'RESCHEDULE'
+      } as any;
+      
+      const response = await (service as any).handleRescheduleIntent(payload);
+      
+      expect(response.action).toBe('reschedule_confirmed');
+      expect(prisma.appointment.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ status: 'RESCHEDULED' })
+      }));
+    });
+
+    it('should resolve to specific appointment for cancel if date context is provided', async () => {
       const mockPatient = { id: patientId, insuranceId: '1234567890' };
       const targetDate = '2026-01-20';
       const appointments = [
@@ -217,7 +258,34 @@ describe('AiAgentService - Patient Lookup', () => {
       const response = await (service as any).handleCancelIntent(payload);
       
       expect(response.action).toBe('cancellation_confirmed');
-      expect(response.reply_text).toContain('cancelled');
+      expect(response.reply_text).toContain('successfully found your appointment');
+    });
+
+    it('should resolve to specific appointment if month name is provided in query', async () => {
+      const mockPatient = { id: patientId, insuranceId: '1234567890' };
+      const targetDate = '2026-03-06';
+      const appointments = [
+        { id: 101, appointmentDate: new Date(targetDate), startTime: '10:00 AM', status: 'SCHEDULED' },
+        { id: 102, appointmentDate: new Date('2026-04-13'), startTime: '11:00 AM', status: 'SCHEDULED' }
+      ];
+      
+      (prisma.patient.findUnique as jest.Mock).mockResolvedValue(mockPatient);
+      (prisma.appointment.findMany as jest.Mock).mockResolvedValue(appointments);
+      (prisma.appointment.findUnique as jest.Mock).mockResolvedValue(appointments[0]);
+      (prisma.appointment.update as jest.Mock).mockResolvedValue({ id: 101, status: 'CANCELLED', appointmentDate: new Date(targetDate) });
+
+      const payload = {
+        doctor_id: doctorId,
+        patient_info: { insuranceId: '1234567890' },
+        query: 'cancel my appointment in march',
+        transcription: 'i want to cancel my appointment in march',
+        intent: 'CANCEL'
+      } as any;
+
+      const response = await (service as any).handleCancelIntent(payload);
+      
+      expect(response.action).toBe('cancellation_confirmed');
+      expect(response.reply_text).toContain('Mar 06 2026');
     });
   });
 });
