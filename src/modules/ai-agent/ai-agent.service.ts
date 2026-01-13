@@ -992,7 +992,7 @@ export class AiAgentService {
         phoneNumber: phoneNumber,
         duration: callDuration || dto.duration,
         audioUrl: dto.audio_url,
-        transcription: this.wordsToDigits(dto.transcription),
+        transcription: this.formatTranscriptionWithLabels(this.wordsToDigits(dto.transcription)),
         intent: (dto.intent?.toUpperCase() as any) || 'GENERAL',
         sentiment: (dto.sentiment?.toUpperCase() as any) || 'NEUTRAL',
         summary: this.wordsToDigits(dto.summary),
@@ -1067,9 +1067,11 @@ export class AiAgentService {
     // Format transcript if available
     let transcriptionText = '';
     if (Array.isArray(realData.transcript)) {
-      transcriptionText = realData.transcript
-        .map((t) => `${t.role}: ${t.message}`)
-        .join('\n');
+      transcriptionText = this.formatTranscriptionWithLabels(
+        realData.transcript
+          .map((t) => `${t.role}: ${t.message}`)
+          .join('\n'),
+      );
     }
 
     // Priority 2: Extract from tool call parameters if not found in SIP metadata
@@ -1152,7 +1154,7 @@ export class AiAgentService {
           // Update phone number if we found it and existing record doesn't have one
           phoneNumber: callerPhoneNumber || existing.phoneNumber,
           // Only update transcript if missing
-          transcription: existing.transcription ? undefined : this.wordsToDigits(transcriptionText),
+          transcription: existing.transcription ? undefined : this.formatTranscriptionWithLabels(this.wordsToDigits(transcriptionText)),
           // ALWAYS update summary with ElevenLabs summary when available (overwrite existing)
           summary: realData.analysis?.transcript_summary 
             ? this.wordsToDigits(realData.analysis.transcript_summary) 
@@ -1229,7 +1231,7 @@ export class AiAgentService {
         phoneNumber: callerPhoneNumber,
         duration: tempDto.duration,
         audioUrl: audioUrl,
-        transcription: this.wordsToDigits(tempDto.transcription),
+        transcription: this.formatTranscriptionWithLabels(this.wordsToDigits(tempDto.transcription)),
         summary: this.wordsToDigits(tempDto.summary),
         callStatus: callStatus,
         wasTransferred: callStatus === 'TRANSFERRED',
@@ -1540,11 +1542,10 @@ export class AiAgentService {
           reason = reason.substring(0, reason.length - 4).trim();
         }
 
-        // Phase 6 Cleanup: Strip leading filler words
         const fillerWords = [
           'actually', 'uh', 'um', 'to', 'just', 'so', 'like', 'actually,', 'basis', 'urgent'
         ];
-        
+
         let words = reason.split(/\s+/);
         while (words.length > 0 && fillerWords.includes(words[0].toLowerCase().replace(/[^a-z]/g, ''))) {
           words.shift();
@@ -1560,6 +1561,48 @@ export class AiAgentService {
     }
 
     return null;
+  }
+
+  /**
+   * Standardizes transcription formatting with only 'ai:' and 'user:' labels.
+   */
+  private formatTranscriptionWithLabels(text: string): string {
+    if (!text) return '';
+
+    // Split into lines and cleanup
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    
+    if (lines.length === 0) return '';
+
+    // Helper to normalize roles
+    const normalizeRole = (role: string): 'ai' | 'user' => {
+      const r = role.toLowerCase().trim();
+      if (['ai', 'agent', 'assistant', 'system'].includes(r)) return 'ai';
+      return 'user'; // Default everything else to 'user' (patient, etc.)
+    };
+
+    // Check if lines already have labels (at least 50% for heuristic)
+    const labeledCount = lines.filter(line => /^[a-z0-9_-]+:\s/i.test(line)).length;
+    const isMostlyLabeled = labeledCount / lines.length >= 0.5;
+
+    if (isMostlyLabeled) {
+      return lines.map(line => {
+        const match = line.match(/^([a-z0-9_-]+):\s*(.*)$/i);
+        if (match) {
+          const role = normalizeRole(match[1]);
+          const message = match[2].trim();
+          return `${role}: ${message}`;
+        }
+        // If a line is missing a label in a labeled block, it likely belongs to the previous speaker
+        return line;
+      }).join('\n');
+    } else {
+      // No consistent labels, alternate starting with ai
+      return lines.map((line, index) => {
+        const role = index % 2 === 0 ? 'ai' : 'user';
+        return `${role}: ${line}`;
+      }).join('\n');
+    }
   }
 
   // =============== GET PATIENT HISTORY ===============
