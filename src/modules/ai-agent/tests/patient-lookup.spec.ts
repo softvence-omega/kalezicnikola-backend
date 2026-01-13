@@ -17,7 +17,9 @@ describe('AiAgentService - Patient Lookup', () => {
     appointment: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     },
     appointmentType: {
       findUnique: jest.fn(),
@@ -142,6 +144,80 @@ describe('AiAgentService - Patient Lookup', () => {
       expect(prisma.patient.findFirst).toHaveBeenCalledWith({
         where: { phone: '1234567890' }
       });
+    });
+  });
+
+  describe('Intelligent Appointment Resolution (Reschedule/Cancel)', () => {
+    const patientId = 'patient-123';
+    const doctorId = 'doctor-1';
+    
+    it('should resolve unique appointment without booking_id using insuranceId', async () => {
+      const mockPatient = { id: patientId, insuranceId: '1234567890' };
+      const mockAppointment = { id: 101, appointmentDate: new Date(), startTime: '10:00 AM', status: 'SCHEDULED', doctorId };
+      
+      (prisma.patient.findUnique as jest.Mock).mockResolvedValue(mockPatient);
+      (prisma.appointment.findMany as jest.Mock).mockResolvedValue([mockAppointment]);
+      jest.spyOn(service, 'suggestAlternativeSlots').mockResolvedValue({ alternative_slots: [{ date: '2026-01-20', time: '11:00 AM' }] } as any);
+      
+      const payload = {
+        doctor_id: doctorId,
+        patient_info: { insuranceId: '1234567890' },
+        intent: 'RESCHEDULE',
+        requested_time: '10:00 AM'
+      } as any;
+      
+      const response = await (service as any).handleRescheduleIntent(payload);
+      
+      expect(prisma.patient.findUnique).toHaveBeenCalledWith({ where: { insuranceId: '1234567890' }});
+      expect(response.action).toBe('ask_new_slot');
+    });
+
+    it('should return multiple options if user has multiple scheduled appointments', async () => {
+      const mockPatient = { id: patientId, insuranceId: '1234567890' };
+      const appointments = [
+        { id: 101, appointmentDate: new Date('2026-01-20'), startTime: '10:00 AM', status: 'SCHEDULED' },
+        { id: 102, appointmentDate: new Date('2026-01-25'), startTime: '11:00 AM', status: 'SCHEDULED' }
+      ];
+      
+      (prisma.patient.findUnique as jest.Mock).mockResolvedValue(mockPatient);
+      (prisma.appointment.findMany as jest.Mock).mockResolvedValue(appointments);
+      
+      const payload = {
+        doctor_id: doctorId,
+        patient_info: { insuranceId: '1234567890' },
+        intent: 'CANCEL'
+      } as any;
+      
+      const response = await (service as any).handleCancelIntent(payload);
+      
+      expect(response.reply_text).toContain('I found multiple appointments for you');
+      expect(response.action).toBe('ask_booking_id');
+    });
+
+    it('should resolve to specific appointment if date context is provided', async () => {
+      const mockPatient = { id: patientId, insuranceId: '1234567890' };
+      const targetDate = '2026-01-20';
+      const appointments = [
+        { id: 101, appointmentDate: new Date(targetDate), startTime: '10:00 AM', status: 'SCHEDULED' },
+        { id: 102, appointmentDate: new Date('2026-01-25'), startTime: '11:00 AM', status: 'SCHEDULED' }
+      ];
+      
+      (prisma.patient.findUnique as jest.Mock).mockResolvedValue(mockPatient);
+      (prisma.appointment.findMany as jest.Mock).mockResolvedValue(appointments);
+      (prisma.appointment.findUnique as jest.Mock).mockResolvedValue(appointments[0]);
+      (prisma.appointment.update as jest.Mock).mockResolvedValue({ id: 101, status: 'CANCELLED', appointmentDate: new Date(targetDate) });
+
+      const payload = {
+        doctor_id: doctorId,
+        patient_info: { insuranceId: '1234567890' },
+        requested_date: targetDate,
+        intent: 'CANCEL'
+      } as any;
+      
+      const response = await (service as any).handleCancelIntent(payload);
+      
+      expect(response.action).toBe('cancellation_confirmed');
+      expect(response.reply_text).toContain('cancelled');
     });
   });
 });

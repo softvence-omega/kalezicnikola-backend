@@ -1605,6 +1605,87 @@ export class AiAgentService {
     }
   }
 
+  /**
+   * Resolves a unique target appointment for reschedule or cancel based on patient identification 
+   * and conversational context (requested date/time).
+   */
+  private async resolveTargetAppointment(payload: WebhookPayloadDto): Promise<{ 
+    appointment?: any; 
+    multipleOptions?: any[]; 
+    error?: string 
+  }> {
+    const { doctor_id, patient_id, patient_info, booking_id, requested_date, appointment_date } = payload;
+    const phoneNumber = payload.phone_number || patient_info?.phone;
+    const insuranceId = patient_info?.insuranceId;
+
+    // 1. If booking_id is provided, use it directly
+    if (booking_id) {
+      const bId = this.parseBookingId(booking_id);
+      if (bId) {
+        const appointment = await this.prisma.appointment.findUnique({
+          where: { id: bId },
+          include: { patient: true }
+        });
+        if (appointment) return { appointment };
+      }
+    }
+
+    // 2. Resolve Patient
+    let resolvedPatientId = patient_id;
+    if (!resolvedPatientId) {
+      let patient;
+      if (insuranceId) {
+        patient = await this.prisma.patient.findUnique({ where: { insuranceId } });
+      }
+      if (!patient && phoneNumber) {
+        patient = await this.prisma.patient.findFirst({ where: { phone: phoneNumber } });
+      }
+      if (!patient) return { error: "I couldn't find your patient record. Could you please provide your insurance ID or phone number?" };
+      resolvedPatientId = patient.id;
+    }
+
+    // 3. Fetch all SCHEDULED appointments for this patient and doctor
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        doctorId: doctor_id,
+        patientId: resolvedPatientId,
+        status: 'SCHEDULED',
+      },
+      orderBy: { appointmentDate: 'asc' },
+    });
+
+    if (appointments.length === 0) {
+      return { error: "I couldn't find any scheduled appointments for you." };
+    }
+
+    if (appointments.length === 1) {
+      return { appointment: appointments[0] };
+    }
+
+    // 4. Handle multiple appointments with context
+    const targetDateStr = appointment_date || requested_date;
+    if (targetDateStr) {
+      const searchDate = new Date(targetDateStr);
+      if (!isNaN(searchDate.getTime())) {
+          const filtered = appointments.filter((apt) => {
+            if (!apt.appointmentDate) return false;
+            const aptDate = new Date(apt.appointmentDate);
+            return (
+              aptDate.toISOString().split('T')[0] ===
+              searchDate.toISOString().split('T')[0]
+            );
+          });
+
+          if (filtered.length === 1) {
+            return { appointment: filtered[0] };
+          }
+      }
+    }
+
+    // 5. If still multiple, return them as options
+    return { multipleOptions: appointments };
+  }
+
   // =============== GET PATIENT HISTORY ===============
   async getPatientHistory(patientId: string) {
     const history = await this.prisma.callTranscription.findMany({
@@ -1856,14 +1937,36 @@ export class AiAgentService {
   ): Promise<WebhookResponseDto> {
     const resolvedTypeId = await this.resolveAppointmentType(payload.doctor_id, payload.appointment_type_id) || undefined;
     
-    // If all reschedule parameters provided, execute the reschedule
-    if (payload.booking_id && (payload.start_time || payload.requested_time) && (payload.appointment_date || payload.requested_date)) {
+    // Resolve Target Appointment instead of relying solely on booking_id
+    const targetResolution = await this.resolveTargetAppointment(payload);
+    
+    if (targetResolution.error) {
+      return {
+        reply_text: targetResolution.error,
+        action: 'ask_identity',
+      };
+    }
+
+    if (targetResolution.multipleOptions) {
+      const options = targetResolution.multipleOptions
+        .map((a) => `${a.appointmentDate ? new Date(a.appointmentDate).toDateString() : 'unknown date'} at ${a.startTime || 'unknown time'}`)
+        .join(', or ');
+      return {
+        reply_text: `I see you have multiple appointments scheduled: ${options}. Which one would you like to reschedule?`,
+        action: 'ask_booking_id',
+      };
+    }
+
+    const appointmentToReschedule = targetResolution.appointment;
+
+    // If new time and date provided, execute the reschedule
+    if (appointmentToReschedule && (payload.start_time || payload.requested_time) && (payload.appointment_date || payload.requested_date)) {
       try {
         const result = await this.updateBooking({
-          booking_id: payload.booking_id,
+          booking_id: appointmentToReschedule.id.toString(),
           new_start_time: payload.start_time || payload.requested_time,
           new_date: payload.appointment_date || payload.requested_date,
-          appointment_type_id: resolvedTypeId, // Use resolvedTypeId here
+          appointment_type_id: resolvedTypeId,
         });
 
         return {
@@ -1886,8 +1989,31 @@ export class AiAgentService {
       }
     }
 
-    // If booking_id missing, ask for it
-    if (!payload.booking_id) {
+    // Suggest alternative slots if we have a target appointment but no new date/time yet
+    if (appointmentToReschedule) {
+      const slots = await this.suggestAlternativeSlots({
+        doctor_id: payload.doctor_id,
+        requested_slot: payload.requested_time || new Date().toISOString(),
+        appointment_type_id: resolvedTypeId,
+      });
+
+      if (slots.alternative_slots.length > 0) {
+        const slotTexts = slots.alternative_slots
+          .slice(0, 3)
+          .map((s: any) => `${s.date} at ${s.time}`)
+          .join(', or ');
+
+        return {
+          reply_text: `I can reschedule your appointment for ${appointmentToReschedule.appointmentDate ? new Date(appointmentToReschedule.appointmentDate).toDateString() : 'that date'}. Available times are: ${slotTexts}. Which would you prefer?`,
+          suggested_slots: slots.alternative_slots.slice(0, 3),
+          action: 'ask_new_slot',
+          booking_id: appointmentToReschedule.id.toString(),
+        };
+      }
+    }
+
+    // Fallback: If booking_id missing and resolution didn't find anything (should be covered by targetResolution.error or multipleOptions, but just in case)
+    if (!payload.booking_id && !appointmentToReschedule) {
       return {
         reply_text:
           'I can help you reschedule. Can you provide your appointment confirmation number or the date of your current appointment?',
@@ -1927,39 +2053,48 @@ export class AiAgentService {
   private async handleCancelIntent(
     payload: WebhookPayloadDto,
   ): Promise<WebhookResponseDto> {
-    // Extract phone number from either location
-    const phoneNumber = payload.phone_number || payload.patient_info?.phone;
+    // Resolve Target Appointment
+    const targetResolution = await this.resolveTargetAppointment(payload);
 
-    // Try to cancel with available information
-    if (
-      payload.booking_id ||
-      phoneNumber ||
-      payload.appointment_date ||
-      payload.requested_date
-    ) {
-      try {
-        const result = await this.cancelBooking({
-          booking_id: payload.booking_id,
-          phone_number: phoneNumber,
-          appointment_date: payload.appointment_date || payload.requested_date,
-        });
+    if (targetResolution.error) {
+      return {
+        reply_text: `I'd be happy to help you cancel. ${targetResolution.error}`,
+        action: 'ask_identity',
+      };
+    }
 
-        return {
-          reply_text: `Your appointment has been successfully cancelled. If you need to book a new appointment in the future, feel free to call back.`,
-          action: 'cancellation_confirmed',
-          booking_id: result.appointment.id,
-          success: true,
-          data: result.appointment,
-        };
-      } catch (error) {
-        return {
-          reply_text:
-            error.message ||
-            "I'm sorry, I couldn't find that appointment. Could you verify the booking ID or appointment date?",
-          action: 'cancellation_failed',
-          success: false,
-        };
-      }
+    if (targetResolution.multipleOptions) {
+      const options = targetResolution.multipleOptions
+        .map((a) => `${a.appointmentDate ? new Date(a.appointmentDate).toDateString() : 'unknown date'} at ${a.startTime || 'unknown time'}`)
+        .join(', or ');
+      return {
+        reply_text: `I found multiple appointments for you: ${options}. Which one would you like to cancel?`,
+        action: 'ask_booking_id',
+      };
+    }
+
+    const appointmentToCancel = targetResolution.appointment;
+
+    try {
+      const result = await this.cancelBooking({
+        booking_id: appointmentToCancel.id.toString(),
+      });
+
+      return {
+        reply_text: `Your appointment for ${appointmentToCancel.appointmentDate ? new Date(appointmentToCancel.appointmentDate).toDateString() : 'unknown date'} at ${appointmentToCancel.startTime || 'unknown time'} has been successfully cancelled.`,
+        action: 'cancellation_confirmed',
+        booking_id: result.appointment.id,
+        success: true,
+        data: result.appointment,
+      };
+    } catch (error) {
+      return {
+        reply_text:
+          error.message ||
+          "I'm sorry, I couldn't cancel that appointment. Would you like me to connect you with our assistant?",
+        action: 'cancellation_failed',
+        success: false,
+      };
     }
 
     // If no identifying information provided, ask for it
