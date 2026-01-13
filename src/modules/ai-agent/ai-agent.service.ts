@@ -272,11 +272,26 @@ export class AiAgentService {
     let isNewPatient = false;
 
     if (!patientId) {
-      if (!patient_info?.phone) throw new BadRequestException('Phone required');
-      const existingPatient = await this.prisma.patient.findFirst({ where: { phone: patient_info.phone } });
+      let existingPatient;
+
+      // Priority 1: Lookup by insurance ID
+      if (patient_info?.insuranceId) {
+        existingPatient = await this.prisma.patient.findUnique({
+          where: { insuranceId: patient_info.insuranceId },
+        });
+      }
+
+      // Priority 2: Fallback to phone number if not found by insurance ID
+      if (!existingPatient && patient_info?.phone) {
+        existingPatient = await this.prisma.patient.findFirst({
+          where: { phone: patient_info.phone },
+        });
+      }
+
       if (existingPatient) {
         patientId = existingPatient.id;
       } else {
+        if (!patient_info?.phone) throw new BadRequestException('Phone required');
         const newPatient = await this.prisma.patient.create({
           data: {
             firstName: patient_info.firstName,
@@ -847,13 +862,22 @@ export class AiAgentService {
     let phoneNumber = dto.phone_number || patientInfo.phone;
 
     // STEP 1: Try to find or create patient
-    if (!patientId && phoneNumber) {
-      // Try to find existing patient by phone
-      const existingPatient = await this.prisma.patient.findFirst({
-        where: {
-          phone: phoneNumber,
-        },
-      });
+    if (!patientId) {
+      let existingPatient;
+
+      // Priority 1: Lookup by insurance ID
+      if (insuranceId) {
+        existingPatient = await this.prisma.patient.findUnique({
+          where: { insuranceId },
+        });
+      }
+
+      // Priority 2: Fallback to phone number if not found by insurance ID
+      if (!existingPatient && phoneNumber) {
+        existingPatient = await this.prisma.patient.findFirst({
+          where: { phone: phoneNumber },
+        });
+      }
 
       if (existingPatient) {
         patientId = existingPatient.id;
