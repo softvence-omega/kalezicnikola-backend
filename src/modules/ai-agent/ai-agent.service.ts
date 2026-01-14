@@ -88,14 +88,29 @@ export class AiAgentService {
       };
     }
 
-    // Simple keyword matching (can be enhanced with vector search later)
+    // Enhanced keyword matching for natural language queries
     const queryLower = dto.query.toLowerCase();
+    const queryWords = queryLower.split(/\s+/); // Split query into words
+    
     const matches = kbEntries.filter((entry) => {
       const questionMatch = entry.question.toLowerCase().includes(queryLower);
       const answerMatch = entry.answer.toLowerCase().includes(queryLower);
-      const keywordMatch = entry.keywords.some((kw) =>
-        queryLower.includes(kw.toLowerCase()),
-      );
+      
+      // Improved keyword matching:
+      // Check if any keyword appears in the query OR if any query word matches a keyword
+      const keywordMatch = entry.keywords.some((kw) => {
+        const keyword = kw.toLowerCase();
+        // Check if query contains the keyword
+        if (queryLower.includes(keyword)) return true;
+        // Check if keyword contains any word from the query (for multi-word keywords)
+        if (keyword.includes(' ')) {
+          const keywordWords = keyword.split(/\s+/);
+          return keywordWords.some(kword => queryWords.includes(kword));
+        }
+        // Check if any query word matches the keyword
+        return queryWords.includes(keyword);
+      });
+      
       return questionMatch || answerMatch || keywordMatch;
     });
 
@@ -1206,14 +1221,35 @@ export class AiAgentService {
         query.where.OR.push({ phoneNumber: callerPhoneNumber });
       }
 
-      if (query.where.OR.length > 0) {
+      // If we have a transcription, also try to match by similar transcription content
+      // This helps when insurance/phone aren't captured during the call
+      if (transcriptionText && transcriptionText.length > 50) {
+        // Get first 100 chars of transcription as a fingerprint
+        const transcriptFingerprint = transcriptionText.substring(0, 100).toLowerCase();
+        query.where.OR.push({
+          transcription: {
+            contains: transcriptFingerprint.substring(0, 50), // Use first 50 chars for matching
+          },
+        });
+      }
+
+      // Fallback: If no specific identifiers, just find the most recent temp record for this doctor
+      // This is safe because we're within a 15-minute window
+      if (query.where.OR.length === 0 && finalDoctorId) {
+        delete query.where.OR;
+        console.log(`No specific identifiers found, searching for most recent temp record for doctor ${finalDoctorId}`);
+      }
+
+      if (query.where.OR?.length > 0 || finalDoctorId) {
         existing = await this.prisma.callTranscription.findFirst(query);
       }
 
       if (existing) {
         console.log(
-          `Found linked record via fallback! ID: ${existing.id}, TempSID: ${existing.callSid}, Match: ${existing.insuranceId === extractedInfo.insuranceId ? 'Insurance' : 'Phone'}`,
+          `Found linked record via fallback! ID: ${existing.id}, TempSID: ${existing.callSid}, Match: ${existing.insuranceId === extractedInfo.insuranceId ? 'Insurance' : existing.phoneNumber === callerPhoneNumber ? 'Phone' : 'Transcription/Recent'}`,
         );
+      } else {
+        console.log(`No temp record found for linking. Will create new record.`);
       }
     }
 
