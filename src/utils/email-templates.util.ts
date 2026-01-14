@@ -218,14 +218,261 @@ export class EmailTemplatesUtil {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Password Reset Successful</title>
     <style>
-        /* Similar styling as OTP template */
-        /* I'll provide the full template when you need it */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f6f9fc;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            padding: 40px 30px;
+            text-align: center;
+            color: white;
+        }
+        
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .content {
+            padding: 40px 30px;
+            text-align: center;
+        }
+        
+        .success-icon {
+            font-size: 64px;
+            color: #28a745;
+            margin-bottom: 20px;
+        }
+        
+        .greeting {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #2d3748;
+        }
+        
+        .message {
+            font-size: 16px;
+            color: #4a5568;
+            margin-bottom: 30px;
+            line-height: 1.7;
+        }
+        
+        .footer {
+            background: #f7fafc;
+            padding: 30px;
+            text-align: center;
+            border-top: 1px solid #e2e8f0;
+        }
+        
+        .support {
+            color: #718096;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        
+        .copyright {
+            color: #a0aec0;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
-    <!-- Success template structure -->
+    <div class="container">
+        <div class="header">
+            <div class="logo">Docline</div>
+        </div>
+        
+        <div class="content">
+            <div class="success-icon">✓</div>
+            <h1 class="greeting">Password Reset Successful</h1>
+            <p class="message">
+                Hello ${userName}, your password has been successfully reset. You can now log in to your account with your new password.
+            </p>
+        </div>
+        
+        <div class="footer">
+            <p class="support">Need help? Contact our support team at support@docline.com</p>
+            <p>&copy; ${new Date().getFullYear()} Docline. All rights reserved.</p>
+        </div>
+    </div>
 </body>
 </html>
     `;
+  }
+
+  getWelcomeEmailTemplate(userName: string = 'Doctor'): string {
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to Docline</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            line-height: 1.6;
+            color: #1a1a1a;
+            background-color: #f2f2f2;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: #ffffff;
+            border: 1px solid #e5e5e5;
+        }
+
+        .header {
+            padding: 40px 30px;
+            text-align: center;
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .logo {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: #000000;
+        }
+
+        .tagline {
+            margin-top: 8px;
+            font-size: 14px;
+            color: #555555;
+        }
+
+        .content {
+            padding: 40px 30px;
+        }
+
+        .greeting {
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .message {
+            font-size: 15px;
+            color: #333333;
+            margin-bottom: 20px;
+        }
+
+        .divider {
+            height: 1px;
+            background: #e5e5e5;
+            margin: 30px 0;
+        }
+
+        .cta-container {
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        .cta-button {
+            display: inline-block;
+            padding: 14px 36px;
+            border: 2px solid #000000;
+            color: #000000;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .cta-button:hover {
+            background: #000000;
+            color: #ffffff;
+        }
+
+        .footer {
+            padding: 25px 30px;
+            text-align: center;
+            border-top: 1px solid #e5e5e5;
+            background: #fafafa;
+        }
+
+        .support {
+            font-size: 13px;
+            color: #555555;
+            margin-bottom: 8px;
+        }
+
+        .copyright {
+            font-size: 12px;
+            color: #888888;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">DOCLINE</div>
+        </div>
+
+        <div class="content">
+            <h1 class="greeting">Welcome, ${userName}</h1>
+
+            <p class="message">
+                Thank you for joining Docline. We’re pleased to have you on board.
+            </p>
+
+            <p class="message">
+                Docline is designed to support medical professionals with a focused,
+                reliable, and secure platform for managing their daily practice.
+            </p>
+
+            <p class="message">
+                You can now access your dashboard to complete your profile and begin
+                using the system.
+            </p>
+
+            <div class="divider"></div>
+
+            <div class="cta-container">
+                <a href="https://docline.ai/dashboard" class="cta-button">
+                    ACCESS YOUR DASHBOARD
+                </a>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p class="support">
+                Need help? Contact us at <strong>info@docline.com</strong>
+            </p>
+            <p class="copyright">
+                © ${new Date().getFullYear()} Docline. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+`;
   }
 }

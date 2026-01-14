@@ -29,6 +29,9 @@ import { UpdateScheduleDto } from './dto/update-schedule.dto';
 import { CreateAppointmentTypeDto } from './dto/create-appointment-type.dto';
 import { UpdateAppointmentTypeDto } from './dto/update-appointment-type.dto';
 import { GetAllSchedulesDto } from './dto/get-all-schedules.dto';
+import { CreateAbsenceDto } from './dto/create-absence.dto';
+import { UpdateAbsenceDto } from './dto/update-absence.dto';
+import { GetAllAbsencesDto } from './dto/get-all-absences.dto';
 import { fileStorage, imageFileFilter } from 'src/utils/file-upload.util';
 
 @Controller('doctor')
@@ -779,6 +782,88 @@ export class DoctorController {
   ) {
     const token = authorization.split(' ')[1];
     const result = await this.doctorService.deleteAppointmentType(token, typeId);
+    return {
+      statusCode: HttpStatus.OK,
+      message: result.message,
+    };
+  }
+
+  // ==================== ABSENCE MANAGEMENT ====================
+
+  // ----------------- CREATE ABSENCE -------------------
+  @Post('absences/create')
+  @UseGuards(DoctorGuard)
+  async createAbsence(
+    @Headers('authorization') authorization: string,
+    @Body() dto: CreateAbsenceDto,
+  ) {
+    const token = authorization.split(' ')[1];
+    const result = await this.doctorService.createAbsence(token, dto);
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: 'Absence period created successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- GET ALL ABSENCES -------------------
+  @Get('absences/all')
+  @UseGuards(DoctorGuard)
+  async getAllAbsences(
+    @Headers('authorization') authorization: string,
+    @Query() query: GetAllAbsencesDto,
+  ) {
+    const token = authorization.split(' ')[1];
+    const result = await this.doctorService.getAllAbsences(token, query);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Absences retrieved successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- GET SINGLE ABSENCE -------------------
+  @Get('absences/:id')
+  @UseGuards(DoctorGuard)
+  async getSingleAbsence(
+    @Headers('authorization') authorization: string,
+    @Param('id') absenceId: string,
+  ) {
+    const token = authorization.split(' ')[1];
+    const result = await this.doctorService.getSingleAbsence(token, absenceId);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Absence retrieved successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- UPDATE ABSENCE -------------------
+  @Patch('absences/update/:id')
+  @UseGuards(DoctorGuard)
+  async updateAbsence(
+    @Headers('authorization') authorization: string,
+    @Param('id') absenceId: string,
+    @Body() dto: UpdateAbsenceDto,
+  ) {
+    const token = authorization.split(' ')[1];
+    const result = await this.doctorService.updateAbsence(token, absenceId, dto);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Absence period updated successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- DELETE ABSENCE -------------------
+  @Delete('absences/delete/:id')
+  @UseGuards(DoctorGuard)
+  async deleteAbsence(
+    @Headers('authorization') authorization: string,
+    @Param('id') absenceId: string,
+  ) {
+    const token = authorization.split(' ')[1];
+    const result = await this.doctorService.deleteAbsence(token, absenceId);
     return {
       statusCode: HttpStatus.OK,
       message: result.message,

@@ -82,6 +82,9 @@ model Doctor {
   // Event Relations
   events Event[] @relation("DoctorEvents")
 
+  // Absence Relations
+  absences DoctorAbsence[] @relation("DoctorAbsences")
+
   @@map("doctors")
 }
 

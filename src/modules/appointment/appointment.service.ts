@@ -124,6 +124,57 @@ export class AppointmentService {
       throw new BadRequestException('Appointment must fit entirely within either the first or second half of the doctor\'s schedule');
     }
 
+    // 4.5. Check if appointment date falls within an absence period
+    const apptCheckDate = new Date(appointmentDate);
+    apptCheckDate.setHours(0, 0, 0, 0);
+    
+    const absenceCheck = await this.prisma.doctorAbsence.findFirst({
+      where: {
+        doctorId,
+        fromDate: { lte: apptCheckDate },
+        toDate: { gte: apptCheckDate },
+      },
+    });
+
+    if (absenceCheck) {
+      // Find next available date
+      let nextAvailableDate = new Date(absenceCheck.toDate);
+      nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+      
+      // Check if there are more absence periods after this one
+      let currentDate = new Date(nextAvailableDate);
+      const maxDaysToCheck = 365;
+      let daysChecked = 0;
+      
+      while (daysChecked < maxDaysToCheck) {
+        const futureAbsence = await this.prisma.doctorAbsence.findFirst({
+          where: {
+            doctorId,
+            fromDate: { lte: currentDate },
+            toDate: { gte: currentDate },
+          },
+        });
+        
+        if (!futureAbsence) {
+          nextAvailableDate = currentDate;
+          break;
+        }
+        
+        currentDate = new Date(futureAbsence.toDate);
+        currentDate.setDate(currentDate.getDate() + 1);
+        daysChecked++;
+      }
+      
+      const fromDateStr = absenceCheck.fromDate.toISOString().split('T')[0];
+      const toDateStr = absenceCheck.toDate.toISOString().split('T')[0];
+      const nextDateStr = nextAvailableDate.toISOString().split('T')[0];
+      
+      const reasonMsg = absenceCheck.reason ? ` (${absenceCheck.reason})` : '';
+      throw new BadRequestException(
+        `Doctor is unavailable from ${fromDateStr} to ${toDateStr}${reasonMsg}. Next available date is ${nextDateStr}.`
+      );
+    }
+
     // 5. Conflict Check with Buffer
     const regionalSettings = await this.prisma.doctorRegionalSettings.findUnique({
       where: { doctorId },
@@ -608,6 +659,57 @@ export class AppointmentService {
         }
       }
       if (!fitsInHalf) throw new BadRequestException('Appointment must fit in a half-day block');
+
+      // 3.5. Check if reschedule date falls within an absence period
+      const rescheduleCheckDate = new Date(appointmentDate);
+      rescheduleCheckDate.setHours(0, 0, 0, 0);
+      
+      const absenceCheck = await this.prisma.doctorAbsence.findFirst({
+        where: {
+          doctorId,
+          fromDate: { lte: rescheduleCheckDate },
+          toDate: { gte: rescheduleCheckDate },
+        },
+      });
+
+      if (absenceCheck) {
+        // Find next available date
+        let nextAvailableDate = new Date(absenceCheck.toDate);
+        nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+        
+        // Check if there are more absence periods after this one
+        let currentDate = new Date(nextAvailableDate);
+        const maxDaysToCheck = 365;
+        let daysChecked = 0;
+        
+        while (daysChecked < maxDaysToCheck) {
+          const futureAbsence = await this.prisma.doctorAbsence.findFirst({
+            where: {
+              doctorId,
+              fromDate: { lte: currentDate },
+              toDate: { gte: currentDate },
+            },
+          });
+          
+          if (!futureAbsence) {
+            nextAvailableDate = currentDate;
+            break;
+          }
+          
+          currentDate = new Date(futureAbsence.toDate);
+          currentDate.setDate(currentDate.getDate() + 1);
+          daysChecked++;
+        }
+        
+        const fromDateStr = absenceCheck.fromDate.toISOString().split('T')[0];
+        const toDateStr = absenceCheck.toDate.toISOString().split('T')[0];
+        const nextDateStr = nextAvailableDate.toISOString().split('T')[0];
+        
+        const reasonMsg = absenceCheck.reason ? ` (${absenceCheck.reason})` : '';
+        throw new BadRequestException(
+          `Cannot reschedule: Doctor is unavailable from ${fromDateStr} to ${toDateStr}${reasonMsg}. Next available date is ${nextDateStr}.`
+        );
+      }
 
       // 4. Conflict Check with Buffer
       const regionalSettings = await this.prisma.doctorRegionalSettings.findUnique({ where: { doctorId } });

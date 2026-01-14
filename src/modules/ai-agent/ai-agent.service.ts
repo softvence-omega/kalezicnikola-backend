@@ -88,14 +88,29 @@ export class AiAgentService {
       };
     }
 
-    // Simple keyword matching (can be enhanced with vector search later)
+    // Enhanced keyword matching for natural language queries
     const queryLower = dto.query.toLowerCase();
+    const queryWords = queryLower.split(/\s+/); // Split query into words
+    
     const matches = kbEntries.filter((entry) => {
       const questionMatch = entry.question.toLowerCase().includes(queryLower);
       const answerMatch = entry.answer.toLowerCase().includes(queryLower);
-      const keywordMatch = entry.keywords.some((kw) =>
-        queryLower.includes(kw.toLowerCase()),
-      );
+      
+      // Improved keyword matching:
+      // Check if any keyword appears in the query OR if any query word matches a keyword
+      const keywordMatch = entry.keywords.some((kw) => {
+        const keyword = kw.toLowerCase();
+        // Check if query contains the keyword
+        if (queryLower.includes(keyword)) return true;
+        // Check if keyword contains any word from the query (for multi-word keywords)
+        if (keyword.includes(' ')) {
+          const keywordWords = keyword.split(/\s+/);
+          return keywordWords.some(kword => queryWords.includes(kword));
+        }
+        // Check if any query word matches the keyword
+        return queryWords.includes(keyword);
+      });
+      
       return questionMatch || answerMatch || keywordMatch;
     });
 
@@ -116,6 +131,11 @@ export class AiAgentService {
   }
 
   // =============== SLOT AVAILABILITY ===============
+  private normalizeInsuranceId(id: string | undefined): string | undefined {
+    if (!id) return undefined;
+    return id.trim().replace(/\D/g, '');
+  }
+
   async getAvailableSlots(dto: SlotQueryDto & { step?: number }) {
     const { doctor_id, date, appointment_type_id, step: customStep } = dto;
 
@@ -135,6 +155,33 @@ export class AiAgentService {
 
     if (!schedule || schedule.isClosed) {
       return { summary: { total: 0, available: 0, unavailable: 0 }, availableSlots: [], unavailableSlots: [] };
+    }
+
+    // Check if the date falls within an absence period
+    const checkDate = new Date(queryDate);
+    checkDate.setHours(0, 0, 0, 0);
+    
+    const absence = await this.prisma.doctorAbsence.findFirst({
+      where: {
+        doctorId: doctor_id,
+        fromDate: { lte: checkDate },
+        toDate: { gte: checkDate },
+      },
+    });
+
+    if (absence) {
+      // Doctor is absent on this date, return empty slots
+      return { 
+        summary: { total: 0, available: 0, unavailable: 0 }, 
+        availableSlots: [], 
+        unavailableSlots: [],
+        absenceInfo: {
+          isAbsent: true,
+          fromDate: absence.fromDate,
+          toDate: absence.toDate,
+          reason: absence.reason,
+        }
+      };
     }
 
     // Determine duration
@@ -251,12 +298,45 @@ export class AiAgentService {
         step: 30 
       });
       for (const slot of slots.availableSlots) {
-        alternatives.push({ date: checkDate.toISOString().split('T')[0], time: slot.startTime });
-        if (alternatives.length >= 10) break;
+        alternatives.push({ 
+          date: checkDate.toDateString(), 
+          time: slot.startTime,
+          originalDate: checkDate.toISOString().split('T')[0]
+        });
+        if (alternatives.length >= 20) break;
       }
-      if (alternatives.length >= 10) break;
+      if (alternatives.length >= 20) break;
     }
-    return { alternative_slots: alternatives };
+
+    // Sort by proximity to requested slot if provided
+    if (requested_slot && alternatives.length > 0) {
+      // requested_slot could be a full ISO date or just a time
+      const requestedTimeStr = requested_slot.includes('T') 
+        ? requested_slot.split('T')[1].substring(0, 5) 
+        : requested_slot;
+      
+      const parseTimeToMinutes = (timeStr: string) => {
+        if (!timeStr) return 0;
+        const clean = timeStr.trim().toUpperCase();
+        const isPM = clean.includes('PM');
+        const isAM = clean.includes('AM');
+        let [h, m] = clean.replace(/[AP]M/, '').split(':').map(Number);
+        if (isNaN(h)) return 0;
+        if (isNaN(m)) m = 0;
+        if (isPM && h < 12) h += 12;
+        if (isAM && h === 12) h = 0;
+        return h * 60 + m;
+      };
+
+      const targetMins = parseTimeToMinutes(requestedTimeStr);
+      alternatives.sort((a, b) => {
+        const diffA = Math.abs(parseTimeToMinutes(a.time) - targetMins);
+        const diffB = Math.abs(parseTimeToMinutes(b.time) - targetMins);
+        return diffA - diffB;
+      });
+    }
+
+    return { alternative_slots: alternatives.slice(0, 20) };
   }
 
   // =============== CREATE BOOKING ===============
@@ -271,21 +351,60 @@ export class AiAgentService {
     let patientId = patient_id;
     let isNewPatient = false;
 
+    // Caller number fallback from payload if explicitly provided
+    const callerNumber = dto.caller_phone_number;
+
     if (!patientId) {
-      if (!patient_info?.phone) throw new BadRequestException('Phone required');
-      const existingPatient = await this.prisma.patient.findFirst({ where: { phone: patient_info.phone } });
+      let existingPatient;
+
+      // Priority 1: Lookup by insurance ID
+      const insuranceId = this.normalizeInsuranceId(patient_info?.insuranceId);
+      if (insuranceId) {
+        existingPatient = await this.prisma.patient.findUnique({
+          where: { insuranceId: insuranceId },
+        });
+      }
+
+      // Priority 2: Fallback to explicit patient info phone
+      if (!existingPatient && patient_info?.phone) {
+        existingPatient = await this.prisma.patient.findFirst({
+          where: { phone: patient_info.phone },
+        });
+      }
+
+      // Priority 3: Fallback to caller phone number (SID info)
+      if (!existingPatient && callerNumber) {
+        existingPatient = await this.prisma.patient.findFirst({
+          where: { phone: callerNumber },
+        });
+      }
+
       if (existingPatient) {
         patientId = existingPatient.id;
+
+        // Sync insurance ID if provided and missing
+        if (patient_info?.insuranceId && !existingPatient.insuranceId) {
+          await this.prisma.patient.update({
+            where: { id: patientId },
+            data: { insuranceId: patient_info.insuranceId }
+          });
+        }
       } else {
+        // If no patient found, we need at least one identifier to create one
+        const finalPhone = patient_info?.phone || callerNumber;
+        if (!finalPhone && !patient_info?.insuranceId) {
+          throw new BadRequestException('Phone number or Insurance ID required for registration');
+        }
+
         const newPatient = await this.prisma.patient.create({
           data: {
-            firstName: patient_info.firstName,
-            lastName: patient_info.lastName,
-            phone: patient_info.phone,
-            email: patient_info.email,
-            insuranceId: patient_info.insuranceId || null,
-            dob: patient_info.dob ? new Date(patient_info.dob) : null,
-            gender: patient_info.gender?.toUpperCase() as any,
+            firstName: patient_info?.firstName,
+            lastName: patient_info?.lastName,
+            phone: finalPhone,
+            email: patient_info?.email,
+            insuranceId: this.normalizeInsuranceId(patient_info?.insuranceId) || null,
+            dob: patient_info?.dob ? new Date(patient_info?.dob) : null,
+            gender: patient_info?.gender?.toUpperCase() as any,
           },
         });
         patientId = newPatient.id;
@@ -346,6 +465,57 @@ export class AiAgentService {
       }
     }
     if (!fitsInHalf) throw new BadRequestException('Appointment must fit in a half-day block');
+
+    // Check if appointment date falls within an absence period
+    const apptCheckDate = new Date(apptDate);
+    apptCheckDate.setHours(0, 0, 0, 0);
+    
+    const absenceCheck = await this.prisma.doctorAbsence.findFirst({
+      where: {
+        doctorId: doctor_id,
+        fromDate: { lte: apptCheckDate },
+        toDate: { gte: apptCheckDate },
+      },
+    });
+
+    if (absenceCheck) {
+      // Find next available date
+      let nextAvailableDate = new Date(absenceCheck.toDate);
+      nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+      
+      // Check if there are more absence periods after this one
+      let currentDate = new Date(nextAvailableDate);
+      const maxDaysToCheck = 365;
+      let daysChecked = 0;
+      
+      while (daysChecked < maxDaysToCheck) {
+        const futureAbsence = await this.prisma.doctorAbsence.findFirst({
+          where: {
+            doctorId: doctor_id,
+            fromDate: { lte: currentDate },
+            toDate: { gte: currentDate },
+          },
+        });
+        
+        if (!futureAbsence) {
+          nextAvailableDate = currentDate;
+          break;
+        }
+        
+        currentDate = new Date(futureAbsence.toDate);
+        currentDate.setDate(currentDate.getDate() + 1);
+        daysChecked++;
+      }
+      
+      const fromDateStr = absenceCheck.fromDate.toISOString().split('T')[0];
+      const toDateStr = absenceCheck.toDate.toISOString().split('T')[0];
+      const nextDateStr = nextAvailableDate.toISOString().split('T')[0];
+      
+      const reasonMsg = absenceCheck.reason ? ` (${absenceCheck.reason})` : '';
+      throw new BadRequestException(
+        `Doctor is unavailable from ${fromDateStr} to ${toDateStr}${reasonMsg}. Next available date is ${nextDateStr}.`
+      );
+    }
 
     // Conflict check
     const bufferMap: Record<BufferTime, number> = {
@@ -498,6 +668,9 @@ export class AiAgentService {
     if (dto.new_date) updateData.appointmentDate = new Date(dto.new_date);
     if (dto.new_start_time) updateData.startTime = dto.new_start_time;
     if (dto.appointment_type_id) updateData.appointmentTypeId = dto.appointment_type_id;
+    
+    // Set status to RESCHEDULED
+    updateData.status = 'RESCHEDULED';
 
     // Recalculate endTime if needed
     if (dto.new_start_time || dto.appointment_type_id) {
@@ -575,6 +748,57 @@ export class AiAgentService {
                 }
             }
             if (!fitsInHalf) throw new BadRequestException('Appointment must fit in a half-day block');
+
+            // Check if reschedule date falls within an absence period
+            const rescheduleCheckDate = new Date(checkDate);
+            rescheduleCheckDate.setHours(0, 0, 0, 0);
+            
+            const absenceCheck = await this.prisma.doctorAbsence.findFirst({
+              where: {
+                doctorId: appointment.doctorId || '',
+                fromDate: { lte: rescheduleCheckDate },
+                toDate: { gte: rescheduleCheckDate },
+              },
+            });
+
+            if (absenceCheck) {
+              // Find next available date
+              let nextAvailableDate = new Date(absenceCheck.toDate);
+              nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+              
+              // Check if there are more absence periods after this one
+              let currentDate = new Date(nextAvailableDate);
+              const maxDaysToCheck = 365;
+              let daysChecked = 0;
+              
+              while (daysChecked < maxDaysToCheck) {
+                const futureAbsence = await this.prisma.doctorAbsence.findFirst({
+                  where: {
+                    doctorId: appointment.doctorId || '',
+                    fromDate: { lte: currentDate },
+                    toDate: { gte: currentDate },
+                  },
+                });
+                
+                if (!futureAbsence) {
+                  nextAvailableDate = currentDate;
+                  break;
+                }
+                
+                currentDate = new Date(futureAbsence.toDate);
+                currentDate.setDate(currentDate.getDate() + 1);
+                daysChecked++;
+              }
+              
+              const fromDateStr = absenceCheck.fromDate.toISOString().split('T')[0];
+              const toDateStr = absenceCheck.toDate.toISOString().split('T')[0];
+              const nextDateStr = nextAvailableDate.toISOString().split('T')[0];
+              
+              const reasonMsg = absenceCheck.reason ? ` (${absenceCheck.reason})` : '';
+              throw new BadRequestException(
+                `Cannot reschedule: Doctor is unavailable from ${fromDateStr} to ${toDateStr}${reasonMsg}. Next available date is ${nextDateStr}.`
+              );
+            }
 
             const bufferMap: Record<BufferTime, number> = {
                 Minutes_5: 5, Minutes_10: 10, Minutes_15: 15, Minutes_20: 20, Minutes_30: 30,
@@ -825,35 +1049,39 @@ export class AiAgentService {
       ? Number(dto.appointment_id)
       : undefined;
 
-    // Insurance ID: optional, digits only 
-    let insuranceId: string | undefined = dto.insurance_id;
-
-    if (insuranceId) {
-      // Remove whitespace just in case
-      insuranceId = insuranceId.trim();
-
-      // Optional extra safety: keep only digits
-      insuranceId = insuranceId.replace(/\D/g, '');
-
-      // At this point DTO already guarantees length === 10
-    }
+    // Insurance ID: Priority 1: DTO, Priority 2: Extracted
+    let insuranceId: string | undefined = this.normalizeInsuranceId(dto.insurance_id);
 
     // Extract patient info from transcription/summary (including phone, name, email)
     const patientInfo = this.extractPatientInfoFromText(
       dto.transcription || dto.summary || '',
     );
 
+    if (!insuranceId && patientInfo.insuranceId) {
+      insuranceId = this.normalizeInsuranceId(patientInfo.insuranceId);
+      console.log(`Using extracted insuranceId for transcription save: ${insuranceId}`);
+    }
+
     // Use extracted phone if not provided in DTO
     let phoneNumber = dto.phone_number || patientInfo.phone;
 
     // STEP 1: Try to find or create patient
-    if (!patientId && phoneNumber) {
-      // Try to find existing patient by phone
-      const existingPatient = await this.prisma.patient.findFirst({
-        where: {
-          phone: phoneNumber,
-        },
-      });
+    if (!patientId) {
+      let existingPatient;
+
+      // Priority 1: Lookup by insurance ID
+      if (insuranceId) {
+        existingPatient = await this.prisma.patient.findUnique({
+          where: { insuranceId },
+        });
+      }
+
+      // Priority 2: Fallback to phone number if not found by insurance ID
+      if (!existingPatient && phoneNumber) {
+        existingPatient = await this.prisma.patient.findFirst({
+          where: { phone: phoneNumber },
+        });
+      }
 
       if (existingPatient) {
         patientId = existingPatient.id;
@@ -968,7 +1196,7 @@ export class AiAgentService {
         phoneNumber: phoneNumber,
         duration: callDuration || dto.duration,
         audioUrl: dto.audio_url,
-        transcription: this.wordsToDigits(dto.transcription),
+        transcription: this.formatTranscriptionWithLabels(this.wordsToDigits(dto.transcription)),
         intent: (dto.intent?.toUpperCase() as any) || 'GENERAL',
         sentiment: (dto.sentiment?.toUpperCase() as any) || 'NEUTRAL',
         summary: this.wordsToDigits(dto.summary),
@@ -1005,6 +1233,8 @@ export class AiAgentService {
     // 1. Normalize Data (Handle nested "data" wrapper from ElevenLabs)
     const realData = dto.data || dto;
     const incomingCallSid = realData.conversation_id;
+    const finalDoctorId = doctorId || dto.doctor_id;
+
     // Construct proxy Audio URL (easier for frontend to use)
     // Use environment variable or fallback to localhost for development
     const backendBaseUrl =
@@ -1043,9 +1273,11 @@ export class AiAgentService {
     // Format transcript if available
     let transcriptionText = '';
     if (Array.isArray(realData.transcript)) {
-      transcriptionText = realData.transcript
-        .map((t) => `${t.role}: ${t.message}`)
-        .join('\n');
+      transcriptionText = this.formatTranscriptionWithLabels(
+        realData.transcript
+          .map((t) => `${t.role}: ${t.message}`)
+          .join('\n'),
+      );
     }
 
     // Priority 2: Extract from tool call parameters if not found in SIP metadata
@@ -1094,25 +1326,59 @@ export class AiAgentService {
       where: { callSid: incomingCallSid },
     });
 
-    // If not found by ID, try finding by Phone Number extracted from tool calls or transcription
+    // If not found by ID, try finding by Insurance ID OR Phone Number extracted from tool calls or transcription
     // (This handles cases where the Tool saved with a "temp_" ID because config was broken)
-    if (!existing && callerPhoneNumber) {
-      console.log(`Attempting to link call via phone number: ${callerPhoneNumber}`);
-      // Find most recent temp record for this phone (last 15 mins)
+    if (!existing) {
+      console.log(`Attempting to link call via fallback identifiers (Insurance: ${extractedInfo.insuranceId}, Phone: ${callerPhoneNumber})`);
+      // Find most recent temp record for this patient/phone and doctor (last 15 mins)
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
-      existing = await this.prisma.callTranscription.findFirst({
+      
+      const query: any = {
         where: {
-          phoneNumber: callerPhoneNumber,
+          doctorId: finalDoctorId || undefined,
           callSid: { startsWith: 'temp_' },
           createdAt: { gt: fifteenMinsAgo },
+          OR: []
         },
         orderBy: { createdAt: 'desc' },
-      });
+      };
+
+      if (extractedInfo.insuranceId) {
+        query.where.OR.push({ insuranceId: extractedInfo.insuranceId });
+      }
+      if (callerPhoneNumber) {
+        query.where.OR.push({ phoneNumber: callerPhoneNumber });
+      }
+
+      // If we have a transcription, also try to match by similar transcription content
+      // This helps when insurance/phone aren't captured during the call
+      if (transcriptionText && transcriptionText.length > 50) {
+        // Get first 100 chars of transcription as a fingerprint
+        const transcriptFingerprint = transcriptionText.substring(0, 100).toLowerCase();
+        query.where.OR.push({
+          transcription: {
+            contains: transcriptFingerprint.substring(0, 50), // Use first 50 chars for matching
+          },
+        });
+      }
+
+      // Fallback: If no specific identifiers, just find the most recent temp record for this doctor
+      // This is safe because we're within a 15-minute window
+      if (query.where.OR.length === 0 && finalDoctorId) {
+        delete query.where.OR;
+        console.log(`No specific identifiers found, searching for most recent temp record for doctor ${finalDoctorId}`);
+      }
+
+      if (query.where.OR?.length > 0 || finalDoctorId) {
+        existing = await this.prisma.callTranscription.findFirst(query);
+      }
 
       if (existing) {
         console.log(
-          `Found linked record via phone! ID: ${existing.id}, TempSID: ${existing.callSid}`,
+          `Found linked record via fallback! ID: ${existing.id}, TempSID: ${existing.callSid}, Match: ${existing.insuranceId === extractedInfo.insuranceId ? 'Insurance' : existing.phoneNumber === callerPhoneNumber ? 'Phone' : 'Transcription/Recent'}`,
         );
+      } else {
+        console.log(`No temp record found for linking. Will create new record.`);
       }
     }
 
@@ -1128,7 +1394,7 @@ export class AiAgentService {
           // Update phone number if we found it and existing record doesn't have one
           phoneNumber: callerPhoneNumber || existing.phoneNumber,
           // Only update transcript if missing
-          transcription: existing.transcription ? undefined : this.wordsToDigits(transcriptionText),
+          transcription: existing.transcription ? undefined : this.formatTranscriptionWithLabels(this.wordsToDigits(transcriptionText)),
           // ALWAYS update summary with ElevenLabs summary when available (overwrite existing)
           summary: realData.analysis?.transcript_summary 
             ? this.wordsToDigits(realData.analysis.transcript_summary) 
@@ -1155,12 +1421,26 @@ export class AiAgentService {
       console.log(
         `Updated CallTranscription ${existing.id} with audio and duration.`,
       );
+
+      // SYNC: Update patient's insurance ID if we extracted one and they don't have it
+      if (existing.patientId) {
+        const insuranceIdToSync = existing.insuranceId || extractedInfo.insuranceId;
+        if (insuranceIdToSync) {
+          const patient = await this.prisma.patient.findUnique({ where: { id: existing.patientId } });
+          if (patient && !patient.insuranceId) {
+            console.log(`[Webhook] Syncing insuranceId ${insuranceIdToSync} to patient ${existing.patientId}`);
+            await this.prisma.patient.update({
+              where: { id: existing.patientId },
+              data: { insuranceId: insuranceIdToSync },
+            });
+          }
+        }
+      }
+
       return { success: true, message: 'Updated existing transcription' };
     }
 
     // If still no record, create a new one (Fallback)
-    const finalDoctorId = doctorId || dto.doctor_id;
-
     if (!finalDoctorId) {
       console.warn('Cannot create new transcription: Missing Doctor ID');
       return { success: false, message: 'Missing Doctor ID' };
@@ -1205,7 +1485,7 @@ export class AiAgentService {
         phoneNumber: callerPhoneNumber,
         duration: tempDto.duration,
         audioUrl: audioUrl,
-        transcription: this.wordsToDigits(tempDto.transcription),
+        transcription: this.formatTranscriptionWithLabels(this.wordsToDigits(tempDto.transcription)),
         summary: this.wordsToDigits(tempDto.summary),
         callStatus: callStatus,
         wasTransferred: callStatus === 'TRANSFERRED',
@@ -1354,6 +1634,10 @@ export class AiAgentService {
       if (match && match[1]) {
         let fullName = match[1].trim();
         
+        // Remove trailing punctuation like ". AI" or "..."
+        fullName = fullName.replace(/[.\s]+AI$/i, '').trim();
+        fullName = fullName.replace(/[.!?,]+$/, '').trim();
+        
         // Smart Slicing: Cut the name if a boundary stop word is found
         const words = fullName.split(/\s+/);
         const cleanedParts: string[] = [];
@@ -1390,7 +1674,12 @@ export class AiAgentService {
       const genericPattern = /\b([A-Z][a-z.]+\s+[A-Z][a-z.]+)\b/g;
       let match;
       while ((match = genericPattern.exec(text)) !== null) {
-        const fullName = match[1];
+        let fullName = match[1];
+        
+        // Remove trailing punctuation like ". AI"
+        fullName = fullName.replace(/[.\s]+AI$/i, '').trim();
+        fullName = fullName.replace(/[.!?,]+$/, '').trim();
+
         const parts = fullName.split(/\s+/);
         
         const isBlocked = parts.some(part => 
@@ -1469,6 +1758,13 @@ export class AiAgentService {
       const regex = new RegExp(`\\b${word}\\b`, 'gi');
       result = result.replace(regex, digit);
     });
+
+    // Join single digit sequences
+    // Matches: "0, 6, 6" -> "066", "1 2 3" -> "123"
+    // We look for digits separated by spaces or commas
+    result = result.replace(/\b\d\b(?:[\s,]+\d\b)+/g, (match) => {
+      return match.replace(/[\s,]/g, '');
+    });
     
     return result;
   }
@@ -1509,11 +1805,10 @@ export class AiAgentService {
           reason = reason.substring(0, reason.length - 4).trim();
         }
 
-        // Phase 6 Cleanup: Strip leading filler words
         const fillerWords = [
           'actually', 'uh', 'um', 'to', 'just', 'so', 'like', 'actually,', 'basis', 'urgent'
         ];
-        
+
         let words = reason.split(/\s+/);
         while (words.length > 0 && fillerWords.includes(words[0].toLowerCase().replace(/[^a-z]/g, ''))) {
           words.shift();
@@ -1529,6 +1824,157 @@ export class AiAgentService {
     }
 
     return null;
+  }
+
+  /**
+   * Standardizes transcription formatting with only 'ai:' and 'user:' labels.
+   */
+  private formatTranscriptionWithLabels(text: string): string {
+    if (!text) return '';
+
+    // Split into lines and cleanup
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    
+    if (lines.length === 0) return '';
+
+    // Helper to normalize roles
+    const normalizeRole = (role: string): 'ai' | 'user' => {
+      const r = role.toLowerCase().trim();
+      if (['ai', 'agent', 'assistant', 'system'].includes(r)) return 'ai';
+      return 'user'; // Default everything else to 'user' (patient, etc.)
+    };
+
+    // Check if lines already have labels (at least 50% for heuristic)
+    const labeledCount = lines.filter(line => /^[a-z0-9_-]+:\s/i.test(line)).length;
+    const isMostlyLabeled = labeledCount / lines.length >= 0.5;
+
+    if (isMostlyLabeled) {
+      return lines.map(line => {
+        const match = line.match(/^([a-z0-9_-]+):\s*(.*)$/i);
+        if (match) {
+          const role = normalizeRole(match[1]);
+          const message = match[2].trim();
+          return `${role}: ${message}`;
+        }
+        // If a line is missing a label in a labeled block, it likely belongs to the previous speaker
+        return line;
+      }).join('\n');
+    } else {
+      // No consistent labels, alternate starting with ai
+      return lines.map((line, index) => {
+        const role = index % 2 === 0 ? 'ai' : 'user';
+        return `${role}: ${line}`;
+      }).join('\n');
+    }
+  }
+
+  /**
+   * Resolves a unique target appointment for reschedule or cancel based on patient identification 
+   * and conversational context (requested date/time).
+   */
+  private async resolveTargetAppointment(payload: WebhookPayloadDto): Promise<{ 
+    appointment?: any; 
+    multipleOptions?: any[]; 
+    error?: string 
+  }> {
+    const { doctor_id, patient_id, patient_info, booking_id, requested_date, appointment_date } = payload;
+    const phoneNumber = payload.phone_number || patient_info?.phone;
+    const insuranceId = this.normalizeInsuranceId(patient_info?.insuranceId);
+
+    // 1. If booking_id is provided, use it directly
+    if (booking_id) {
+      const bId = this.parseBookingId(booking_id);
+      if (bId) {
+        const appointment = await this.prisma.appointment.findUnique({
+          where: { id: bId },
+          include: { patient: true }
+        });
+        if (appointment) return { appointment };
+      }
+    }
+
+    // 2. Resolve Patient
+    let resolvedPatientId = patient_id;
+    if (!resolvedPatientId) {
+      let patient;
+      if (insuranceId) {
+        patient = await this.prisma.patient.findUnique({ where: { insuranceId } });
+      }
+      if (!patient && phoneNumber) {
+        patient = await this.prisma.patient.findFirst({ where: { phone: phoneNumber } });
+      }
+      // Fallback: Name-based lookup if ID/Phone fail
+      if (!patient && patient_info?.firstName && patient_info?.lastName) {
+        patient = await this.prisma.patient.findFirst({
+          where: {
+            firstName: { contains: patient_info.firstName, mode: 'insensitive' },
+            lastName: { contains: patient_info.lastName, mode: 'insensitive' },
+          }
+        });
+      }
+      
+      if (!patient) return { error: "I couldn't find your patient record. Could you please provide your insurance ID, phone number, or full name?" };
+      resolvedPatientId = patient.id;
+    }
+
+    // 3. Fetch all SCHEDULED or RESCHEDULED appointments for this patient and doctor
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        doctorId: doctor_id,
+        patientId: resolvedPatientId,
+        status: { in: ['SCHEDULED', 'RESCHEDULED'] },
+      },
+      orderBy: { appointmentDate: 'asc' },
+    });
+
+    if (appointments.length === 0) {
+      return { error: "I couldn't find any scheduled appointments for you." };
+    }
+
+    if (appointments.length === 1) {
+      return { appointment: appointments[0] };
+    }
+
+    // 4. Handle multiple appointments with context
+    // Support month/range matching (e.g., "in March", "this month")
+    const searchDateStr = payload.intent?.toLowerCase().includes('reschedule') 
+      ? appointment_date 
+      : (appointment_date || requested_date || payload.transcription || payload.query);
+
+    if (searchDateStr) {
+      const lowerSearch = searchDateStr.toLowerCase();
+      const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+      const monthIdx = months.findIndex(m => lowerSearch.includes(m));
+
+      const filtered = appointments.filter((apt) => {
+        if (!apt.appointmentDate) return false;
+        const aptDate = new Date(apt.appointmentDate);
+        const aptDateStr = aptDate.toISOString().split('T')[0];
+
+        // Specific date match
+        const searchDate = new Date(searchDateStr);
+        if (!isNaN(searchDate.getTime()) && aptDateStr === searchDate.toISOString().split('T')[0]) {
+          return true;
+        }
+
+        // Month match
+        if (monthIdx !== -1 && aptDate.getUTCMonth() === monthIdx) {
+          return true;
+        }
+
+        return false;
+      });
+
+      if (filtered.length === 1) {
+        return { appointment: filtered[0] };
+      }
+      if (filtered.length > 1) {
+        return { multipleOptions: filtered };
+      }
+    }
+
+    // 5. If still multiple, return them as options
+    return { multipleOptions: appointments };
   }
 
   // =============== GET PATIENT HISTORY ===============
@@ -1617,7 +2063,8 @@ export class AiAgentService {
           patient_info: payload.patient_info,
           start_time: startTime,
           appointment_date: appointmentDate,
-          appointment_type_id: resolvedTypeId,
+          appointment_type_id: resolvedTypeId || payload.appointment_type_id,
+          caller_phone_number: payload.phone_number,
         });
 
         return {
@@ -1782,14 +2229,36 @@ export class AiAgentService {
   ): Promise<WebhookResponseDto> {
     const resolvedTypeId = await this.resolveAppointmentType(payload.doctor_id, payload.appointment_type_id) || undefined;
     
-    // If all reschedule parameters provided, execute the reschedule
-    if (payload.booking_id && (payload.start_time || payload.requested_time) && (payload.appointment_date || payload.requested_date)) {
+    // Resolve Target Appointment instead of relying solely on booking_id
+    const targetResolution = await this.resolveTargetAppointment(payload);
+    
+    if (targetResolution.error) {
+      return {
+        reply_text: targetResolution.error,
+        action: 'ask_identity',
+      };
+    }
+
+    if (targetResolution.multipleOptions) {
+      const options = targetResolution.multipleOptions
+        .map((a, idx) => `${idx + 1}. ${a.appointmentDate ? new Date(a.appointmentDate).toDateString() : 'unknown date'} at ${a.startTime || 'unknown time'}`)
+        .join('\n');
+      return {
+        reply_text: `I see you have multiple appointments scheduled:\n${options}\nWhich one would you like to reschedule? You can just say the date.`,
+        action: 'ask_identity',
+      };
+    }
+
+    const appointmentToReschedule = targetResolution.appointment;
+
+    // If new time and date provided, execute the reschedule
+    if (appointmentToReschedule && (payload.start_time || payload.requested_time) && (payload.appointment_date || payload.requested_date)) {
       try {
         const result = await this.updateBooking({
-          booking_id: payload.booking_id,
+          booking_id: appointmentToReschedule.id.toString(),
           new_start_time: payload.start_time || payload.requested_time,
           new_date: payload.appointment_date || payload.requested_date,
-          appointment_type_id: resolvedTypeId, // Use resolvedTypeId here
+          appointment_type_id: resolvedTypeId,
         });
 
         return {
@@ -1812,12 +2281,37 @@ export class AiAgentService {
       }
     }
 
-    // If booking_id missing, ask for it
-    if (!payload.booking_id) {
+    // Suggest alternative slots if we have a target appointment but no new date/time yet
+    if (appointmentToReschedule) {
+      const slots = await this.suggestAlternativeSlots({
+        doctor_id: payload.doctor_id,
+        requested_slot: payload.requested_time || new Date().toISOString(),
+        appointment_type_id: resolvedTypeId,
+      });
+
+      if (slots.alternative_slots.length > 0) {
+        const slotTexts = slots.alternative_slots
+          .slice(0, 3)
+          .map((s: any) => `${s.date} at ${s.time}`)
+          .join(', or ');
+
+        return {
+          reply_text: `I can reschedule your appointment for ${appointmentToReschedule.appointmentDate ? new Date(appointmentToReschedule.appointmentDate).toDateString() : 'that date'}. Available times are: ${slotTexts}. Which would you prefer?`,
+          suggested_slots: slots.alternative_slots.slice(0, 3),
+          action: 'ask_new_slot',
+          booking_id: appointmentToReschedule.id.toString(),
+        };
+      }
+    } else {
+      console.log(`[handleRescheduleIntent] No appointment uniquely resolved yet. Current payload:`, payload);
+    }
+
+    // Fallback: If booking_id missing and resolution didn't find anything (should be covered by targetResolution.error or multipleOptions, but just in case)
+    if (!payload.booking_id && !appointmentToReschedule) {
       return {
         reply_text:
-          'I can help you reschedule. Can you provide your appointment confirmation number or the date of your current appointment?',
-        action: 'ask_booking_id',
+          'I can help you reschedule. Could you please provide your appointment confirmation number, phone number, or insurance ID so I can find your appointment?',
+        action: 'ask_identity',
       };
     }
 
@@ -1853,46 +2347,55 @@ export class AiAgentService {
   private async handleCancelIntent(
     payload: WebhookPayloadDto,
   ): Promise<WebhookResponseDto> {
-    // Extract phone number from either location
-    const phoneNumber = payload.phone_number || payload.patient_info?.phone;
+    // Resolve Target Appointment
+    const targetResolution = await this.resolveTargetAppointment(payload);
 
-    // Try to cancel with available information
-    if (
-      payload.booking_id ||
-      phoneNumber ||
-      payload.appointment_date ||
-      payload.requested_date
-    ) {
-      try {
-        const result = await this.cancelBooking({
-          booking_id: payload.booking_id,
-          phone_number: phoneNumber,
-          appointment_date: payload.appointment_date || payload.requested_date,
-        });
+    if (targetResolution.error) {
+      return {
+        reply_text: `I'd be happy to help you cancel. ${targetResolution.error}`,
+        action: 'ask_identity',
+      };
+    }
 
-        return {
-          reply_text: `Your appointment has been successfully cancelled. If you need to book a new appointment in the future, feel free to call back.`,
-          action: 'cancellation_confirmed',
-          booking_id: result.appointment.id,
-          success: true,
-          data: result.appointment,
-        };
-      } catch (error) {
-        return {
-          reply_text:
-            error.message ||
-            "I'm sorry, I couldn't find that appointment. Could you verify the booking ID or appointment date?",
-          action: 'cancellation_failed',
-          success: false,
-        };
-      }
+    if (targetResolution.multipleOptions) {
+      const options = targetResolution.multipleOptions
+        .map((a, idx) => `${idx + 1}. ${a.appointmentDate ? new Date(a.appointmentDate).toDateString() : 'unknown date'} at ${a.startTime || 'unknown time'}`)
+        .join('\n');
+      return {
+        reply_text: `I found multiple appointments for you:\n${options}\nWhich one would you like to cancel? You can just say the date.`,
+        action: 'ask_identity',
+      };
+    }
+
+    const appointmentToCancel = targetResolution.appointment;
+
+    try {
+      const result = await this.cancelBooking({
+        booking_id: appointmentToCancel.id.toString(),
+      });
+
+      return {
+        reply_text: `I have successfully found your appointment for ${appointmentToCancel.appointmentDate ? new Date(appointmentToCancel.appointmentDate).toDateString() : 'that date'} at ${appointmentToCancel.startTime || 'unknown time'} and cancelled it for you.`,
+        action: 'cancellation_confirmed',
+        booking_id: result.appointment.id,
+        success: true,
+        data: result.appointment,
+      };
+    } catch (error) {
+      return {
+        reply_text:
+          error.message ||
+          "I'm sorry, I couldn't cancel that appointment. Would you like me to connect you with our assistant?",
+        action: 'cancellation_failed',
+        success: false,
+      };
     }
 
     // If no identifying information provided, ask for it
     return {
       reply_text:
-        'I can help you cancel your appointment. Can you provide your appointment confirmation number or the date of your appointment?',
-      action: 'ask_booking_id',
+        'I can help you cancel your appointment. Could you please provide your appointment confirmation number, phone number, or insurance ID so I can find your appointment?',
+      action: 'ask_identity',
     };
   }
 
