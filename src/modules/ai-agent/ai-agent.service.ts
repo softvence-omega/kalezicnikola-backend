@@ -157,6 +157,33 @@ export class AiAgentService {
       return { summary: { total: 0, available: 0, unavailable: 0 }, availableSlots: [], unavailableSlots: [] };
     }
 
+    // Check if the date falls within an absence period
+    const checkDate = new Date(queryDate);
+    checkDate.setHours(0, 0, 0, 0);
+    
+    const absence = await this.prisma.doctorAbsence.findFirst({
+      where: {
+        doctorId: doctor_id,
+        fromDate: { lte: checkDate },
+        toDate: { gte: checkDate },
+      },
+    });
+
+    if (absence) {
+      // Doctor is absent on this date, return empty slots
+      return { 
+        summary: { total: 0, available: 0, unavailable: 0 }, 
+        availableSlots: [], 
+        unavailableSlots: [],
+        absenceInfo: {
+          isAbsent: true,
+          fromDate: absence.fromDate,
+          toDate: absence.toDate,
+          reason: absence.reason,
+        }
+      };
+    }
+
     // Determine duration
     let duration = 20;
     if (appointment_type_id) {
@@ -439,6 +466,57 @@ export class AiAgentService {
     }
     if (!fitsInHalf) throw new BadRequestException('Appointment must fit in a half-day block');
 
+    // Check if appointment date falls within an absence period
+    const apptCheckDate = new Date(apptDate);
+    apptCheckDate.setHours(0, 0, 0, 0);
+    
+    const absenceCheck = await this.prisma.doctorAbsence.findFirst({
+      where: {
+        doctorId: doctor_id,
+        fromDate: { lte: apptCheckDate },
+        toDate: { gte: apptCheckDate },
+      },
+    });
+
+    if (absenceCheck) {
+      // Find next available date
+      let nextAvailableDate = new Date(absenceCheck.toDate);
+      nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+      
+      // Check if there are more absence periods after this one
+      let currentDate = new Date(nextAvailableDate);
+      const maxDaysToCheck = 365;
+      let daysChecked = 0;
+      
+      while (daysChecked < maxDaysToCheck) {
+        const futureAbsence = await this.prisma.doctorAbsence.findFirst({
+          where: {
+            doctorId: doctor_id,
+            fromDate: { lte: currentDate },
+            toDate: { gte: currentDate },
+          },
+        });
+        
+        if (!futureAbsence) {
+          nextAvailableDate = currentDate;
+          break;
+        }
+        
+        currentDate = new Date(futureAbsence.toDate);
+        currentDate.setDate(currentDate.getDate() + 1);
+        daysChecked++;
+      }
+      
+      const fromDateStr = absenceCheck.fromDate.toISOString().split('T')[0];
+      const toDateStr = absenceCheck.toDate.toISOString().split('T')[0];
+      const nextDateStr = nextAvailableDate.toISOString().split('T')[0];
+      
+      const reasonMsg = absenceCheck.reason ? ` (${absenceCheck.reason})` : '';
+      throw new BadRequestException(
+        `Doctor is unavailable from ${fromDateStr} to ${toDateStr}${reasonMsg}. Next available date is ${nextDateStr}.`
+      );
+    }
+
     // Conflict check
     const bufferMap: Record<BufferTime, number> = {
       Minutes_5: 5, Minutes_10: 10, Minutes_15: 15, Minutes_20: 20, Minutes_30: 30,
@@ -670,6 +748,57 @@ export class AiAgentService {
                 }
             }
             if (!fitsInHalf) throw new BadRequestException('Appointment must fit in a half-day block');
+
+            // Check if reschedule date falls within an absence period
+            const rescheduleCheckDate = new Date(checkDate);
+            rescheduleCheckDate.setHours(0, 0, 0, 0);
+            
+            const absenceCheck = await this.prisma.doctorAbsence.findFirst({
+              where: {
+                doctorId: appointment.doctorId || '',
+                fromDate: { lte: rescheduleCheckDate },
+                toDate: { gte: rescheduleCheckDate },
+              },
+            });
+
+            if (absenceCheck) {
+              // Find next available date
+              let nextAvailableDate = new Date(absenceCheck.toDate);
+              nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+              
+              // Check if there are more absence periods after this one
+              let currentDate = new Date(nextAvailableDate);
+              const maxDaysToCheck = 365;
+              let daysChecked = 0;
+              
+              while (daysChecked < maxDaysToCheck) {
+                const futureAbsence = await this.prisma.doctorAbsence.findFirst({
+                  where: {
+                    doctorId: appointment.doctorId || '',
+                    fromDate: { lte: currentDate },
+                    toDate: { gte: currentDate },
+                  },
+                });
+                
+                if (!futureAbsence) {
+                  nextAvailableDate = currentDate;
+                  break;
+                }
+                
+                currentDate = new Date(futureAbsence.toDate);
+                currentDate.setDate(currentDate.getDate() + 1);
+                daysChecked++;
+              }
+              
+              const fromDateStr = absenceCheck.fromDate.toISOString().split('T')[0];
+              const toDateStr = absenceCheck.toDate.toISOString().split('T')[0];
+              const nextDateStr = nextAvailableDate.toISOString().split('T')[0];
+              
+              const reasonMsg = absenceCheck.reason ? ` (${absenceCheck.reason})` : '';
+              throw new BadRequestException(
+                `Cannot reschedule: Doctor is unavailable from ${fromDateStr} to ${toDateStr}${reasonMsg}. Next available date is ${nextDateStr}.`
+              );
+            }
 
             const bufferMap: Record<BufferTime, number> = {
                 Minutes_5: 5, Minutes_10: 10, Minutes_15: 15, Minutes_20: 20, Minutes_30: 30,

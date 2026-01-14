@@ -17,6 +17,9 @@ import { UpdateScheduleDto } from './dto/update-schedule.dto';
 import { CreateAppointmentTypeDto } from './dto/create-appointment-type.dto';
 import { UpdateAppointmentTypeDto } from './dto/update-appointment-type.dto';
 import { GetAllSchedulesDto } from './dto/get-all-schedules.dto';
+import { CreateAbsenceDto } from './dto/create-absence.dto';
+import { UpdateAbsenceDto } from './dto/update-absence.dto';
+import { GetAllAbsencesDto } from './dto/get-all-absences.dto';
 import { deleteFileFromUploads } from 'src/utils/file-delete.util';
 
 @Injectable()
@@ -1546,5 +1549,261 @@ export class DoctorService {
     await this.prisma.appointmentType.delete({ where: { id: typeId } });
 
     return { success: true, message: 'Appointment type deleted successfully' };
+  }
+
+  // ==================== ABSENCE MANAGEMENT ====================
+
+  // ----------------- CREATE ABSENCE -------------------
+  async createAbsence(accessToken: string, dto: CreateAbsenceDto) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+    });
+    if (!session?.doctorId) throw new UnauthorizedException();
+
+    const doctorId = session.doctorId;
+
+    // Validate date range
+    const fromDate = new Date(dto.fromDate);
+    const toDate = new Date(dto.toDate);
+
+    if (fromDate > toDate) {
+      throw new BadRequestException('fromDate must be before or equal to toDate');
+    }
+
+    // Create absence period
+    const absence = await this.prisma.doctorAbsence.create({
+      data: {
+        doctorId,
+        fromDate,
+        toDate,
+        reason: dto.reason,
+      },
+    });
+
+    return { absence };
+  }
+
+  // ----------------- GET ALL ABSENCES -------------------
+  async getAllAbsences(accessToken: string, query: GetAllAbsencesDto) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+    });
+    if (!session?.doctorId) throw new UnauthorizedException();
+
+    const doctorId = session.doctorId;
+    const filter = query.filter || 'all';
+
+    // Build where clause based on filter
+    const where: any = { doctorId };
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    if (filter === 'upcoming') {
+      where.toDate = { gte: now };
+    } else if (filter === 'past') {
+      where.toDate = { lt: now };
+    }
+
+    const absences = await this.prisma.doctorAbsence.findMany({
+      where,
+      orderBy: { fromDate: 'asc' },
+    });
+
+    return {
+      absences,
+      total: absences.length,
+    };
+  }
+
+  // ----------------- GET SINGLE ABSENCE -------------------
+  async getSingleAbsence(accessToken: string, absenceId: string) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+    });
+    if (!session?.doctorId) throw new UnauthorizedException();
+
+    const doctorId = session.doctorId;
+
+    const absence = await this.prisma.doctorAbsence.findUnique({
+      where: { id: absenceId },
+    });
+
+    if (!absence) {
+      throw new NotFoundException('Absence period not found');
+    }
+
+    if (absence.doctorId !== doctorId) {
+      throw new UnauthorizedException(
+        'You do not have permission to access this absence period',
+      );
+    }
+
+    return { absence };
+  }
+
+  // ----------------- UPDATE ABSENCE -------------------
+  async updateAbsence(
+    accessToken: string,
+    absenceId: string,
+    dto: UpdateAbsenceDto,
+  ) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+    });
+    if (!session?.doctorId) throw new UnauthorizedException();
+
+    const doctorId = session.doctorId;
+
+    const existingAbsence = await this.prisma.doctorAbsence.findUnique({
+      where: { id: absenceId },
+    });
+
+    if (!existingAbsence) {
+      throw new NotFoundException('Absence period not found');
+    }
+
+    if (existingAbsence.doctorId !== doctorId) {
+      throw new UnauthorizedException(
+        'You do not have permission to update this absence period',
+      );
+    }
+
+    // Prepare update data
+    const updateData: any = {};
+    if (dto.fromDate !== undefined) updateData.fromDate = new Date(dto.fromDate);
+    if (dto.toDate !== undefined) updateData.toDate = new Date(dto.toDate);
+    if (dto.reason !== undefined) updateData.reason = dto.reason;
+
+    // Validate date range if either date is being updated
+    if (dto.fromDate || dto.toDate) {
+      const fromDate = dto.fromDate ? new Date(dto.fromDate) : existingAbsence.fromDate;
+      const toDate = dto.toDate ? new Date(dto.toDate) : existingAbsence.toDate;
+
+      if (fromDate > toDate) {
+        throw new BadRequestException('fromDate must be before or equal to toDate');
+      }
+    }
+
+    const updatedAbsence = await this.prisma.doctorAbsence.update({
+      where: { id: absenceId },
+      data: updateData,
+    });
+
+    return { absence: updatedAbsence };
+  }
+
+  // ----------------- DELETE ABSENCE -------------------
+  async deleteAbsence(accessToken: string, absenceId: string) {
+    const session = await this.prisma.session.findUnique({
+      where: { accessToken },
+    });
+    if (!session?.doctorId) throw new UnauthorizedException();
+
+    const doctorId = session.doctorId;
+
+    const absence = await this.prisma.doctorAbsence.findUnique({
+      where: { id: absenceId },
+    });
+
+    if (!absence) {
+      throw new NotFoundException('Absence period not found');
+    }
+
+    if (absence.doctorId !== doctorId) {
+      throw new UnauthorizedException(
+        'You do not have permission to delete this absence period',
+      );
+    }
+
+    await this.prisma.doctorAbsence.delete({
+      where: { id: absenceId },
+    });
+
+    return { message: 'Absence period deleted successfully' };
+  }
+
+  // ----------------- HELPER: CHECK IF DATE IS IN ABSENCE PERIOD -------------------
+  async isDateInAbsencePeriod(doctorId: string, date: Date): Promise<boolean> {
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+
+    const absences = await this.prisma.doctorAbsence.findMany({
+      where: {
+        doctorId,
+        fromDate: { lte: checkDate },
+        toDate: { gte: checkDate },
+      },
+    });
+
+    return absences.length > 0;
+  }
+
+  // ----------------- HELPER: GET NEXT AVAILABLE DATE -------------------
+  async getNextAvailableDate(doctorId: string, startDate: Date): Promise<Date | null> {
+    const checkDate = new Date(startDate);
+    checkDate.setHours(0, 0, 0, 0);
+
+    // Get all future absence periods
+    const absences = await this.prisma.doctorAbsence.findMany({
+      where: {
+        doctorId,
+        toDate: { gte: checkDate },
+      },
+      orderBy: { fromDate: 'asc' },
+    });
+
+    if (absences.length === 0) {
+      return checkDate;
+    }
+
+    // Find the first date that's not in any absence period
+    let currentDate = new Date(checkDate);
+    const maxDaysToCheck = 365; // Check up to 1 year ahead
+    let daysChecked = 0;
+
+    while (daysChecked < maxDaysToCheck) {
+      const isInAbsence = absences.some(absence => {
+        const from = new Date(absence.fromDate);
+        const to = new Date(absence.toDate);
+        from.setHours(0, 0, 0, 0);
+        to.setHours(0, 0, 0, 0);
+        return currentDate >= from && currentDate <= to;
+      });
+
+      if (!isInAbsence) {
+        return currentDate;
+      }
+
+      // Move to next day
+      currentDate.setDate(currentDate.getDate() + 1);
+      daysChecked++;
+    }
+
+    return null; // No available date found within 1 year
+  }
+
+  // ----------------- HELPER: GET ABSENCE INFO FOR DATE -------------------
+  async getAbsenceInfoForDate(doctorId: string, date: Date): Promise<{ isAbsent: boolean; absence?: any; nextAvailableDate?: Date }> {
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+
+    const absence = await this.prisma.doctorAbsence.findFirst({
+      where: {
+        doctorId,
+        fromDate: { lte: checkDate },
+        toDate: { gte: checkDate },
+      },
+    });
+
+    if (absence) {
+      const nextDate = await this.getNextAvailableDate(doctorId, checkDate);
+      return {
+        isAbsent: true,
+        absence,
+        nextAvailableDate: nextDate || undefined,
+      };
+    }
+
+    return { isAbsent: false };
   }
 }

@@ -291,3 +291,21 @@ model AppointmentType {
 
   @@map("appointment_types")
 }
+
+model DoctorAbsence {
+  id       String   @id @default(uuid())
+  doctorId String
+  
+  fromDate DateTime // Start date of absence period
+  toDate   DateTime // End date of absence period (inclusive)
+  
+  reason   String?  @db.Text // Optional reason for absence
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  doctor Doctor @relation("DoctorAbsences", fields: [doctorId], references: [id], onDelete: Cascade)
+  
+  @@index([doctorId, fromDate, toDate])
+  @@map("doctor_absences")
+}
