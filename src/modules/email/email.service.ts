@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { EmailTemplatesUtil } from 'src/utils/email-templates.util';
 
 @Injectable()
 export class EmailService {
   private transporter;
 
-  constructor(private config: ConfigService) {
+  constructor(
+    private config: ConfigService,
+    private templatesUtil: EmailTemplatesUtil,
+  ) {
     this.transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -343,6 +347,21 @@ export class EmailService {
       return true;
     } catch (error) {
       console.error('Event cancellation email sending failed:', error);
+      return false;
+    }
+  }
+
+  async sendWelcomeEmail(to: string, name: string): Promise<boolean> {
+    try {
+      await this.transporter.sendMail({
+        from: `"Docline" <${this.config.get('smtp_auth_user')}>`,
+        to,
+        subject: 'Welcome to Docline!',
+        html: this.templatesUtil.getWelcomeEmailTemplate(name),
+      });
+      return true;
+    } catch (error) {
+      console.error('Welcome email sending failed:', error);
       return false;
     }
   }

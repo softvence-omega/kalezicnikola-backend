@@ -83,6 +83,12 @@ export class AuthService {
       },
     });
 
+    // Send welcome email
+    await this.emailService.sendWelcomeEmail(
+      doctor.email!,
+      doctor.firstName || 'Doctor',
+    );
+
     return doctor;
   }
 
