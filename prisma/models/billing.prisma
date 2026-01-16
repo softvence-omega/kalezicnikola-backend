@@ -31,7 +31,8 @@ model Subscription {
   billingCycle         BillingCycle? // Added billing cycle
   status               SubscriptionStatus?
   minutesAllocated     Int? // Minutes for current plan
-  minutesUsed          Int?                @default(0)
+  minutesUsed          Float?              @default(0) // Changed to Float for precision
+  extraMinutes         Float?              @default(0) // Changed to Float for precision
   currentPeriodStart   DateTime?
   currentPeriodEnd     DateTime?
   cancelledAt          DateTime?
@@ -43,6 +44,26 @@ model Subscription {
   doctor Doctor? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("subscriptions")
+}
+
+model SubscriptionHistory {
+  id               String              @id @default(uuid())
+  userId           String
+  planType         PlanType
+  billingCycle     BillingCycle
+  status           SubscriptionStatus
+  minutesAllocated Int
+  minutesUsed      Float // Changed to Float
+  extraMinutes     Float               @default(0) // Changed to Float
+  startDate        DateTime
+  endDate          DateTime?
+  archivedAt       DateTime            @default(now())
+
+  // Relations
+  doctor Doctor @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("subscription_histories")
 }
 
 model Invoice {

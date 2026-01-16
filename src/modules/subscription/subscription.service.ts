@@ -275,6 +275,31 @@ export class SubscriptionService implements OnModuleInit {
     };
   }
 
+  // Archive current subscription to history
+  private async archiveCurrentSubscription(userId: string) {
+    const currentSubscription = await this.prisma.subscription.findUnique({
+      where: { userId },
+    });
+
+    if (currentSubscription && currentSubscription.planType) {
+      await this.prisma.subscriptionHistory.create({
+        data: {
+          userId: currentSubscription.userId!,
+          planType: currentSubscription.planType,
+          billingCycle: currentSubscription.billingCycle!,
+          status: currentSubscription.status!,
+          minutesAllocated: currentSubscription.minutesAllocated || 0,
+          minutesUsed: currentSubscription.minutesUsed || 0,
+          extraMinutes: currentSubscription.extraMinutes || 0,
+          startDate: currentSubscription.currentPeriodStart || new Date(),
+          endDate: currentSubscription.currentPeriodEnd,
+          archivedAt: new Date(),
+        },
+      });
+      console.log(`📦 Archived subscription for user ${userId}`);
+    }
+  }
+
   // Assign Trial Plan (Admin only, no Stripe integration)
   async assignTrialPlan(userId: string, adminId?: string) {
     try {
@@ -313,6 +338,9 @@ export class SubscriptionService implements OnModuleInit {
       const lifetimeEndDate = new Date('2099-12-31T23:59:59Z');
 
       if (existingSubscription) {
+        // [NEW] Archive old plan before overwriting
+        await this.archiveCurrentSubscription(userId);
+
         // Update existing subscription to trial plan
         const updatedSubscription = await this.prisma.subscription.update({
           where: { userId },
@@ -322,12 +350,13 @@ export class SubscriptionService implements OnModuleInit {
             status: 'ACTIVE',
             minutesAllocated: trialPlan.minutes,
             minutesUsed: 0,
+            extraMinutes: 0, // Reset extra minutes
             currentPeriodStart: new Date(),
             currentPeriodEnd: lifetimeEndDate,
             cancelledAt: null,
             isActive: true,
             // Clear Stripe IDs since trial doesn't use Stripe
-            stripeCustomerId: null,
+            stripeCustomerId: existingSubscription.stripeCustomerId, // Keep customer ID if exists
             stripeSubscriptionId: null,
           },
         });
@@ -359,6 +388,7 @@ export class SubscriptionService implements OnModuleInit {
             status: 'ACTIVE',
             minutesAllocated: trialPlan.minutes,
             minutesUsed: 0,
+            extraMinutes: 0,
             currentPeriodStart: new Date(),
             currentPeriodEnd: lifetimeEndDate,
             isActive: true,
@@ -852,6 +882,9 @@ export class SubscriptionService implements OnModuleInit {
         console.warn('⚠️ No old subscription ID found in metadata to cancel');
       }
 
+      // [NEW] Archive old plan before overwriting
+      await this.archiveCurrentSubscription(userId);
+
       // Update subscription in database
       const subscription = await this.prisma.subscription.update({
         where: { userId },
@@ -865,6 +898,7 @@ export class SubscriptionService implements OnModuleInit {
           currentPeriodEnd: periodEnd,
           minutesAllocated: planDetails.minutes,
           minutesUsed: 0, // Reset minutes on upgrade
+          extraMinutes: 0, // Reset extra minutes
           cancelledAt: null,
         },
       });
@@ -913,7 +947,7 @@ export class SubscriptionService implements OnModuleInit {
       const customer = customers.data[0];
       const invoices = await this.stripe.invoices.list({
         customer: customer.id,
-        limit: 10,
+        limit: 20,
       });
 
       return invoices.data.map((invoice) => ({

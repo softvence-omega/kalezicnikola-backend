@@ -91,11 +91,11 @@ export class AiAgentService {
     // Enhanced keyword matching for natural language queries
     const queryLower = dto.query.toLowerCase();
     const queryWords = queryLower.split(/\s+/); // Split query into words
-    
+
     const matches = kbEntries.filter((entry) => {
       const questionMatch = entry.question.toLowerCase().includes(queryLower);
       const answerMatch = entry.answer.toLowerCase().includes(queryLower);
-      
+
       // Improved keyword matching:
       // Check if any keyword appears in the query OR if any query word matches a keyword
       const keywordMatch = entry.keywords.some((kw) => {
@@ -110,7 +110,7 @@ export class AiAgentService {
         // Check if any query word matches the keyword
         return queryWords.includes(keyword);
       });
-      
+
       return questionMatch || answerMatch || keywordMatch;
     });
 
@@ -160,7 +160,7 @@ export class AiAgentService {
     // Check if the date falls within an absence period
     const checkDate = new Date(queryDate);
     checkDate.setHours(0, 0, 0, 0);
-    
+
     const absence = await this.prisma.doctorAbsence.findFirst({
       where: {
         doctorId: doctor_id,
@@ -171,9 +171,9 @@ export class AiAgentService {
 
     if (absence) {
       // Doctor is absent on this date, return empty slots
-      return { 
-        summary: { total: 0, available: 0, unavailable: 0 }, 
-        availableSlots: [], 
+      return {
+        summary: { total: 0, available: 0, unavailable: 0 },
+        availableSlots: [],
         unavailableSlots: [],
         absenceInfo: {
           isAbsent: true,
@@ -222,9 +222,9 @@ export class AiAgentService {
     };
 
     const dayStart = new Date(queryDate);
-    dayStart.setUTCHours(0,0,0,0);
+    dayStart.setUTCHours(0, 0, 0, 0);
     const dayEnd = new Date(queryDate);
-    dayEnd.setUTCHours(23,59,59,999);
+    dayEnd.setUTCHours(23, 59, 59, 999);
 
     const appointments = await this.prisma.appointment.findMany({
       where: {
@@ -252,18 +252,18 @@ export class AiAgentService {
       const slots: any[] = [];
       let current = timeToMinutes(startStr);
       const endLimit = timeToMinutes(endStr);
-      
+
       // Use 5-minute granularity by default to allow "any time" booking
       // Use customStep if provided (e.g. for broader suggestions)
-      const step = customStep || 5; 
-      
+      const step = customStep || 5;
+
       while (current + duration <= endLimit) {
         const slotEnd = current + duration;
         if (isSlotAvailable(current, slotEnd)) {
-          slots.push({ 
-            startTime: minutesToTime(current), 
-            endTime: minutesToTime(slotEnd), 
-            isAvailable: true 
+          slots.push({
+            startTime: minutesToTime(current),
+            endTime: minutesToTime(slotEnd),
+            isAvailable: true
           });
         }
         current += step; // Granular step
@@ -291,15 +291,15 @@ export class AiAgentService {
       const checkDate = new Date(requestedDate);
       checkDate.setDate(checkDate.getDate() + i);
       // Use a larger step (30 mins) for suggestions to show diverse times
-      const slots = await this.getAvailableSlots({ 
-        doctor_id, 
-        date: checkDate.toISOString(), 
-        appointment_type_id, 
-        step: 30 
+      const slots = await this.getAvailableSlots({
+        doctor_id,
+        date: checkDate.toISOString(),
+        appointment_type_id,
+        step: 30
       });
       for (const slot of slots.availableSlots) {
-        alternatives.push({ 
-          date: checkDate.toDateString(), 
+        alternatives.push({
+          date: checkDate.toDateString(),
           time: slot.startTime,
           originalDate: checkDate.toISOString().split('T')[0]
         });
@@ -311,10 +311,10 @@ export class AiAgentService {
     // Sort by proximity to requested slot if provided
     if (requested_slot && alternatives.length > 0) {
       // requested_slot could be a full ISO date or just a time
-      const requestedTimeStr = requested_slot.includes('T') 
-        ? requested_slot.split('T')[1].substring(0, 5) 
+      const requestedTimeStr = requested_slot.includes('T')
+        ? requested_slot.split('T')[1].substring(0, 5)
         : requested_slot;
-      
+
       const parseTimeToMinutes = (timeStr: string) => {
         if (!timeStr) return 0;
         const clean = timeStr.trim().toUpperCase();
@@ -346,7 +346,7 @@ export class AiAgentService {
     const apptDate = new Date(appointment_date);
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    if (new Date(apptDate).setHours(0,0,0,0) < now.getTime()) throw new BadRequestException('Cannot book in the past');
+    if (new Date(apptDate).setHours(0, 0, 0, 0) < now.getTime()) throw new BadRequestException('Cannot book in the past');
 
     let patientId = patient_id;
     let isNewPatient = false;
@@ -415,7 +415,7 @@ export class AiAgentService {
     // Determine endTime
     const type = await this.prisma.appointmentType.findUnique({ where: { id: appointment_type_id || '' } });
     if (!type) throw new BadRequestException('Invalid appointment type');
-    
+
     const parseTimeToMinutes = (timeStr: string) => {
       if (!timeStr) return 0;
       const clean = timeStr.trim().toUpperCase();
@@ -431,7 +431,7 @@ export class AiAgentService {
 
     const startMins = parseTimeToMinutes(start_time);
     const endMins = startMins + type.duration;
-    const endTime = `${Math.floor(endMins/60).toString().padStart(2,'0')}:${(endMins%60).toString().padStart(2,'0')}`;
+    const endTime = `${Math.floor(endMins / 60).toString().padStart(2, '0')}:${(endMins % 60).toString().padStart(2, '0')}`;
 
     // Conflict & Half-day check
     const dayOfWeek = apptDate.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' }).toUpperCase() as WeekDay;
@@ -458,7 +458,7 @@ export class AiAgentService {
       if (half.start && half.end) {
         const [sh, sm] = half.start.split(':').map(Number);
         const [eh, em] = half.end.split(':').map(Number);
-        if (startMins >= (sh*60+sm) && endMinsFull <= (eh*60+em)) {
+        if (startMins >= (sh * 60 + sm) && endMinsFull <= (eh * 60 + em)) {
           fitsInHalf = true;
           break;
         }
@@ -469,7 +469,7 @@ export class AiAgentService {
     // Check if appointment date falls within an absence period
     const apptCheckDate = new Date(apptDate);
     apptCheckDate.setHours(0, 0, 0, 0);
-    
+
     const absenceCheck = await this.prisma.doctorAbsence.findFirst({
       where: {
         doctorId: doctor_id,
@@ -482,12 +482,12 @@ export class AiAgentService {
       // Find next available date
       let nextAvailableDate = new Date(absenceCheck.toDate);
       nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
-      
+
       // Check if there are more absence periods after this one
       let currentDate = new Date(nextAvailableDate);
       const maxDaysToCheck = 365;
       let daysChecked = 0;
-      
+
       while (daysChecked < maxDaysToCheck) {
         const futureAbsence = await this.prisma.doctorAbsence.findFirst({
           where: {
@@ -496,21 +496,21 @@ export class AiAgentService {
             toDate: { gte: currentDate },
           },
         });
-        
+
         if (!futureAbsence) {
           nextAvailableDate = currentDate;
           break;
         }
-        
+
         currentDate = new Date(futureAbsence.toDate);
         currentDate.setDate(currentDate.getDate() + 1);
         daysChecked++;
       }
-      
+
       const fromDateStr = absenceCheck.fromDate.toISOString().split('T')[0];
       const toDateStr = absenceCheck.toDate.toISOString().split('T')[0];
       const nextDateStr = nextAvailableDate.toISOString().split('T')[0];
-      
+
       const reasonMsg = absenceCheck.reason ? ` (${absenceCheck.reason})` : '';
       throw new BadRequestException(
         `Doctor is unavailable from ${fromDateStr} to ${toDateStr}${reasonMsg}. Next available date is ${nextDateStr}.`
@@ -525,9 +525,9 @@ export class AiAgentService {
 
     const checkDate = appointment_date ? new Date(appointment_date) : new Date();
     const dayStart = new Date(checkDate);
-    dayStart.setUTCHours(0,0,0,0);
+    dayStart.setUTCHours(0, 0, 0, 0);
     const dayEnd = new Date(checkDate);
-    dayEnd.setUTCHours(23,59,59,999);
+    dayEnd.setUTCHours(23, 59, 59, 999);
 
     const existing = await this.prisma.appointment.findMany({
       where: {
@@ -549,7 +549,7 @@ export class AiAgentService {
         }
       }
     }
-    
+
     // Create appointment
     const appointment = await this.prisma.appointment.create({
       data: {
@@ -668,170 +668,170 @@ export class AiAgentService {
     if (dto.new_date) updateData.appointmentDate = new Date(dto.new_date);
     if (dto.new_start_time) updateData.startTime = dto.new_start_time;
     if (dto.appointment_type_id) updateData.appointmentTypeId = dto.appointment_type_id;
-    
+
     // Set status to RESCHEDULED
     updateData.status = 'RESCHEDULED';
 
     // Recalculate endTime if needed
     if (dto.new_start_time || dto.appointment_type_id) {
-       const typeId = dto.appointment_type_id || appointment.appointmentTypeId;
-       const type = await this.prisma.appointmentType.findUnique({ where: { id: typeId || '' } });
-       if (type) {
-         const parseTimeToMinutes = (timeStr: string) => {
-           if (!timeStr) return 0;
-           const clean = timeStr.trim().toUpperCase();
-           const isPM = clean.includes('PM');
-           const isAM = clean.includes('AM');
-           let [h, m] = clean.replace(/[AP]M/, '').split(':').map(Number);
-           if (isNaN(h)) return 0;
-           if (isNaN(m)) m = 0;
-           if (isPM && h < 12) h += 12;
-           if (isAM && h === 12) h = 0;
-           return h * 60 + m;
-         };
-         const st = dto.new_start_time || appointment.startTime || '00:00';
-         const endMins = parseTimeToMinutes(st) + type.duration;
-         updateData.endTime = `${Math.floor(endMins/60).toString().padStart(2,'0')}:${(endMins%60).toString().padStart(2,'0')}`;
-       }
+      const typeId = dto.appointment_type_id || appointment.appointmentTypeId;
+      const type = await this.prisma.appointmentType.findUnique({ where: { id: typeId || '' } });
+      if (type) {
+        const parseTimeToMinutes = (timeStr: string) => {
+          if (!timeStr) return 0;
+          const clean = timeStr.trim().toUpperCase();
+          const isPM = clean.includes('PM');
+          const isAM = clean.includes('AM');
+          let [h, m] = clean.replace(/[AP]M/, '').split(':').map(Number);
+          if (isNaN(h)) return 0;
+          if (isNaN(m)) m = 0;
+          if (isPM && h < 12) h += 12;
+          if (isAM && h === 12) h = 0;
+          return h * 60 + m;
+        };
+        const st = dto.new_start_time || appointment.startTime || '00:00';
+        const endMins = parseTimeToMinutes(st) + type.duration;
+        updateData.endTime = `${Math.floor(endMins / 60).toString().padStart(2, '0')}:${(endMins % 60).toString().padStart(2, '0')}`;
+      }
     }
 
     // Conflict & Half-day check (if time or date changed)
     if (dto.new_date || dto.new_start_time || dto.appointment_type_id) {
-        const checkDate = dto.new_date ? new Date(dto.new_date) : appointment.appointmentDate;
-        const checkStart = dto.new_start_time || appointment.startTime;
-        const typeId = dto.appointment_type_id || appointment.appointmentTypeId;
+      const checkDate = dto.new_date ? new Date(dto.new_date) : appointment.appointmentDate;
+      const checkStart = dto.new_start_time || appointment.startTime;
+      const typeId = dto.appointment_type_id || appointment.appointmentTypeId;
 
-        if (checkDate && checkStart && typeId) {
-            const type = await this.prisma.appointmentType.findUnique({ where: { id: typeId } });
-            if (!type) throw new BadRequestException('Invalid type');
+      if (checkDate && checkStart && typeId) {
+        const type = await this.prisma.appointmentType.findUnique({ where: { id: typeId } });
+        if (!type) throw new BadRequestException('Invalid type');
 
-            const dayOfWeek = new Date(checkDate).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' }).toUpperCase() as WeekDay;
-            const doctor = await this.prisma.doctor.findUnique({
-                where: { id: appointment.doctorId || '' },
-                include: { doctorRegionalSettings: true }
-            });
+        const dayOfWeek = new Date(checkDate).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' }).toUpperCase() as WeekDay;
+        const doctor = await this.prisma.doctor.findUnique({
+          where: { id: appointment.doctorId || '' },
+          include: { doctorRegionalSettings: true }
+        });
 
-            const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
-                where: { doctorId_day: { doctorId: appointment.doctorId || '', day: dayOfWeek } },
-            });
-            if (!schedule || schedule.isClosed) throw new BadRequestException('Doctor closed on this day');
+        const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
+          where: { doctorId_day: { doctorId: appointment.doctorId || '', day: dayOfWeek } },
+        });
+        if (!schedule || schedule.isClosed) throw new BadRequestException('Doctor closed on this day');
 
-            const parseTimeToMinutes = (timeStr: string) => {
-              if (!timeStr) return 0;
-              const clean = timeStr.trim().toUpperCase();
-              const isPM = clean.includes('PM');
-              const isAM = clean.includes('AM');
-              let [h, m] = clean.replace(/[AP]M/, '').split(':').map(Number);
-              if (isNaN(h)) return 0;
-              if (isNaN(m)) m = 0;
-              if (isPM && h < 12) h += 12;
-              if (isAM && h === 12) h = 0;
-              return h * 60 + m;
-            };
+        const parseTimeToMinutes = (timeStr: string) => {
+          if (!timeStr) return 0;
+          const clean = timeStr.trim().toUpperCase();
+          const isPM = clean.includes('PM');
+          const isAM = clean.includes('AM');
+          let [h, m] = clean.replace(/[AP]M/, '').split(':').map(Number);
+          if (isNaN(h)) return 0;
+          if (isNaN(m)) m = 0;
+          if (isPM && h < 12) h += 12;
+          if (isAM && h === 12) h = 0;
+          return h * 60 + m;
+        };
 
-            const startMins = parseTimeToMinutes(checkStart);
-            const endMinsFull = startMins + type.duration;
+        const startMins = parseTimeToMinutes(checkStart);
+        const endMinsFull = startMins + type.duration;
 
-            let fitsInHalf = false;
-            const halves = [
-                { start: schedule.firstHalfStartTime, end: schedule.firstHalfEndTime },
-                { start: schedule.secondHalfStartTime, end: schedule.secondHalfEndTime }
-            ];
-            for (const half of halves) {
-                if (half.start && half.end) {
-                    const shMins = parseTimeToMinutes(half.start);
-                    const ehMins = parseTimeToMinutes(half.end);
-                    if (startMins >= shMins && endMinsFull <= ehMins) {
-                        fitsInHalf = true;
-                        break;
-                    }
-                }
+        let fitsInHalf = false;
+        const halves = [
+          { start: schedule.firstHalfStartTime, end: schedule.firstHalfEndTime },
+          { start: schedule.secondHalfStartTime, end: schedule.secondHalfEndTime }
+        ];
+        for (const half of halves) {
+          if (half.start && half.end) {
+            const shMins = parseTimeToMinutes(half.start);
+            const ehMins = parseTimeToMinutes(half.end);
+            if (startMins >= shMins && endMinsFull <= ehMins) {
+              fitsInHalf = true;
+              break;
             }
-            if (!fitsInHalf) throw new BadRequestException('Appointment must fit in a half-day block');
+          }
+        }
+        if (!fitsInHalf) throw new BadRequestException('Appointment must fit in a half-day block');
 
-            // Check if reschedule date falls within an absence period
-            const rescheduleCheckDate = new Date(checkDate);
-            rescheduleCheckDate.setHours(0, 0, 0, 0);
-            
-            const absenceCheck = await this.prisma.doctorAbsence.findFirst({
+        // Check if reschedule date falls within an absence period
+        const rescheduleCheckDate = new Date(checkDate);
+        rescheduleCheckDate.setHours(0, 0, 0, 0);
+
+        const absenceCheck = await this.prisma.doctorAbsence.findFirst({
+          where: {
+            doctorId: appointment.doctorId || '',
+            fromDate: { lte: rescheduleCheckDate },
+            toDate: { gte: rescheduleCheckDate },
+          },
+        });
+
+        if (absenceCheck) {
+          // Find next available date
+          let nextAvailableDate = new Date(absenceCheck.toDate);
+          nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+
+          // Check if there are more absence periods after this one
+          let currentDate = new Date(nextAvailableDate);
+          const maxDaysToCheck = 365;
+          let daysChecked = 0;
+
+          while (daysChecked < maxDaysToCheck) {
+            const futureAbsence = await this.prisma.doctorAbsence.findFirst({
               where: {
                 doctorId: appointment.doctorId || '',
-                fromDate: { lte: rescheduleCheckDate },
-                toDate: { gte: rescheduleCheckDate },
+                fromDate: { lte: currentDate },
+                toDate: { gte: currentDate },
               },
             });
 
-            if (absenceCheck) {
-              // Find next available date
-              let nextAvailableDate = new Date(absenceCheck.toDate);
-              nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
-              
-              // Check if there are more absence periods after this one
-              let currentDate = new Date(nextAvailableDate);
-              const maxDaysToCheck = 365;
-              let daysChecked = 0;
-              
-              while (daysChecked < maxDaysToCheck) {
-                const futureAbsence = await this.prisma.doctorAbsence.findFirst({
-                  where: {
-                    doctorId: appointment.doctorId || '',
-                    fromDate: { lte: currentDate },
-                    toDate: { gte: currentDate },
-                  },
-                });
-                
-                if (!futureAbsence) {
-                  nextAvailableDate = currentDate;
-                  break;
-                }
-                
-                currentDate = new Date(futureAbsence.toDate);
-                currentDate.setDate(currentDate.getDate() + 1);
-                daysChecked++;
-              }
-              
-              const fromDateStr = absenceCheck.fromDate.toISOString().split('T')[0];
-              const toDateStr = absenceCheck.toDate.toISOString().split('T')[0];
-              const nextDateStr = nextAvailableDate.toISOString().split('T')[0];
-              
-              const reasonMsg = absenceCheck.reason ? ` (${absenceCheck.reason})` : '';
-              throw new BadRequestException(
-                `Cannot reschedule: Doctor is unavailable from ${fromDateStr} to ${toDateStr}${reasonMsg}. Next available date is ${nextDateStr}.`
-              );
+            if (!futureAbsence) {
+              nextAvailableDate = currentDate;
+              break;
             }
 
-            const bufferMap: Record<BufferTime, number> = {
-                Minutes_5: 5, Minutes_10: 10, Minutes_15: 15, Minutes_20: 20, Minutes_30: 30,
-            };
-            const buffer = doctor?.doctorRegionalSettings ? bufferMap[doctor.doctorRegionalSettings.bufferTimeBetween] || 0 : 0;
+            currentDate = new Date(futureAbsence.toDate);
+            currentDate.setDate(currentDate.getDate() + 1);
+            daysChecked++;
+          }
 
-            const dayStart = new Date(checkDate);
-            dayStart.setUTCHours(0,0,0,0);
-            const dayEnd = new Date(checkDate);
-            dayEnd.setUTCHours(23,59,59,999);
+          const fromDateStr = absenceCheck.fromDate.toISOString().split('T')[0];
+          const toDateStr = absenceCheck.toDate.toISOString().split('T')[0];
+          const nextDateStr = nextAvailableDate.toISOString().split('T')[0];
 
-            const existing = await this.prisma.appointment.findMany({
-                where: {
-                    doctorId: appointment.doctorId,
-                    appointmentDate: {
-                        gte: dayStart,
-                        lte: dayEnd,
-                    },
-                    status: 'SCHEDULED',
-                    id: { not: bookingId }
-                }
-            });
-
-            for (const appt of existing) {
-                if (appt.startTime && appt.endTime) {
-                    const eStart = parseTimeToMinutes(appt.startTime);
-                    const eEnd = parseTimeToMinutes(appt.endTime);
-                    if (startMins < eEnd + buffer && eStart < endMinsFull + buffer) {
-                        throw new ConflictException(`Time slot conflicts with an existing appointment (including ${buffer} min buffer time)`);
-                    }
-                }
-            }
+          const reasonMsg = absenceCheck.reason ? ` (${absenceCheck.reason})` : '';
+          throw new BadRequestException(
+            `Cannot reschedule: Doctor is unavailable from ${fromDateStr} to ${toDateStr}${reasonMsg}. Next available date is ${nextDateStr}.`
+          );
         }
+
+        const bufferMap: Record<BufferTime, number> = {
+          Minutes_5: 5, Minutes_10: 10, Minutes_15: 15, Minutes_20: 20, Minutes_30: 30,
+        };
+        const buffer = doctor?.doctorRegionalSettings ? bufferMap[doctor.doctorRegionalSettings.bufferTimeBetween] || 0 : 0;
+
+        const dayStart = new Date(checkDate);
+        dayStart.setUTCHours(0, 0, 0, 0);
+        const dayEnd = new Date(checkDate);
+        dayEnd.setUTCHours(23, 59, 59, 999);
+
+        const existing = await this.prisma.appointment.findMany({
+          where: {
+            doctorId: appointment.doctorId,
+            appointmentDate: {
+              gte: dayStart,
+              lte: dayEnd,
+            },
+            status: 'SCHEDULED',
+            id: { not: bookingId }
+          }
+        });
+
+        for (const appt of existing) {
+          if (appt.startTime && appt.endTime) {
+            const eStart = parseTimeToMinutes(appt.startTime);
+            const eEnd = parseTimeToMinutes(appt.endTime);
+            if (startMins < eEnd + buffer && eStart < endMinsFull + buffer) {
+              throw new ConflictException(`Time slot conflicts with an existing appointment (including ${buffer} min buffer time)`);
+            }
+          }
+        }
+      }
     }
 
     const updated = await this.prisma.appointment.update({
@@ -1184,8 +1184,8 @@ export class AiAgentService {
     const callStatus = this.determineCallStatus(dto, appointmentId);
 
     // Extract reason for calling if not provided
-    const reasonForCalling = 
-      dto.reason_for_calling || 
+    const reasonForCalling =
+      dto.reason_for_calling ||
       this.extractReasonForCallingFromText(dto.transcription || dto.summary || '');
 
     const transcription = await this.prisma.callTranscription.create({
@@ -1321,6 +1321,11 @@ export class AiAgentService {
       }
     }
 
+    // [NEW] Call Minute Tracking Logic: Run this IMMEDIATELY after duration is confirmed
+    if (duration && duration > 0 && finalDoctorId) {
+      await this.deductCallMinutes(finalDoctorId, duration);
+    }
+
     // 2. Identify the Record (Smart Linking)
     let existing = await this.prisma.callTranscription.findUnique({
       where: { callSid: incomingCallSid },
@@ -1332,7 +1337,7 @@ export class AiAgentService {
       console.log(`Attempting to link call via fallback identifiers (Insurance: ${extractedInfo.insuranceId}, Phone: ${callerPhoneNumber})`);
       // Find most recent temp record for this patient/phone and doctor (last 15 mins)
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
-      
+
       const query: any = {
         where: {
           doctorId: finalDoctorId || undefined,
@@ -1396,14 +1401,14 @@ export class AiAgentService {
           // Only update transcript if missing
           transcription: existing.transcription ? undefined : this.formatTranscriptionWithLabels(this.wordsToDigits(transcriptionText)),
           // ALWAYS update summary with ElevenLabs summary when available (overwrite existing)
-          summary: realData.analysis?.transcript_summary 
-            ? this.wordsToDigits(realData.analysis.transcript_summary) 
+          summary: realData.analysis?.transcript_summary
+            ? this.wordsToDigits(realData.analysis.transcript_summary)
             : existing.summary,
           // Merge insurance ID if missing
           insuranceId: existing.insuranceId || extractedInfo.insuranceId,
           // Update reason for calling if missing
-          reasonForCalling: 
-            existing.reasonForCalling || 
+          reasonForCalling:
+            existing.reasonForCalling ||
             this.extractReasonForCallingFromText(transcriptionText || realData.analysis?.transcript_summary || ''),
           // RE-DETERMINE STATUS: If it was MISSED before, it likely was because transcript was empty during call.
           // Now we have the full transcript and real duration, so let's fix it.
@@ -1439,6 +1444,7 @@ export class AiAgentService {
 
       return { success: true, message: 'Updated existing transcription' };
     }
+
 
     // If still no record, create a new one (Fallback)
     if (!finalDoctorId) {
@@ -1535,9 +1541,9 @@ export class AiAgentService {
     phone?: string;
     insuranceId?: string;
   } {
-    const result: { 
-      firstName?: string; 
-      lastName?: string; 
+    const result: {
+      firstName?: string;
+      lastName?: string;
       email?: string;
       phone?: string;
       insuranceId?: string;
@@ -1586,7 +1592,7 @@ export class AiAgentService {
         }
       }
     }
-    
+
     // 1. Spoken format: "one zero five..."
     const insurancePatterns = [
       /(?:insurance\s+id\s+is|id\s+number\s+is|insurance\s+is|id\s+as)\s+([\d\s,]+)/i,
@@ -1633,26 +1639,26 @@ export class AiAgentService {
       const match = text.match(pattern);
       if (match && match[1]) {
         let fullName = match[1].trim();
-        
+
         // Remove trailing punctuation like ". AI" or "..."
         fullName = fullName.replace(/[.\s]+AI$/i, '').trim();
         fullName = fullName.replace(/[.!?,]+$/, '').trim();
-        
+
         // Smart Slicing: Cut the name if a boundary stop word is found
         const words = fullName.split(/\s+/);
         const cleanedParts: string[] = [];
-        
+
         for (const word of words) {
           if (boundaryStopWords.includes(word.toLowerCase())) break;
           cleanedParts.push(word);
         }
-        
+
         if (cleanedParts.length === 0) continue;
-        
+
         fullName = cleanedParts.join(' ');
 
         // Blocklist Check
-        const isBlocked = cleanedParts.some(part => 
+        const isBlocked = cleanedParts.some(part =>
           nameBlocklist.includes(part.toLowerCase())
         );
         if (isBlocked) continue;
@@ -1664,7 +1670,7 @@ export class AiAgentService {
         if (cleanedParts.length >= 2) {
           result.lastName = cleanedParts.slice(1).join(' ');
         }
-        
+
         if (result.firstName) break;
       }
     }
@@ -1675,17 +1681,17 @@ export class AiAgentService {
       let match;
       while ((match = genericPattern.exec(text)) !== null) {
         let fullName = match[1];
-        
+
         // Remove trailing punctuation like ". AI"
         fullName = fullName.replace(/[.\s]+AI$/i, '').trim();
         fullName = fullName.replace(/[.!?,]+$/, '').trim();
 
         const parts = fullName.split(/\s+/);
-        
-        const isBlocked = parts.some(part => 
+
+        const isBlocked = parts.some(part =>
           nameBlocklist.includes(part.toLowerCase())
         );
-        
+
         if (!isBlocked) {
           result.firstName = parts[0];
           result.lastName = parts[1];
@@ -1695,6 +1701,70 @@ export class AiAgentService {
     }
 
     return result;
+  }
+
+  // Helper to deduct minutes from subscription (using MM.SS format)
+  private async deductCallMinutes(userId: string, durationInSeconds: number) {
+    try {
+      // 1. Calculate new duration in seconds
+      // We want to store everything in MM.SS format for display, but compute in seconds
+      console.log(`⏱️ Processing call duration: ${durationInSeconds}s for user ${userId}`);
+
+      // Find active subscription
+      const activeSubscription = await this.prisma.subscription.findUnique({
+        where: { userId },
+      });
+
+      if (activeSubscription && activeSubscription.status === 'ACTIVE') {
+        const currentMmSs = activeSubscription.minutesUsed || 0;
+
+        // Convert current MM.SS usage to total seconds
+        const currentMinutes = Math.floor(currentMmSs);
+        const currentSeconds = Math.round((currentMmSs - currentMinutes) * 100);
+        const totalUsedSeconds = (currentMinutes * 60) + currentSeconds;
+
+        // Add new duration
+        const newTotalSeconds = totalUsedSeconds + durationInSeconds;
+
+        // Convert back to MM.SS
+        const newMinutes = Math.floor(newTotalSeconds / 60);
+        const newSeconds = newTotalSeconds % 60;
+        const newMmSs = parseFloat(`${newMinutes}.${newSeconds < 10 ? '0' : ''}${newSeconds}`);
+
+        const allocatedMin = activeSubscription.minutesAllocated || 0;
+
+        // Calculate Extra Minutes in MM.SS
+        // If minutes used > allocated, the difference is extra
+        // Since allocated is Int (e.g. 8000), 8000.00 in MM.SS is exactly 8000 mins
+        // Direct comparison works (8000.01 > 8000)
+
+        let extraMmSs = 0;
+        if (newMmSs > allocatedMin) {
+          // We need accurate diff in seconds
+          const allocatedSeconds = allocatedMin * 60;
+          const diffSeconds = newTotalSeconds - allocatedSeconds;
+
+          // Convert diff to MM.SS
+          const diffM = Math.floor(diffSeconds / 60);
+          const diffS = diffSeconds % 60;
+          extraMmSs = parseFloat(`${diffM}.${diffS < 10 ? '0' : ''}${diffS}`);
+        }
+
+        await this.prisma.subscription.update({
+          where: { userId },
+          data: {
+            minutesUsed: newMmSs,
+            extraMinutes: extraMmSs,
+          },
+        });
+        console.log(`✅ Updated subscription usage (MM.SS): Used ${newMmSs}/${allocatedMin}, Extra: ${extraMmSs}`);
+      } else {
+        console.warn(`⚠️ No active subscription found for user ${userId}. Cannot deduct minutes.`);
+      }
+    } catch (err) {
+      console.error('❌ Error updating subscription minutes:', err);
+      // Don't fail the webhook processing just because billing update failed
+    }
   }
 
   // Helper to map descriptive strings to AppointmentType UUIDs
@@ -1718,8 +1788,8 @@ export class AiAgentService {
     if (exact) return exact.id;
 
     // 2. Contains Match 
-    const contains = types.find(t => 
-      t.name.toLowerCase().includes(cleanInput) || 
+    const contains = types.find(t =>
+      t.name.toLowerCase().includes(cleanInput) ||
       cleanInput.includes(t.name.toLowerCase())
     );
     if (contains) return contains.id;
@@ -1731,7 +1801,7 @@ export class AiAgentService {
       const typeLow = type.name.toLowerCase();
       // If the transcript contains the full name of the appointment type
       if (cleanedText.includes(typeLow)) return type.id;
-      
+
       // If significant keywords match
       const typeWords = typeLow.split(' ').filter(w => w.length > 3);
       for (const word of typeWords) {
@@ -1749,9 +1819,9 @@ export class AiAgentService {
       'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
       'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
     };
-    
+
     let result = text.toLowerCase();
-    
+
     // Replace standalone words with digits
     // Use regex with word boundaries to avoid partial matches (e.g. "someone" -> "some1")
     Object.entries(digitWords).forEach(([word, digit]) => {
@@ -1765,7 +1835,7 @@ export class AiAgentService {
     result = result.replace(/\b\d\b(?:[\s,]+\d\b)+/g, (match) => {
       return match.replace(/[\s,]/g, '');
     });
-    
+
     return result;
   }
 
@@ -1781,7 +1851,7 @@ export class AiAgentService {
     ];
 
     const personalInfoBoundaries = [
-      'and my name', 'and my email', 'and my insurance', 
+      'and my name', 'and my email', 'and my insurance',
       'and my phone', 'and my number', 'my name is',
       'my email is', 'and insurance'
     ];
@@ -1790,7 +1860,7 @@ export class AiAgentService {
       const match = text.match(pattern);
       if (match && match[1]) {
         let reason = match[1].trim();
-        
+
         // Smart Slicing: Cut the reason if it starts pivoting to personal info
         const lowerReason = reason.toLowerCase();
         for (const boundary of personalInfoBoundaries) {
@@ -1834,7 +1904,7 @@ export class AiAgentService {
 
     // Split into lines and cleanup
     const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-    
+
     if (lines.length === 0) return '';
 
     // Helper to normalize roles
@@ -1872,10 +1942,10 @@ export class AiAgentService {
    * Resolves a unique target appointment for reschedule or cancel based on patient identification 
    * and conversational context (requested date/time).
    */
-  private async resolveTargetAppointment(payload: WebhookPayloadDto): Promise<{ 
-    appointment?: any; 
-    multipleOptions?: any[]; 
-    error?: string 
+  private async resolveTargetAppointment(payload: WebhookPayloadDto): Promise<{
+    appointment?: any;
+    multipleOptions?: any[];
+    error?: string
   }> {
     const { doctor_id, patient_id, patient_info, booking_id, requested_date, appointment_date } = payload;
     const phoneNumber = payload.phone_number || patient_info?.phone;
@@ -1912,7 +1982,7 @@ export class AiAgentService {
           }
         });
       }
-      
+
       if (!patient) return { error: "I couldn't find your patient record. Could you please provide your insurance ID, phone number, or full name?" };
       resolvedPatientId = patient.id;
     }
@@ -1937,8 +2007,8 @@ export class AiAgentService {
 
     // 4. Handle multiple appointments with context
     // Support month/range matching (e.g., "in March", "this month")
-    const searchDateStr = payload.intent?.toLowerCase().includes('reschedule') 
-      ? appointment_date 
+    const searchDateStr = payload.intent?.toLowerCase().includes('reschedule')
+      ? appointment_date
       : (appointment_date || requested_date || payload.transcription || payload.query);
 
     if (searchDateStr) {
@@ -2011,7 +2081,7 @@ export class AiAgentService {
     };
 
     const bufferValue = bufferMap[Number(bufferMinutes)];
-    
+
     if (!bufferValue) {
       throw new BadRequestException(`Invalid buffer time. Allowed values are: 5, 10, 15, 20, 30 minutes.`);
     }
@@ -2022,7 +2092,7 @@ export class AiAgentService {
     return this.prisma.doctorRegionalSettings.upsert({
       where: { doctorId },
       update: { bufferTimeBetween: bufferValue as any },
-      create: { 
+      create: {
         doctorId,
         bufferTimeBetween: bufferValue as any,
         timezone: 'Asia_Dhaka', // Default required field
@@ -2039,18 +2109,18 @@ export class AiAgentService {
   ): Promise<WebhookResponseDto> {
     // Resolve Appointment Type ID from string if needed
     // Use full transcription as context if appointment_type_id is blank or generic
-    const typeContext = (payload.appointment_type_id && payload.appointment_type_id !== 'not_provided') 
-      ? payload.appointment_type_id 
+    const typeContext = (payload.appointment_type_id && payload.appointment_type_id !== 'not_provided')
+      ? payload.appointment_type_id
       : (payload.transcription || payload.query || '');
-    
+
     const resolvedTypeId = await this.resolveAppointmentType(payload.doctor_id, typeContext) || undefined;
-    
+
     // Normalize date extraction
     let appointmentDate = payload.appointment_date || payload.requested_date;
     if (!appointmentDate && payload.requested_time && payload.requested_time.includes('-')) {
       appointmentDate = payload.requested_time;
     }
-    
+
     const startTime = payload.start_time || payload.requested_time;
     const updatedPayload = { ...payload, appointment_type_id: resolvedTypeId || payload.appointment_type_id, appointment_date: appointmentDate, start_time: startTime };
 
@@ -2139,12 +2209,12 @@ export class AiAgentService {
   private async handleAvailabilityIntent(
     payload: WebhookPayloadDto,
   ): Promise<WebhookResponseDto> {
-    const typeContext = (payload.appointment_type_id && payload.appointment_type_id !== 'not_provided') 
-      ? payload.appointment_type_id 
+    const typeContext = (payload.appointment_type_id && payload.appointment_type_id !== 'not_provided')
+      ? payload.appointment_type_id
       : (payload.transcription || payload.query || '');
-      
+
     const resolvedTypeId = await this.resolveAppointmentType(payload.doctor_id, typeContext) || undefined;
-    
+
     let requestedDate = payload.requested_date || payload.appointment_date;
     if (!requestedDate && payload.requested_time && payload.requested_time.includes('-')) {
       requestedDate = payload.requested_time;
@@ -2166,8 +2236,8 @@ export class AiAgentService {
         .map((s: any) => `${s.startTime}`)
         .join(', ');
 
-      const moreText = availability.summary.available > 6 
-        ? `. We have many more slots available throughout the day until ${availability.availableSlots[availability.availableSlots.length-1].startTime}.`
+      const moreText = availability.summary.available > 6
+        ? `. We have many more slots available throughout the day until ${availability.availableSlots[availability.availableSlots.length - 1].startTime}.`
         : '.';
 
       return {
@@ -2183,12 +2253,12 @@ export class AiAgentService {
     // If no slots on requested date, look for next available days (up to 7 days ahead)
     const MAX_DAYS_TO_CHECK = 7;
     const baseDate = new Date(requestedDate);
-    
+
     for (let i = 1; i <= MAX_DAYS_TO_CHECK; i++) {
       const nextDate = new Date(baseDate);
       nextDate.setDate(nextDate.getDate() + i);
       const nextDateStr = nextDate.toISOString().split('T')[0];
-      
+
       const alternativeAvailability = await this.getAvailableSlots({
         doctor_id: payload.doctor_id,
         date: nextDateStr,
@@ -2201,9 +2271,9 @@ export class AiAgentService {
           .map((s: any) => `${s.startTime}`)
           .join(', ');
 
-        const formattedDate = nextDate.toLocaleDateString('en-US', { 
-          month: 'long', 
-          day: 'numeric' 
+        const formattedDate = nextDate.toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric'
         });
 
         return {
@@ -2228,10 +2298,10 @@ export class AiAgentService {
     payload: WebhookPayloadDto,
   ): Promise<WebhookResponseDto> {
     const resolvedTypeId = await this.resolveAppointmentType(payload.doctor_id, payload.appointment_type_id) || undefined;
-    
+
     // Resolve Target Appointment instead of relying solely on booking_id
     const targetResolution = await this.resolveTargetAppointment(payload);
-    
+
     if (targetResolution.error) {
       return {
         reply_text: targetResolution.error,
@@ -2403,13 +2473,13 @@ export class AiAgentService {
     payload: WebhookPayloadDto,
   ): Promise<WebhookResponseDto> {
     const query = payload.query || payload.transcription || '';
-    
+
     // Special handling for "what types of appointments"
     if (query.toLowerCase().includes('type') && (query.toLowerCase().includes('available') || query.toLowerCase().includes('offer'))) {
       const types = await this.prisma.appointmentType.findMany({
         where: { doctorId: payload.doctor_id }
       });
-      
+
       if (types.length > 0) {
         const typeList = types.map(t => `${t.name} (${t.duration} mins)`).join(', ');
         return {
