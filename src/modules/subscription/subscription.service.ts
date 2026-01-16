@@ -399,6 +399,72 @@ export class SubscriptionService implements OnModuleInit {
     }
   }
 
+  // Cancel Trial Plan (Admin only)
+  async cancelTrialPlan(userId: string, adminId?: string) {
+    try {
+      // Verify user exists
+      const user = await this.prisma.doctor.findUnique({
+        where: { id: userId },
+        select: { id: true, email: true },
+      });
+
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      // Check if user has an active subscription
+      const existingSubscription = await this.prisma.subscription.findUnique({
+        where: { userId },
+      });
+
+      if (!existingSubscription) {
+        throw new NotFoundException('No subscription found for this user');
+      }
+
+      // Ensure it is a trial plan to avoid corrupting Stripe state
+      if (existingSubscription.planType !== 'TRIAL') {
+        throw new BadRequestException(
+          'User is not on a trial plan. Cannot cancel paid subscriptions via this endpoint.',
+        );
+      }
+
+      // Update subscription to CANCELLED
+      const updatedSubscription = await this.prisma.subscription.update({
+        where: { userId },
+        data: {
+          status: 'CANCELLED',
+          isActive: false,
+          cancelledAt: new Date(),
+          currentPeriodEnd: new Date(), // Expire immediately
+        },
+      });
+
+      console.log(
+        `✅ Trial plan cancelled for user: ${user.email} by admin: ${adminId || 'system'}`,
+      );
+
+      return {
+        success: true,
+        message: 'Trial plan cancelled successfully',
+        subscription: {
+          userId: updatedSubscription.userId,
+          status: updatedSubscription.status,
+          cancelledAt: updatedSubscription.cancelledAt,
+        },
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to cancel trial plan: ${error.message}`,
+      );
+    }
+  }
+
   // Create a new subscription
   async createSubscription(
     userId: string,
@@ -904,7 +970,7 @@ export class SubscriptionService implements OnModuleInit {
         if (isAdmin) {
           // Admin sees all invoices - use auto-paging to get all history
           const allInvoices: any[] = [];
-          
+
           // Using a higher limit per page and auto-paging
           for await (const invoice of this.stripe.invoices.list({ limit: 100 })) {
             allInvoices.push({
@@ -926,7 +992,7 @@ export class SubscriptionService implements OnModuleInit {
               invoiceUrl: invoice.hosted_invoice_url,
               planType: invoice.lines.data[0]?.description || 'Subscription',
             });
-            
+
             // Safety break if there are thousands of invoices to prevent memory issues
             if (allInvoices.length >= 1000) break;
           }
@@ -950,7 +1016,7 @@ export class SubscriptionService implements OnModuleInit {
           });
 
           const customerIds = customersByEmail.data.map((c) => c.id);
-          
+
           // Also include the one from subscription record if not present
           if (stripeCustomerId && !customerIds.includes(stripeCustomerId)) {
             customerIds.push(stripeCustomerId);
@@ -966,7 +1032,7 @@ export class SubscriptionService implements OnModuleInit {
             );
 
             const allInvoiceResults = await Promise.all(invoicePromises);
-            
+
             for (const result of allInvoiceResults) {
               const mappedInvoices = result.data.map((invoice) => ({
                 date: new Date(invoice.created * 1000),
