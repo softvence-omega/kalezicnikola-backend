@@ -1,0 +1,10 @@
+-- AlterTable
+ALTER TABLE "public"."subscription_histories" ALTER COLUMN "minutesUsed" SET DATA TYPE DOUBLE PRECISION,
+ALTER COLUMN "extraMinutes" SET DEFAULT 0,
+ALTER COLUMN "extraMinutes" SET DATA TYPE DOUBLE PRECISION;
+
+-- AlterTable
+ALTER TABLE "public"."subscriptions" ALTER COLUMN "minutesUsed" SET DEFAULT 0,
+ALTER COLUMN "minutesUsed" SET DATA TYPE DOUBLE PRECISION,
+ALTER COLUMN "extraMinutes" SET DEFAULT 0,
+ALTER COLUMN "extraMinutes" SET DATA TYPE DOUBLE PRECISION;

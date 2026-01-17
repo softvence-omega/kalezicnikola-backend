@@ -32,6 +32,7 @@ model Subscription {
   status               SubscriptionStatus?
   minutesAllocated     Int? // Minutes for current plan
   minutesUsed          Int?                @default(0)
+  extraMinutes         Int?                @default(0)
   currentPeriodStart   DateTime?
   currentPeriodEnd     DateTime?
   cancelledAt          DateTime?
@@ -43,6 +44,26 @@ model Subscription {
   doctor Doctor? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("subscriptions")
+}
+
+model SubscriptionHistory {
+  id               String              @id @default(uuid())
+  userId           String
+  planType         PlanType
+  billingCycle     BillingCycle
+  status           SubscriptionStatus
+  minutesAllocated Int
+  minutesUsed      Int
+  extraMinutes     Int                 @default(0)
+  startDate        DateTime
+  endDate          DateTime?
+  archivedAt       DateTime            @default(now())
+
+  // Relations
+  doctor Doctor @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("subscription_histories")
 }
 
 model Invoice {

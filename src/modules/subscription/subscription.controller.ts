@@ -22,6 +22,7 @@ import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 import { UpdatePlanDetailsDto } from './dto/update-plan-details.dto';
 import { AssignTrialPlanDto } from './dto/assign-trial-plan.dto';
+import { CancelTrialPlanDto } from './dto/cancel-trial-plan.dto';
 import { JwtAuthGuard } from '../../common/guard/auth.guard';
 import { AdminGuard } from '../../common/guard/admin.guard';
 
@@ -30,7 +31,7 @@ import { AdminGuard } from '../../common/guard/admin.guard';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class SubscriptionController {
-  constructor(private readonly subscriptionService: SubscriptionService) {}
+  constructor(private readonly subscriptionService: SubscriptionService) { }
 
   @Get('plans')
   @ApiOperation({ summary: 'Get all available subscription plans' })
@@ -270,6 +271,26 @@ export class SubscriptionController {
   async assignTrialPlan(@Request() req, @Body() dto: AssignTrialPlanDto) {
     const adminId = req.user.id;
     return this.subscriptionService.assignTrialPlan(dto.userId, adminId);
+  }
+
+  @Post('admin/cancel-trial')
+  @UseGuards(AdminGuard)
+  @ApiOperation({ summary: 'Cancel trial plan for a user (Admin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Trial plan cancelled successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid user ID or not a trial plan',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'User or subscription not found',
+  })
+  async cancelTrialPlan(@Request() req, @Body() dto: CancelTrialPlanDto) {
+    const adminId = req.user.id;
+    return this.subscriptionService.cancelTrialPlan(dto.userId, adminId);
   }
 
   @Get('admin/stats')
