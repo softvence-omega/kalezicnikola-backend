@@ -1248,6 +1248,33 @@ export class AiAgentService {
       realData.metadata?.call_duration_secs ||
       realData.call_duration_secs;
 
+    // Fallback 1: Calculate duration from timestamps if available
+    if (!duration && realData.start_timestamp && realData.end_timestamp) {
+      const startTime = new Date(realData.start_timestamp).getTime();
+      const endTime = new Date(realData.end_timestamp).getTime();
+      const diffMs = endTime - startTime;
+      if (diffMs > 0) {
+        duration = Math.floor(diffMs / 1000);
+        console.log(`⏱️ Calculated duration from timestamps: ${duration}s`);
+      }
+    }
+
+    // Fallback 2: Check existing DB record if duration is still missing
+    // (This helps if tool call saved duration but webhook missed it)
+    if (!duration) {
+      try {
+        const existingRecord = await this.prisma.callTranscription.findUnique({
+          where: { callSid: incomingCallSid }
+        });
+        if (existingRecord && existingRecord.duration) {
+          duration = existingRecord.duration;
+          console.log(`⏱️ Retrieved duration from existing DB record: ${duration}s`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ Failed to check DB for fallback duration:`, err);
+      }
+    }
+
     // Extract caller phone number with priority order:
     // 1. SIP metadata (actual caller's phone)
     // 2. Tool call parameters (phone provided during call)
@@ -1321,10 +1348,7 @@ export class AiAgentService {
       }
     }
 
-    // [NEW] Call Minute Tracking Logic: Run this IMMEDIATELY after duration is confirmed
-    if (duration && duration > 0 && finalDoctorId) {
-      await this.deductCallMinutes(finalDoctorId, duration);
-    }
+
 
     // 2. Identify the Record (Smart Linking)
     let existing = await this.prisma.callTranscription.findUnique({
@@ -1389,7 +1413,7 @@ export class AiAgentService {
 
     if (existing) {
       // If we have an existing record, update it with real ID, audioUrl, duration, and phone
-      await this.prisma.callTranscription.update({
+      const updatedRecord = await this.prisma.callTranscription.update({
         where: { id: existing.id },
         data: {
           audioUrl: audioUrl,
@@ -1423,6 +1447,11 @@ export class AiAgentService {
           callerName: existing.callerName || (extractedInfo.firstName ? `${extractedInfo.firstName} ${extractedInfo.lastName || ''}`.trim() : undefined),
         },
       });
+
+      // [NEW] Call Minute Tracking Logic: Run AFTER resolution (billing idempotent)
+      if (updatedRecord.duration && updatedRecord.duration > 0 && updatedRecord.callSid) {
+        await this.deductCallMinutes(updatedRecord.doctorId, updatedRecord.duration, updatedRecord.callSid);
+      }
       console.log(
         `Updated CallTranscription ${existing.id} with audio and duration.`,
       );
@@ -1482,7 +1511,7 @@ export class AiAgentService {
       }
     }
 
-    await this.prisma.callTranscription.create({
+    const createdRecord = await this.prisma.callTranscription.create({
       data: {
         doctorId: finalDoctorId,
         patientId,
@@ -1503,6 +1532,11 @@ export class AiAgentService {
         reasonForCalling: this.extractReasonForCallingFromText(transcriptionText || realData.analysis?.transcript_summary || ''),
       },
     });
+
+    // [NEW] Call Minute Tracking Logic: Run AFTER creation (billing idempotent)
+    if (createdRecord.duration && createdRecord.duration > 0 && createdRecord.callSid) {
+      await this.deductCallMinutes(createdRecord.doctorId, createdRecord.duration, createdRecord.callSid);
+    }
 
     console.log(`Created NEW CallTranscription for SID ${incomingCallSid}`);
     return { success: true, message: 'Created new transcription' };
@@ -1703,67 +1737,69 @@ export class AiAgentService {
     return result;
   }
 
-  // Helper to deduct minutes from subscription (using MM.SS format)
-  private async deductCallMinutes(userId: string, durationInSeconds: number) {
+  // Helper to deduct minutes from subscription (whole minutes, ceiling) - IDEMPOTENT via Transaction
+  private async deductCallMinutes(userId: string, durationInSeconds: number, callSid: string) {
     try {
-      // 1. Calculate new duration in seconds
-      // We want to store everything in MM.SS format for display, but compute in seconds
-      console.log(`⏱️ Processing call duration: ${durationInSeconds}s for user ${userId}`);
-
-      // Find active subscription
-      const activeSubscription = await this.prisma.subscription.findUnique({
-        where: { userId },
+      // Check if already billed to avoid double deduction
+      const existingCall = await this.prisma.callTranscription.findUnique({
+        where: { callSid: callSid },
       });
 
-      if (activeSubscription && activeSubscription.status === 'ACTIVE') {
-        const currentMmSs = activeSubscription.minutesUsed || 0;
-
-        // Convert current MM.SS usage to total seconds
-        const currentMinutes = Math.floor(currentMmSs);
-        const currentSeconds = Math.round((currentMmSs - currentMinutes) * 100);
-        const totalUsedSeconds = (currentMinutes * 60) + currentSeconds;
-
-        // Add new duration
-        const newTotalSeconds = totalUsedSeconds + durationInSeconds;
-
-        // Convert back to MM.SS
-        const newMinutes = Math.floor(newTotalSeconds / 60);
-        const newSeconds = newTotalSeconds % 60;
-        const newMmSs = parseFloat(`${newMinutes}.${newSeconds < 10 ? '0' : ''}${newSeconds}`);
-
-        const allocatedMin = activeSubscription.minutesAllocated || 0;
-
-        // Calculate Extra Minutes in MM.SS
-        // If minutes used > allocated, the difference is extra
-        // Since allocated is Int (e.g. 8000), 8000.00 in MM.SS is exactly 8000 mins
-        // Direct comparison works (8000.01 > 8000)
-
-        let extraMmSs = 0;
-        if (newMmSs > allocatedMin) {
-          // We need accurate diff in seconds
-          const allocatedSeconds = allocatedMin * 60;
-          const diffSeconds = newTotalSeconds - allocatedSeconds;
-
-          // Convert diff to MM.SS
-          const diffM = Math.floor(diffSeconds / 60);
-          const diffS = diffSeconds % 60;
-          extraMmSs = parseFloat(`${diffM}.${diffS < 10 ? '0' : ''}${diffS}`);
-        }
-
-        await this.prisma.subscription.update({
-          where: { userId },
-          data: {
-            minutesUsed: newMmSs,
-            extraMinutes: extraMmSs,
-          },
-        });
-        console.log(`✅ Updated subscription usage (MM.SS): Used ${newMmSs}/${allocatedMin}, Extra: ${extraMmSs}`);
-      } else {
-        console.warn(`⚠️ No active subscription found for user ${userId}. Cannot deduct minutes.`);
+      if (existingCall && existingCall.minutesDeducted && existingCall.minutesDeducted > 0) {
+        console.log(`⚠️ Call ${callSid} already billed (${existingCall.minutesDeducted} mins). Skipping.`);
+        return;
       }
+
+      const minutesToDeduct = Math.ceil(durationInSeconds / 60);
+      console.log(`⏱️ Deducting ${minutesToDeduct} minutes for call duration ${durationInSeconds}s from user ${userId}`);
+
+      // Run in transaction to ensure atomicity: Deduct Minutes AND Mark Call as Billed
+      await this.prisma.$transaction(async (tx) => {
+        // 1. Find active subscription
+        const activeSubscription = await tx.subscription.findUnique({
+          where: { userId },
+        });
+
+        if (activeSubscription && activeSubscription.status === 'ACTIVE') {
+          const newUsedMin = (activeSubscription.minutesUsed || 0) + minutesToDeduct;
+          const allocatedMin = activeSubscription.minutesAllocated || 0;
+
+          let extraMin = 0;
+          if (newUsedMin > allocatedMin) {
+            extraMin = newUsedMin - allocatedMin;
+          }
+
+          // 2. Update Subscription
+          await tx.subscription.update({
+            where: { userId },
+            data: {
+              minutesUsed: newUsedMin,
+              extraMinutes: extraMin,
+            },
+          });
+
+          // 3. Mark Call as Billed (Upsert to handle case where record doesn't exist yet)
+          // We only set minutesDeducted and required fields here. The main update logic later will fill the rest.
+          await tx.callTranscription.upsert({
+            where: { callSid: callSid },
+            update: { minutesDeducted: minutesToDeduct },
+            create: {
+              callSid: callSid,
+              doctorId: userId,
+              minutesDeducted: minutesToDeduct,
+              // Min required fields. Default to SUCCESSFUL if we are creating it here (it will likely be updated later)
+              callStatus: 'SUCCESSFUL'
+            }
+          });
+
+          console.log(`✅ Transaction success: Deducted ${minutesToDeduct} mins, Marked ${callSid} as billed.`);
+        } else {
+          console.warn(`⚠️ No active subscription found for user ${userId}. Cannot deduct minutes.`);
+        }
+      });
+
     } catch (err) {
-      console.error('❌ Error updating subscription minutes:', err);
-      // Don't fail the webhook processing just because billing update failed
+      console.error('❌ Error updating subscription minutes (Transaction):', err);
     }
   }
 

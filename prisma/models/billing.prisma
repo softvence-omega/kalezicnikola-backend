@@ -31,8 +31,8 @@ model Subscription {
   billingCycle         BillingCycle? // Added billing cycle
   status               SubscriptionStatus?
   minutesAllocated     Int? // Minutes for current plan
-  minutesUsed          Float?              @default(0) // Changed to Float for precision
-  extraMinutes         Float?              @default(0) // Changed to Float for precision
+  minutesUsed          Int?                @default(0)
+  extraMinutes         Int?                @default(0)
   currentPeriodStart   DateTime?
   currentPeriodEnd     DateTime?
   cancelledAt          DateTime?
@@ -53,8 +53,8 @@ model SubscriptionHistory {
   billingCycle     BillingCycle
   status           SubscriptionStatus
   minutesAllocated Int
-  minutesUsed      Float // Changed to Float
-  extraMinutes     Float               @default(0) // Changed to Float
+  minutesUsed      Int
+  extraMinutes     Int                 @default(0)
   startDate        DateTime
   endDate          DateTime?
   archivedAt       DateTime            @default(now())

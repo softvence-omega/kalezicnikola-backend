@@ -234,6 +234,9 @@ model CallTranscription {
   fallbackNumber String? // Physical assistant number if agent is busy
   wasTransferred Boolean? @default(false)
   isReviewed     Boolean  @default(false)
+  
+  // Billing
+  minutesDeducted Int?    @default(0)
 
   // Timestamps
   callStartedAt DateTime?
