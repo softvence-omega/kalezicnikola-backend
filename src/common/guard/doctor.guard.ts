@@ -9,10 +9,11 @@ import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class DoctorGuard implements CanActivate {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
+    console.log('👨‍⚕️ DoctorGuard executing for path:', request.path);
     const token = request.headers.authorization?.split(" ")[1];
 
     if (!token) {

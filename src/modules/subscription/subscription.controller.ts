@@ -270,7 +270,7 @@ export class SubscriptionController {
   })
   async assignTrialPlan(@Request() req, @Body() dto: AssignTrialPlanDto) {
     const adminId = req.user.id;
-    return this.subscriptionService.assignTrialPlan(dto.userId, adminId);
+    return this.subscriptionService.assignTrialPlan(dto.userId, adminId, dto);
   }
 
   @Post('admin/cancel-trial')

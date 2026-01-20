@@ -4,6 +4,13 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
+import {
+  IsEnum,
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsDateString,
+} from 'class-validator';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
@@ -301,7 +308,11 @@ export class SubscriptionService implements OnModuleInit {
   }
 
   // Assign Trial Plan (Admin only, no Stripe integration)
-  async assignTrialPlan(userId: string, adminId?: string) {
+  async assignTrialPlan(
+    userId: string,
+    adminId?: string,
+    dto: { trialType?: 'LIFETIME' | 'SEVEN_DAYS'; startDate?: string } = {},
+  ) {
     try {
       // Verify user exists
       const user = await this.prisma.doctor.findUnique({
@@ -334,8 +345,21 @@ export class SubscriptionService implements OnModuleInit {
         where: { userId },
       });
 
-      // Far future date for lifetime access (or null)
-      const lifetimeEndDate = new Date('2099-12-31T23:59:59Z');
+      // Determine trial settings based on input
+      // Default to LIFETIME for backward compatibility if not specified
+      const isLifetime = !dto.trialType || dto.trialType === 'LIFETIME';
+      const startDate = dto.startDate ? new Date(dto.startDate) : new Date();
+
+      // Set period end based on type
+      let currentPeriodEnd: Date;
+      if (isLifetime) {
+        currentPeriodEnd = new Date('2099-12-31T23:59:59Z');
+      } else {
+        // SEVEN_DAYS
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + 7);
+        currentPeriodEnd = endDate;
+      }
 
       if (existingSubscription) {
         // [NEW] Archive old plan before overwriting
@@ -346,13 +370,13 @@ export class SubscriptionService implements OnModuleInit {
           where: { userId },
           data: {
             planType: 'TRIAL',
-            billingCycle: 'LIFETIME',
+            billingCycle: isLifetime ? 'LIFETIME' : 'SEVEN_DAYS',
             status: 'ACTIVE',
             minutesAllocated: trialPlan.minutes,
             minutesUsed: 0,
             extraMinutes: 0, // Reset extra minutes
-            currentPeriodStart: new Date(),
-            currentPeriodEnd: lifetimeEndDate,
+            currentPeriodStart: startDate,
+            currentPeriodEnd: currentPeriodEnd,
             cancelledAt: null,
             isActive: true,
             // Clear Stripe IDs since trial doesn't use Stripe
@@ -362,12 +386,12 @@ export class SubscriptionService implements OnModuleInit {
         });
 
         console.log(
-          `✅ Trial plan assigned to existing user: ${user.email} by admin: ${adminId || 'system'}`,
+          `✅ ${isLifetime ? 'Lifetime' : '7-Day'} trial plan assigned to existing user: ${user.email} by admin: ${adminId || 'system'}`,
         );
 
         return {
           success: true,
-          message: 'Trial plan assigned successfully',
+          message: `${isLifetime ? 'Lifetime' : '7-Day'} trial plan assigned successfully`,
           subscription: {
             userId: updatedSubscription.userId,
             planType: updatedSubscription.planType,
@@ -375,7 +399,9 @@ export class SubscriptionService implements OnModuleInit {
             status: updatedSubscription.status,
             minutesAllocated: updatedSubscription.minutesAllocated,
             features: trialPlan.features,
-            accessMessage: '✨ Lifetime access - No expiration',
+            accessMessage: isLifetime
+              ? '✨ Lifetime access - No expiration'
+              : `Trial ends on ${currentPeriodEnd.toLocaleDateString()}`,
           },
         };
       } else {
@@ -384,13 +410,13 @@ export class SubscriptionService implements OnModuleInit {
           data: {
             userId,
             planType: 'TRIAL',
-            billingCycle: 'LIFETIME',
+            billingCycle: isLifetime ? 'LIFETIME' : 'SEVEN_DAYS',
             status: 'ACTIVE',
             minutesAllocated: trialPlan.minutes,
             minutesUsed: 0,
             extraMinutes: 0,
-            currentPeriodStart: new Date(),
-            currentPeriodEnd: lifetimeEndDate,
+            currentPeriodStart: startDate,
+            currentPeriodEnd: currentPeriodEnd,
             isActive: true,
             // No Stripe IDs for trial plans
             stripeCustomerId: null,
@@ -399,12 +425,12 @@ export class SubscriptionService implements OnModuleInit {
         });
 
         console.log(
-          `✅ Trial plan assigned to new user: ${user.email} by admin: ${adminId || 'system'}`,
+          `✅ ${isLifetime ? 'Lifetime' : '7-Day'} trial plan assigned to new user: ${user.email} by admin: ${adminId || 'system'}`,
         );
 
         return {
           success: true,
-          message: 'Trial plan assigned successfully',
+          message: `${isLifetime ? 'Lifetime' : '7-Day'} trial plan assigned successfully`,
           subscription: {
             userId: newSubscription.userId,
             planType: newSubscription.planType,
@@ -412,7 +438,9 @@ export class SubscriptionService implements OnModuleInit {
             status: newSubscription.status,
             minutesAllocated: newSubscription.minutesAllocated,
             features: trialPlan.features,
-            accessMessage: '✨ Lifetime access - No expiration',
+            accessMessage: isLifetime
+              ? '✨ Lifetime access - No expiration'
+              : `Trial ends on ${currentPeriodEnd.toLocaleDateString()}`,
           },
         };
       }
@@ -600,10 +628,18 @@ export class SubscriptionService implements OnModuleInit {
       }
 
       // Get plan details from database
+      let searchBillingCycle = subscription.billingCycle || 'MONTHLY';
+      if (
+        subscription.planType === 'TRIAL' &&
+        searchBillingCycle === 'SEVEN_DAYS'
+      ) {
+        searchBillingCycle = 'LIFETIME' as any;
+      }
+
       const planDetails = await this.prisma.subscriptionPlan.findFirst({
         where: {
           planType: subscription.planType as any,
-          billingCycle: (subscription.billingCycle || 'MONTHLY') as any,
+          billingCycle: searchBillingCycle as any,
         },
       });
 
@@ -645,13 +681,16 @@ export class SubscriptionService implements OnModuleInit {
         isCancelled: isCancelled,
         cancelledAt: subscription.cancelledAt,
         isAccessible: isCancelled ? isAccessible : true, // If cancelled, check if still accessible
-        accessMessage: isTrialPlan
-          ? '✨ Lifetime access - No expiration'
-          : isCancelled && isAccessible
-            ? `Your subscription has been cancelled but you can continue using it until ${subscription.currentPeriodEnd?.toLocaleDateString()}`
-            : isCancelled && !isAccessible
-              ? 'Your subscription has expired'
-              : null,
+        accessMessage:
+          isTrialPlan && subscription.currentPeriodEnd
+            ? subscription.currentPeriodEnd > new Date('2090-01-01')
+              ? '✨ Lifetime access - No expiration'
+              : `Trial ends on ${subscription.currentPeriodEnd.toLocaleDateString()}`
+            : isCancelled && isAccessible
+              ? `Your subscription has been cancelled but you can continue using it until ${subscription.currentPeriodEnd?.toLocaleDateString()}`
+              : isCancelled && !isAccessible
+                ? 'Your subscription has expired'
+                : null,
       };
     } catch (error) {
       if (error instanceof NotFoundException) {
