@@ -25,7 +25,7 @@ import { DeleteAccountDto } from './dto/delete-account.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(private authService: AuthService) { }
 
   // ----------------- ADMIN REGISTER -------------------
   @Post('admin/register')
@@ -107,7 +107,7 @@ export class AuthController {
     };
   }
 
-    // ----------------- DECODE MY TOKEN -------------------
+  // ----------------- DECODE MY TOKEN -------------------
   @Get('decode-token')
   @UseGuards(AdminOrDoctorGuard)
   async decodeToken(@Headers('authorization') authorization: string) {
@@ -188,7 +188,7 @@ export class AuthController {
 
   // ----------------- CHANGE PASSWORD -------------------
   @Post('change-password')
-  @UseGuards(AdminGuard, DoctorGuard)
+  // @UseGuards(AdminOrDoctorGuard)
   async changePassword(
     @Headers('authorization') authorization: string,
     @Body() dto: ChangePasswordDto,
