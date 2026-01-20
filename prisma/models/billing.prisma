@@ -2,6 +2,7 @@ enum BillingCycle {
   MONTHLY
   YEARLY
   LIFETIME
+  SEVEN_DAYS
 }
 
 model SubscriptionPlan {
