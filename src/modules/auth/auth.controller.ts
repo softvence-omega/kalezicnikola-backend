@@ -13,7 +13,7 @@ import { AdminRegistrationDto } from './dto/auth-admin.dto';
 import { DoctorRegistrationDto } from './dto/auth-doctor.dto';
 import { UserLoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { AuthService } from './auth.services';
+import { AuthService, AuthLoginResponse } from './auth.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -22,6 +22,7 @@ import { AdminGuard } from 'src/common/guard/admin.guard';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { AdminOrDoctorGuard } from 'src/common/guard/admin-or-doctor.guard';
 import { DeleteAccountDto } from './dto/delete-account.dto';
+import { Verify2faOtpDto } from './dto/verify-2fa-otp.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -56,6 +57,14 @@ export class AuthController {
   async loginAdmin(@Body() dto: UserLoginDto) {
     const result = await this.authService.loginAdmin(dto);
 
+    if (result.requiresOtp) {
+      return {
+        statusCode: HttpStatus.OK,
+        message: '2FA OTP sent to your email',
+        data: result,
+      };
+    }
+
     return {
       statusCode: HttpStatus.OK,
       message: 'Admin logged in successfully',
@@ -68,9 +77,29 @@ export class AuthController {
   async loginDoctor(@Body() dto: UserLoginDto) {
     const result = await this.authService.loginDoctor(dto);
 
+    if (result.requiresOtp) {
+      return {
+        statusCode: HttpStatus.OK,
+        message: '2FA OTP sent to your email',
+        data: result,
+      };
+    }
+
     return {
       statusCode: HttpStatus.OK,
       message: 'Doctor logged in successfully',
+      data: result,
+    };
+  }
+
+  // ----------------- VERIFY 2FA OTP LOGIN -------------------
+  @Post('verify-otp-login')
+  async verifyOtpLogin(@Body() dto: Verify2faOtpDto) {
+    const result = await this.authService.verifyLoginOtp(dto);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Logged in successfully',
       data: result,
     };
   }
