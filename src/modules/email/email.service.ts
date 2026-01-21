@@ -25,40 +25,42 @@ export class EmailService {
       <!DOCTYPE html>
       <html>
       <head>
+        <meta charset="utf-8">
         <style>
-          .container { max-width: 600px; margin: 0 auto; font-family: 'Segoe UI', Roboto, Arial, sans-serif; }
-          .header { background: linear-gradient(135deg, #526FFF 0%, #8fa1ffff 100%); padding: 30px; text-align: center; color: white; border-radius: 10px 10px 0 0; }
-          .content { padding: 30px; background: #ffffff; border: 1px solid #e0e0e0; border-top: none; }
-          .otp-box { background: #f4f6ff; padding: 20px; text-align: center; margin: 25px 0; border-radius: 12px; border: 2px dashed #526FFF; }
-          .otp-code { font-size: 38px; font-weight: 800; color: #526FFF; letter-spacing: 8px; font-family: monospace; }
-          .footer { text-align: center; padding: 25px; color: #888; font-size: 13px; }
-          .btn { background-color: #526FFF; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; margin-top: 20px; }
-          .security-notice { font-size: 12px; color: #999; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; }
+          body { margin: 0; padding: 0; background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; color: #111111; line-height: 1.6; }
+          .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+          .logo { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 40px; text-transform: uppercase; color: #000000; }
+          .content { background: #ffffff; border: 1px solid #e5e5e5; padding: 40px; border-radius: 4px; }
+          .title { font-size: 20px; font-weight: 700; margin-bottom: 24px; color: #000000; }
+          .greeting { font-size: 16px; margin-bottom: 16px; }
+          .instructions { font-size: 16px; margin-bottom: 32px; color: #444444; }
+          .otp-container { background: #f9f9f9; border: 1px solid #eeeeee; padding: 32px; text-align: center; border-radius: 4px; margin-bottom: 32px; }
+          .otp-code { font-size: 40px; font-weight: 700; letter-spacing: 12px; color: #000000; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+          .expiry { font-size: 14px; color: #666666; margin-bottom: 32px; }
+          .footer { margin-top: 40px; padding-top: 32px; border-top: 1px solid #eeeeee; text-align: left; font-size: 12px; color: #999999; }
+          .security-note { background: #fff; border-left: 2px solid #000; padding: 12px 16px; margin: 24px 0; font-size: 13px; color: #555; }
         </style>
       </head>
       <body>
         <div class="container">
-          <div class="header">
-            <h1 style="margin:0;">Docline</h1>
-            <p style="margin:5px 0 0;">Your Healthcare Partner</p>
-          </div>
+          <div class="logo">DOCLINE</div>
           <div class="content">
-            <h2 style="color: #333; margin-top: 0;">Password Reset</h2>
-            <p>Hello <strong>${name || 'there'}</strong>,</p>
-            <p>We received a request to reset your password. Use the verification code below to proceed:</p>
+            <h1 class="title">Password Reset</h1>
+            <p class="greeting">Hello ${name || 'there'},</p>
+            <p class="instructions">We received a request to reset your password. Please use the following verification code to proceed:</p>
             
-            <div class="otp-box">
+            <div class="otp-container">
               <div class="otp-code">${otp}</div>
             </div>
             
-            <p>This code is valid for <strong>10 minutes</strong>. If you did not request this, please ignore this email or contact support if you have concerns.</p>
+            <p class="expiry">This code is valid for <strong>10 minutes</strong>. If you did not request this change, you can safely ignore this email.</p>
             
-            <div class="security-notice">
-              <p><strong>Security Note:</strong> Our team will never ask for this code over the phone or email. Please keep it confidential.</p>
+            <div class="security-note">
+              <strong>Security Protocol:</strong> For your protection, do not share this code with anyone. Docline staff will never ask for your verification code.
             </div>
           </div>
           <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} Docline. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} Docline Healthcare Systems. All rights reserved.</p>
           </div>
         </div>
       </body>
@@ -71,38 +73,38 @@ export class EmailService {
       <!DOCTYPE html>
       <html>
       <head>
+        <meta charset="utf-8">
         <style>
-          .container { max-width: 600px; margin: 0 auto; font-family: 'Segoe UI', Roboto, Arial, sans-serif; }
-          .header { background: linear-gradient(135deg, #1a237e 0%, #526FFF 100%); padding: 40px 20px; text-align: center; color: white; border-radius: 12px 12px 0 0; }
-          .content { padding: 40px; background: #ffffff; border: 1px solid #e0e0e0; border-top: none; }
-          .otp-box { background: #f0f3ff; padding: 30px; text-align: center; margin: 30px 0; border-radius: 16px; border: 1px solid #d1d9ff; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
-          .otp-code { font-size: 42px; font-weight: 800; color: #1a237e; letter-spacing: 10px; font-family: 'Courier New', monospace; }
-          .footer { text-align: center; padding: 30px; color: #999; font-size: 13px; }
-          .security-shield { font-size: 40px; margin-bottom: 20px; }
-          .verify-text { font-size: 18px; color: #333; font-weight: 600; margin-bottom: 10px; }
+          body { margin: 0; padding: 0; background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; color: #111111; line-height: 1.6; }
+          .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+          .logo { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 40px; text-transform: uppercase; color: #000000; }
+          .content { background: #ffffff; border: 1px solid #e5e5e5; padding: 40px; border-radius: 4px; }
+          .title { font-size: 20px; font-weight: 700; margin-bottom: 24px; color: #000000; }
+          .greeting { font-size: 16px; margin-bottom: 16px; }
+          .instructions { font-size: 16px; margin-bottom: 32px; color: #444444; }
+          .otp-container { background: #f9f9f9; border: 1px solid #eeeeee; padding: 32px; text-align: center; border-radius: 4px; margin-bottom: 32px; }
+          .otp-code { font-size: 40px; font-weight: 700; letter-spacing: 12px; color: #000000; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+          .expiry { font-size: 14px; color: #666666; margin-bottom: 32px; }
+          .footer { margin-top: 40px; padding-top: 32px; border-top: 1px solid #eeeeee; text-align: left; font-size: 12px; color: #999999; }
+          .security-note { background: #fff; border-left: 2px solid #000; padding: 12px 16px; margin: 24px 0; font-size: 13px; color: #555; }
         </style>
       </head>
       <body>
         <div class="container">
-          <div class="header">
-            <div class="security-shield">🛡️</div>
-            <h1 style="margin:0; font-size: 28px; letter-spacing: 1px;">Security Verification</h1>
-            <p style="margin:10px 0 0; opacity: 0.9;">Two-Factor Authentication</p>
-          </div>
+          <div class="logo">DOCLINE</div>
           <div class="content">
-            <p class="verify-text">Verify Your Identity</p>
-            <p>Hello ${name || 'there'},</p>
-            <p>To finish logging into your <strong>Docline</strong> account, please enter the following 6-digit verification code:</p>
+            <h1 class="title">Security Verification</h1>
+            <p class="greeting">Hello ${name || 'there'},</p>
+            <p class="instructions">To finish logging into your account, please use the following 6-digit verification code:</p>
             
-            <div class="otp-box">
+            <div class="otp-container">
               <div class="otp-code">${otp}</div>
             </div>
             
-            <p style="color: #666; line-height: 1.6;">This code was requested for a login attempt and will expire in <strong>10 minutes</strong>.</p>
+            <p class="expiry">This code was requested for a login attempt and will expire in <strong>10 minutes</strong>.</p>
             
-            <div style="margin-top: 40px; padding-top: 25px; border-top: 1px solid #eee; font-size: 12px; color: #aaa;">
-              <p>Requested at: ${new Date().toUTCString()}</p>
-              <p>If this wasn't you, someone may be trying to access your account. Please change your password immediately.</p>
+            <div class="security-note">
+              <strong>Notice:</strong> Your account security is our priority. If you did not initiate this login, please change your password immediately.
             </div>
           </div>
           <div class="footer">
