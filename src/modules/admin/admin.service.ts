@@ -39,6 +39,15 @@ export class AdminService {
       where.experience = { contains: query.experience, mode: 'insensitive' };
     }
 
+    // Filter for doctors added in the last 7 days
+    if (query.last7Days) {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      where.createdAt = {
+        gte: sevenDaysAgo
+      };
+    }
+
     const total = await this.prisma.doctor.count({ where });
 
     if (total === 0) {
