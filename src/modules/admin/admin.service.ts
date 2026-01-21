@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { GetDoctorsDto } from './dto/get-doctors.dto';
 import { GetDoctorSubscriptionsDto } from './dto/get-doctor-subscriptions.dto';
+import { GetDashboardStatsDto } from './dto/get-dashboard-stats.dto';
+import { GetRevenueGraphDto } from './dto/get-revenue-graph.dto';
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async getAllDoctors(query: GetDoctorsDto) {
     const page = query.page || 1;
@@ -93,7 +95,7 @@ export class AdminService {
 
   async getDoctorSubscriptionSummary() {
     const totalDoctors = await this.prisma.doctor.count();
-    
+
     const activeSubscriptions = await this.prisma.subscription.count({
       where: {
         isActive: true,
@@ -174,7 +176,7 @@ export class AdminService {
 
     const formattedSubscriptions = doctors.map(doctor => {
       const subscription = doctor.subscription;
-      
+
       let status = 'No Subscription';
       let plan = 'No Plan';
       let mrr = 0;
@@ -182,7 +184,7 @@ export class AdminService {
       if (subscription) {
         // Show actual subscription status
         status = subscription.status || 'Unknown';
-        
+
         // For trial plans, show "Trial" regardless of status
         if (subscription.planType === 'TRIAL') {
           status = 'Trial';
@@ -322,6 +324,369 @@ export class AdminService {
           }))
         }
       }
+    };
+  }
+
+  async getDashboardStats(query: GetDashboardStatsDto) {
+    const { startDate, endDate } = query;
+    const now = new Date();
+
+    // Default to current month if no dates provided
+    const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = endDate ? new Date(endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    // Previous month for comparison
+    const previousStart = new Date(start);
+    previousStart.setMonth(previousStart.getMonth() - 1);
+    const previousEnd = new Date(start);
+    previousEnd.setDate(0); // Last day of previous month
+
+    // Helper function to get plan price
+    const getPlanPrice = async (planType: string, billingCycle: string) => {
+      const plan = await this.prisma.subscriptionPlan.findUnique({
+        where: {
+          planType_billingCycle: {
+            planType: planType as any,
+            billingCycle: billingCycle as any
+          }
+        }
+      });
+      return plan?.price || 0;
+    };
+
+    // 1. Total MRR - Active subscriptions
+    const activeSubscriptions = await this.prisma.subscription.findMany({
+      where: {
+        isActive: true,
+        status: 'ACTIVE'
+      }
+    });
+
+    // Calculate total MRR by fetching plan prices
+    let totalMrr = 0;
+    for (const sub of activeSubscriptions) {
+      if (sub.planType && sub.billingCycle) {
+        const price = await getPlanPrice(sub.planType, sub.billingCycle);
+        totalMrr += price;
+      }
+    }
+
+    // 2. New MRR (Subscriptions created in the date range)
+    const newSubscriptions = await this.prisma.subscription.findMany({
+      where: {
+        createdAt: {
+          gte: start,
+          lte: end
+        },
+        isActive: true,
+        status: 'ACTIVE'
+      }
+    });
+
+    let newMrr = 0;
+    for (const sub of newSubscriptions) {
+      if (sub.planType && sub.billingCycle) {
+        const price = await getPlanPrice(sub.planType, sub.billingCycle);
+        newMrr += price;
+      }
+    }
+
+    // 3. Churn MRR (Subscriptions cancelled in the date range)
+    const churnedSubscriptions = await this.prisma.subscription.findMany({
+      where: {
+        cancelledAt: {
+          gte: start,
+          lte: end
+        }
+      }
+    });
+
+    let churnMrr = 0;
+    for (const sub of churnedSubscriptions) {
+      if (sub.planType && sub.billingCycle) {
+        const price = await getPlanPrice(sub.planType, sub.billingCycle);
+        churnMrr += price;
+      }
+    }
+
+    // 4. Net Expansion MRR 
+    const netExpansionMrr = newMrr - churnMrr;
+
+    // 5. Customer Churn Rate
+    const totalCustomersAtStart = await this.prisma.doctor.count({
+      where: {
+        createdAt: {
+          lt: start
+        }
+      }
+    });
+
+    const churnedCount = churnedSubscriptions.length;
+    const churnRate = totalCustomersAtStart > 0 ? (churnedCount / totalCustomersAtStart) * 100 : 0;
+
+    // 6. Revenue Graph (Last 30 days or selected period)
+    // Try to get revenue from invoices first
+    let invoices = await this.prisma.invoice.findMany({
+      where: {
+        createdAt: {
+          gte: start,
+          lte: end
+        },
+        amountPaid: {
+          gt: 0
+        }
+      },
+      orderBy: {
+        createdAt: 'asc'
+      }
+    });
+
+    const revenueMap = new Map<string, number>();
+
+    // If we have invoices, use them
+    if (invoices.length > 0) {
+      invoices.forEach(inv => {
+        if (inv.createdAt) {
+          const dateKey = inv.createdAt.toISOString().split('T')[0];
+          const amount = (inv.amountPaid || 0) / 100; // Amount in cents
+          revenueMap.set(dateKey, (revenueMap.get(dateKey) || 0) + amount);
+        }
+      });
+    } else {
+      // Fallback: Use subscription data to estimate revenue
+      const subscriptionsInRange = await this.prisma.subscription.findMany({
+        where: {
+          createdAt: {
+            gte: start,
+            lte: end
+          },
+          status: 'ACTIVE'
+        },
+        orderBy: {
+          createdAt: 'asc'
+        }
+      });
+
+      // Calculate revenue based on subscription creation dates
+      for (const sub of subscriptionsInRange) {
+        if (sub.createdAt && sub.planType && sub.billingCycle) {
+          const dateKey = sub.createdAt.toISOString().split('T')[0];
+          const price = await getPlanPrice(sub.planType, sub.billingCycle);
+          const amount = price / 100; // Convert to dollars
+          revenueMap.set(dateKey, (revenueMap.get(dateKey) || 0) + amount);
+        }
+      }
+    }
+
+    const revenueGraph = Array.from(revenueMap.entries()).map(([date, amount]) => ({ date, amount }));
+
+    // 7. Acquisition vs Churn (Percentages)
+    const acquisitionCount = newSubscriptions.length;
+    const totalCustomers = await this.prisma.doctor.count();
+
+    // Calculate percentages
+    const acquisitionPercentage = totalCustomers > 0 ? (acquisitionCount / totalCustomers) * 100 : 0;
+    const churnPercentage = totalCustomers > 0 ? (churnedCount / totalCustomers) * 100 : 0;
+
+    // 8. Calculate previous month metrics for growth percentages
+    const previousActiveSubscriptions = await this.prisma.subscription.findMany({
+      where: {
+        createdAt: { lte: previousEnd },
+        OR: [
+          { cancelledAt: null },
+          { cancelledAt: { gt: previousEnd } }
+        ],
+        status: 'ACTIVE'
+      }
+    });
+
+    let previousTotalMrr = 0;
+    for (const sub of previousActiveSubscriptions) {
+      if (sub.planType && sub.billingCycle) {
+        const price = await getPlanPrice(sub.planType, sub.billingCycle);
+        previousTotalMrr += price;
+      }
+    }
+
+    // Previous month New MRR
+    const previousNewSubscriptions = await this.prisma.subscription.findMany({
+      where: {
+        createdAt: {
+          gte: previousStart,
+          lte: previousEnd
+        },
+        isActive: true,
+        status: 'ACTIVE'
+      }
+    });
+
+    let previousNewMrr = 0;
+    for (const sub of previousNewSubscriptions) {
+      if (sub.planType && sub.billingCycle) {
+        const price = await getPlanPrice(sub.planType, sub.billingCycle);
+        previousNewMrr += price;
+      }
+    }
+
+    // Previous month Churn MRR
+    const previousChurnedSubscriptions = await this.prisma.subscription.findMany({
+      where: {
+        cancelledAt: {
+          gte: previousStart,
+          lte: previousEnd
+        }
+      }
+    });
+
+    let previousChurnMrr = 0;
+    for (const sub of previousChurnedSubscriptions) {
+      if (sub.planType && sub.billingCycle) {
+        const price = await getPlanPrice(sub.planType, sub.billingCycle);
+        previousChurnMrr += price;
+      }
+    }
+
+    // Previous month Net Expansion MRR
+    const previousNetExpansionMrr = previousNewMrr - previousChurnMrr;
+
+    // Previous month Customer Churn Rate
+    const previousTotalCustomersAtStart = await this.prisma.doctor.count({
+      where: {
+        createdAt: {
+          lt: previousStart
+        }
+      }
+    });
+
+    const previousChurnedCount = previousChurnedSubscriptions.length;
+    const previousChurnRate = previousTotalCustomersAtStart > 0 ? (previousChurnedCount / previousTotalCustomersAtStart) * 100 : 0;
+
+    // Calculate growth percentages
+    const totalMrrGrowth = previousTotalMrr > 0 ? ((totalMrr - previousTotalMrr) / previousTotalMrr) * 100 : 0;
+    const newMrrGrowth = previousNewMrr > 0 ? ((newMrr - previousNewMrr) / previousNewMrr) * 100 : 0;
+    const churnMrrGrowth = previousChurnMrr > 0 ? ((churnMrr - previousChurnMrr) / previousChurnMrr) * 100 : 0;
+    const netExpansionMrrGrowth = previousNetExpansionMrr !== 0 ? ((netExpansionMrr - previousNetExpansionMrr) / Math.abs(previousNetExpansionMrr)) * 100 : 0;
+    const churnRateGrowth = previousChurnRate > 0 ? ((churnRate - previousChurnRate) / previousChurnRate) * 100 : 0;
+
+
+    return {
+      totalMrr,
+      totalMrrGrowth,
+      newMrr,
+      newMrrGrowth,
+      churnMrr,
+      churnMrrGrowth,
+      netExpansionMrr,
+      netExpansionMrrGrowth,
+      customerChurnRate: churnRate,
+      customerChurnRateGrowth: churnRateGrowth,
+      acquisitionVsChurn: {
+        acquisition: acquisitionPercentage,
+        churn: churnPercentage
+      }
+    };
+  }
+
+
+  async getRevenueGraph(query: GetRevenueGraphDto) {
+    const { startDate, endDate } = query;
+    const now = new Date();
+
+    // Use provided dates or default to current month
+    const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = endDate ? new Date(endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    // Helper to get all dates in a range
+    const getAllDatesInRange = (start: Date, end: Date): string[] => {
+      const dates: string[] = [];
+      const current = new Date(start);
+
+      while (current <= end) {
+        dates.push(current.toISOString().split('T')[0]);
+        current.setDate(current.getDate() + 1);
+      }
+
+      return dates;
+    };
+
+    // Get revenue data for the period
+    let invoices = await this.prisma.invoice.findMany({
+      where: {
+        createdAt: {
+          gte: start,
+          lte: end
+        },
+        amountPaid: {
+          gt: 0
+        }
+      },
+      orderBy: {
+        createdAt: 'asc'
+      }
+    });
+
+    const revenueMap = new Map<string, number>();
+
+    if (invoices.length > 0) {
+      invoices.forEach(inv => {
+        if (inv.createdAt) {
+          const dateKey = inv.createdAt.toISOString().split('T')[0];
+          const amount = (inv.amountPaid || 0) / 100;
+          revenueMap.set(dateKey, (revenueMap.get(dateKey) || 0) + amount);
+        }
+      });
+    } else {
+      // Fallback: Use subscription data
+      const subscriptions = await this.prisma.subscription.findMany({
+        where: {
+          createdAt: {
+            gte: start,
+            lte: end
+          },
+          status: 'ACTIVE'
+        }
+      });
+
+      for (const sub of subscriptions) {
+        if (sub.createdAt && sub.planType && sub.billingCycle) {
+          const dateKey = sub.createdAt.toISOString().split('T')[0];
+          const plan = await this.prisma.subscriptionPlan.findUnique({
+            where: {
+              planType_billingCycle: {
+                planType: sub.planType as any,
+                billingCycle: sub.billingCycle as any
+              }
+            }
+          });
+          const amount = (plan?.price || 0) / 100;
+          revenueMap.set(dateKey, (revenueMap.get(dateKey) || 0) + amount);
+        }
+      }
+    }
+
+    // Calculate total revenue
+    const totalRevenue = Array.from(revenueMap.values()).reduce((acc, val) => acc + val, 0);
+
+    // Fill in all dates with 0 if missing and calculate percentages
+    const allDates = getAllDatesInRange(start, end);
+    const data = allDates.map(date => {
+      const amount = revenueMap.get(date) || 0;
+      const percentage = totalRevenue > 0 ? (amount / totalRevenue) * 100 : 0;
+
+      return {
+        date,
+        amount,
+        percentage
+      };
+    });
+
+    return {
+      period: {
+        start: start.toISOString().split('T')[0],
+        end: end.toISOString().split('T')[0]
+      },
+      totalRevenue,
+      data
     };
   }
 }
