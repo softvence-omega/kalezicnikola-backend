@@ -25,35 +25,90 @@ export class EmailService {
       <!DOCTYPE html>
       <html>
       <head>
+        <meta charset="utf-8">
         <style>
-          .container { max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; }
-          .header { background: linear-gradient(135deg, #526FFF 0%, #8fa1ffff 100%); padding: 30px; text-align: center; color: white; }
-          .content { padding: 30px; background: #f9f9f9; }
-          .otp-box { background: white; padding: 20px; text-align: center; margin: 20px 0; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-          .otp-code { font-size: 32px; font-weight: bold; color: #526FFF; letter-spacing: 5px; }
-          .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+          body { margin: 0; padding: 0; background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; color: #111111; line-height: 1.6; }
+          .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+          .logo { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 40px; text-transform: uppercase; color: #000000; }
+          .content { background: #ffffff; border: 1px solid #e5e5e5; padding: 40px; border-radius: 4px; }
+          .title { font-size: 20px; font-weight: 700; margin-bottom: 24px; color: #000000; }
+          .greeting { font-size: 16px; margin-bottom: 16px; }
+          .instructions { font-size: 16px; margin-bottom: 32px; color: #444444; }
+          .otp-container { background: #f9f9f9; border: 1px solid #eeeeee; padding: 32px; text-align: center; border-radius: 4px; margin-bottom: 32px; }
+          .otp-code { font-size: 40px; font-weight: 700; letter-spacing: 12px; color: #000000; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+          .expiry { font-size: 14px; color: #666666; margin-bottom: 32px; }
+          .footer { margin-top: 40px; padding-top: 32px; border-top: 1px solid #eeeeee; text-align: left; font-size: 12px; color: #999999; }
+          .security-note { background: #fff; border-left: 2px solid #000; padding: 12px 16px; margin: 24px 0; font-size: 13px; color: #555; }
         </style>
       </head>
       <body>
         <div class="container">
-          <div class="header">
-            <h1>Docline</h1>
-            <p>Your Healthcare Partner</p>
-          </div>
+          <div class="logo">DOCLINE</div>
           <div class="content">
-            <h2>Password Reset OTP</h2>
-            <p>Hello ${name || 'there'},</p>
-            <p>Use the following OTP to reset your password. This OTP will expire in 10 minutes.</p>
+            <h1 class="title">Password Reset</h1>
+            <p class="greeting">Hello ${name || 'there'},</p>
+            <p class="instructions">We received a request to reset your password. Please use the following verification code to proceed:</p>
             
-            <div class="otp-box">
+            <div class="otp-container">
               <div class="otp-code">${otp}</div>
             </div>
             
-            <p>If you didn't request this, please ignore this email.</p>
-            <p><strong>Security Tip:</strong> Never share your OTP with anyone.</p>
+            <p class="expiry">This code is valid for <strong>10 minutes</strong>. If you did not request this change, you can safely ignore this email.</p>
+            
+            <div class="security-note">
+              <strong>Security Protocol:</strong> For your protection, do not share this code with anyone. Docline staff will never ask for your verification code.
+            </div>
           </div>
           <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} Docline. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} Docline Healthcare Systems. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
+  private createTwoFactorOtpTemplate(otp: string, name?: string): string {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { margin: 0; padding: 0; background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; color: #111111; line-height: 1.6; }
+          .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+          .logo { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 40px; text-transform: uppercase; color: #000000; }
+          .content { background: #ffffff; border: 1px solid #e5e5e5; padding: 40px; border-radius: 4px; }
+          .title { font-size: 20px; font-weight: 700; margin-bottom: 24px; color: #000000; }
+          .greeting { font-size: 16px; margin-bottom: 16px; }
+          .instructions { font-size: 16px; margin-bottom: 32px; color: #444444; }
+          .otp-container { background: #f9f9f9; border: 1px solid #eeeeee; padding: 32px; text-align: center; border-radius: 4px; margin-bottom: 32px; }
+          .otp-code { font-size: 40px; font-weight: 700; letter-spacing: 12px; color: #000000; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+          .expiry { font-size: 14px; color: #666666; margin-bottom: 32px; }
+          .footer { margin-top: 40px; padding-top: 32px; border-top: 1px solid #eeeeee; text-align: left; font-size: 12px; color: #999999; }
+          .security-note { background: #fff; border-left: 2px solid #000; padding: 12px 16px; margin: 24px 0; font-size: 13px; color: #555; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="logo">DOCLINE</div>
+          <div class="content">
+            <h1 class="title">Security Verification</h1>
+            <p class="greeting">Hello ${name || 'there'},</p>
+            <p class="instructions">To finish logging into your account, please use the following 6-digit verification code:</p>
+            
+            <div class="otp-container">
+              <div class="otp-code">${otp}</div>
+            </div>
+            
+            <p class="expiry">This code was requested for a login attempt and will expire in <strong>10 minutes</strong>.</p>
+            
+            <div class="security-note">
+              <strong>Notice:</strong> Your account security is our priority. If you did not initiate this login, please change your password immediately.
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} Docline Healthcare Systems. All rights reserved.</p>
           </div>
         </div>
       </body>
@@ -71,11 +126,30 @@ export class EmailService {
         from: `"Docline" <${this.config.get('smtp_auth_user')}>`,
         to,
         subject: 'Your Password Reset OTP - Docline',
-        html: this.createOtpEmailTemplate(otp, name || 'there'), // Handle null/undefined
+        html: this.createOtpEmailTemplate(otp, name || 'there'),
       });
       return true;
     } catch (error) {
       console.error('Email sending failed:', error);
+      return false;
+    }
+  }
+
+  async sendTwoFactorOtpEmail(
+    to: string,
+    otp: string,
+    name?: string | null,
+  ): Promise<boolean> {
+    try {
+      await this.transporter.sendMail({
+        from: `"Docline Security" <${this.config.get('smtp_auth_user')}>`,
+        to,
+        subject: `[Docline] ${otp} is your verification code`,
+        html: this.createTwoFactorOtpTemplate(otp, name || 'there'),
+      });
+      return true;
+    } catch (error) {
+      console.error('2FA Email sending failed:', error);
       return false;
     }
   }

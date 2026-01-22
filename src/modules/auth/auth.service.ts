@@ -18,6 +18,16 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
+import { Verify2faOtpDto } from './dto/verify-2fa-otp.dto';
+
+export interface AuthLoginResponse {
+  requiresOtp: boolean;
+  email?: string;
+  message: string;
+  accessToken?: string;
+  refreshToken?: string;
+  user?: any;
+}
 
 @Injectable()
 export class AuthService {
@@ -93,7 +103,7 @@ export class AuthService {
   }
 
   // ----------------- ADMIN LOGIN -------------------
-  async loginAdmin(dto: UserLoginDto) {
+  async loginAdmin(dto: UserLoginDto): Promise<AuthLoginResponse> {
     const admin = await this.prisma.admin.findUnique({
       where: { email: dto.email },
     });
@@ -108,8 +118,35 @@ export class AuthService {
     );
 
     if (!isPasswordValid) {
+      // Increment failed login attempts
+      await this.prisma.admin.update({
+        where: { id: admin.id },
+        data: { failedLoginAttempts: { increment: 1 } },
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
+
+    // Check if 2FA is required
+    const requires2FA = await this.checkRequires2FA(admin, 'admin');
+
+    if (requires2FA) {
+      await this.generateAndSend2FA(admin, 'admin');
+      return {
+        requiresOtp: true,
+        email: admin.email || undefined,
+        message: '2FA OTP sent to your email',
+      };
+    }
+
+
+    // Reset failed login attempts on success
+    await this.prisma.admin.update({
+      where: { id: admin.id },
+      data: {
+        failedLoginAttempts: 0,
+        lastLoginAt: new Date()
+      },
+    });
 
     // Generate tokens
     const accessToken = this.tokenUtil.generateAccessToken(admin.id, 'admin');
@@ -117,12 +154,6 @@ export class AuthService {
 
     // Create session
     await this.createSession(admin.id, 'admin', accessToken, refreshToken);
-
-    // Update last login
-    await this.prisma.admin.update({
-      where: { id: admin.id },
-      data: { lastLoginAt: new Date() },
-    });
 
     // Create or update User record for chat system
     await this.prisma.user.upsert({
@@ -135,8 +166,10 @@ export class AuthService {
     });
 
     return {
+      requiresOtp: false,
       accessToken,
       refreshToken,
+      message: 'Admin logged in successfully',
       user: {
         id: admin.id,
         email: admin.email,
@@ -148,7 +181,7 @@ export class AuthService {
   }
 
   // ----------------- DOCTOR LOGIN -------------------
-  async loginDoctor(dto: UserLoginDto) {
+  async loginDoctor(dto: UserLoginDto): Promise<AuthLoginResponse> {
     const doctor = await this.prisma.doctor.findUnique({
       where: { email: dto.email },
     });
@@ -163,8 +196,35 @@ export class AuthService {
     );
 
     if (!isPasswordValid) {
+      // Increment failed login attempts
+      await this.prisma.doctor.update({
+        where: { id: doctor.id },
+        data: { failedLoginAttempts: { increment: 1 } },
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
+
+    // Check if 2FA is required
+    const requires2FA = await this.checkRequires2FA(doctor, 'doctor');
+
+    if (requires2FA) {
+      await this.generateAndSend2FA(doctor, 'doctor');
+      return {
+        requiresOtp: true,
+        email: doctor.email || undefined,
+        message: '2FA OTP sent to your email',
+      };
+    }
+
+
+    // Reset failed login attempts on success
+    await this.prisma.doctor.update({
+      where: { id: doctor.id },
+      data: {
+        failedLoginAttempts: 0,
+        lastLoginAt: new Date()
+      },
+    });
 
     // Generate tokens
     const accessToken = this.tokenUtil.generateAccessToken(doctor.id, 'doctor');
@@ -175,12 +235,6 @@ export class AuthService {
 
     // Create session
     await this.createSession(doctor.id, 'doctor', accessToken, refreshToken);
-
-    // Update last login
-    await this.prisma.doctor.update({
-      where: { id: doctor.id },
-      data: { lastLoginAt: new Date() },
-    });
 
     // Create or update User record for chat system
     await this.prisma.user.upsert({
@@ -193,8 +247,10 @@ export class AuthService {
     });
 
     return {
+      requiresOtp: false,
       accessToken,
       refreshToken,
+      message: 'Doctor logged in successfully',
       user: {
         id: doctor.id,
         email: doctor.email,
@@ -281,7 +337,7 @@ export class AuthService {
 
       // Get additional user information from database based on role
       let userInfo: any = null;
-      
+
       if (decoded.role === 'admin') {
         userInfo = await this.prisma.admin.findUnique({
           where: { id: decoded.userId },
@@ -578,13 +634,13 @@ export class AuthService {
     if (resetRecord.adminId) {
       user = await this.prisma.admin.update({
         where: { id: resetRecord.adminId },
-        data: { passwordHash },
+        data: { passwordHash, lastPasswordChangeAt: new Date() },
       });
       userType = 'admin';
     } else if (resetRecord.doctorId) {
       user = await this.prisma.doctor.update({
         where: { id: resetRecord.doctorId },
-        data: { passwordHash },
+        data: { passwordHash, lastPasswordChangeAt: new Date() },
       });
       userType = 'doctor';
     } else {
@@ -694,12 +750,12 @@ export class AuthService {
     if (role === 'admin') {
       await this.prisma.admin.update({
         where: { id: userId },
-        data: { passwordHash: newPasswordHash },
+        data: { passwordHash: newPasswordHash, lastPasswordChangeAt: new Date() },
       });
     } else if (role === 'doctor') {
       await this.prisma.doctor.update({
         where: { id: userId },
-        data: { passwordHash: newPasswordHash },
+        data: { passwordHash: newPasswordHash, lastPasswordChangeAt: new Date() },
       });
     }
 
@@ -708,6 +764,119 @@ export class AuthService {
 
     return {
       message: 'Password changed successfully. Please login again.',
+    };
+  }
+
+  // ----------------- 2FA LOGIC -------------------
+
+  private async checkRequires2FA(user: any, role: 'admin' | 'doctor'): Promise<boolean> {
+    // 2FA enabled check (default true)
+    if (user.twoFactorEnabled === false) return false;
+
+    // Trigger: First login of the day
+    if (!user.lastLoginAt) return true;
+    const lastLogin = new Date(user.lastLoginAt);
+    const today = new Date();
+    if (lastLogin.toDateString() !== today.toDateString()) return true;
+
+    // Trigger: Long inactivity (>30 days)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    if (lastLogin < thirtyDaysAgo) return true;
+
+    // Trigger: Multiple failed login attempts (>3)
+    if (user.failedLoginAttempts >= 3) return true;
+
+    // Trigger: After password change (if lastLogin < lastPasswordChangeAt)
+    if (user.lastPasswordChangeAt) {
+      const lastPassChange = new Date(user.lastPasswordChangeAt);
+      if (lastLogin < lastPassChange) return true;
+    }
+
+    return false;
+  }
+
+  private async generateAndSend2FA(user: any, role: 'admin' | 'doctor') {
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Store OTP in database
+    await this.prisma.twoFactorOtp.create({
+      data: {
+        email: user.email,
+        otp,
+        expiresAt,
+        ...(role === 'admin' ? { adminId: user.id } : { doctorId: user.id }),
+      },
+    });
+
+    // Send OTP via email
+    await this.emailService.sendTwoFactorOtpEmail(user.email, otp, user.firstName);
+
+    return otp;
+  }
+
+  async verifyLoginOtp(dto: Verify2faOtpDto) {
+    const otpRecord = await this.prisma.twoFactorOtp.findFirst({
+      where: {
+        email: dto.email,
+        otp: dto.otp,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      include: {
+        admin: true,
+        doctor: true,
+      },
+    });
+
+    if (!otpRecord) {
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    const role = otpRecord.adminId ? 'admin' : 'doctor';
+    const user = role === 'admin' ? otpRecord.admin : otpRecord.doctor;
+
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    // Mark OTP as used
+    await this.prisma.twoFactorOtp.update({
+      where: { id: otpRecord.id },
+      data: { usedAt: new Date(), verifiedAt: new Date() },
+    });
+
+    // Reset failed login attempts and update last login
+    if (role === 'admin') {
+      await this.prisma.admin.update({
+        where: { id: user.id },
+        data: { failedLoginAttempts: 0, lastLoginAt: new Date() },
+      });
+    } else {
+      await this.prisma.doctor.update({
+        where: { id: user.id },
+        data: { failedLoginAttempts: 0, lastLoginAt: new Date() },
+      });
+    }
+
+    // Generate tokens
+    const accessToken = this.tokenUtil.generateAccessToken(user.id, role);
+    const refreshToken = this.tokenUtil.generateRefreshToken(user.id, role);
+
+    // Create session
+    await this.createSession(user.id, role, accessToken, refreshToken);
+
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: role,
+      },
     };
   }
 

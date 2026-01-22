@@ -2,12 +2,14 @@ import { Controller, Get, Query, UseGuards, Param } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { GetDoctorsDto } from './dto/get-doctors.dto';
 import { GetDoctorSubscriptionsDto } from './dto/get-doctor-subscriptions.dto';
+import { GetDashboardStatsDto } from './dto/get-dashboard-stats.dto';
+import { GetRevenueGraphDto } from './dto/get-revenue-graph.dto';
 import { AdminGuard } from 'src/common/guard/admin.guard';
 
 @Controller('admin')
 @UseGuards(AdminGuard)
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(private readonly adminService: AdminService) { }
 
   @Get('doctors')
   async getAllDoctors(@Query() query: GetDoctorsDto) {
@@ -26,7 +28,7 @@ export class AdminController {
   @Get('doctor-subscriptions')
   async getDoctorSubscriptions(@Query() query: GetDoctorSubscriptionsDto) {
     const result = await this.adminService.getDoctorSubscriptions(query);
-    
+
     const message = result.message || 'Doctor subscriptions retrieved successfully';
     const { message: _, ...data } = result;
 
@@ -41,5 +43,23 @@ export class AdminController {
   @Get('doctor-subscriptions/:doctorId')
   async getDoctorSubscriptionDetails(@Param('doctorId') doctorId: string) {
     return await this.adminService.getDoctorSubscriptionDetails(doctorId);
+  }
+
+  @Get('dashboard')
+  async getDashboardStats(@Query() query: GetDashboardStatsDto) {
+    return {
+      statusCode: 200,
+      message: 'Dashboard stats retrieved successfully',
+      data: await this.adminService.getDashboardStats(query),
+    };
+  }
+
+  @Get('dashboard/revenue-graph')
+  async getRevenueGraph(@Query() query: GetRevenueGraphDto) {
+    return {
+      statusCode: 200,
+      message: 'Revenue graph retrieved successfully',
+      data: await this.adminService.getRevenueGraph(query),
+    };
   }
 }
