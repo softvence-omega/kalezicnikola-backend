@@ -4,6 +4,7 @@ import { GetDoctorsDto } from './dto/get-doctors.dto';
 import { GetDoctorSubscriptionsDto } from './dto/get-doctor-subscriptions.dto';
 import { GetDashboardStatsDto } from './dto/get-dashboard-stats.dto';
 import { GetRevenueGraphDto } from './dto/get-revenue-graph.dto';
+import { GetUsersDto } from './dto/get-users.dto';
 
 @Injectable()
 export class AdminService {
@@ -100,6 +101,271 @@ export class AdminService {
       },
       doctors,
     };
+  }
+
+  async getAllUsers(query: GetUsersDto) {
+    const page = query.page || 1;
+    const limit = query.limit || 10;
+    const skip = (page - 1) * limit;
+    const sortBy = query.sortBy || 'createdAt';
+    const sortOrder = query.sortOrder?.toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+    let adminWhere: any = {};
+    let doctorWhere: any = {};
+
+    // Apply search filter
+    if (query.search) {
+      const searchCondition = {
+        OR: [
+          { firstName: { contains: query.search, mode: 'insensitive' } },
+          { lastName: { contains: query.search, mode: 'insensitive' } },
+          { email: { contains: query.search, mode: 'insensitive' } },
+        ]
+      };
+      adminWhere = { ...adminWhere, ...searchCondition };
+      doctorWhere = { ...doctorWhere, ...searchCondition };
+    }
+
+    // Apply email verified filter
+    if (query.emailVerified !== undefined) {
+      if (query.emailVerified) {
+        adminWhere.emailVerifiedAt = { not: null };
+        doctorWhere.emailVerifiedAt = { not: null };
+      } else {
+        adminWhere.emailVerifiedAt = null;
+        doctorWhere.emailVerifiedAt = null;
+      }
+    }
+
+    // Apply two factor enabled filter
+    if (query.twoFactorEnabled !== undefined) {
+      adminWhere.twoFactorEnabled = query.twoFactorEnabled;
+      doctorWhere.twoFactorEnabled = query.twoFactorEnabled;
+    }
+
+    // Get counts
+    let total = 0;
+    if (!query.role || query.role === 'ADMIN') {
+      total += await this.prisma.admin.count({ where: adminWhere });
+    }
+    if (!query.role || query.role === 'DOCTOR') {
+      total += await this.prisma.doctor.count({ where: doctorWhere });
+    }
+
+    // Get data
+    const users: any[] = [];
+
+    if (!query.role || query.role === 'ADMIN') {
+      const admins = await this.prisma.admin.findMany({
+        where: adminWhere,
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          photo: true,
+          emailVerifiedAt: true,
+          twoFactorEnabled: true,
+          lastLoginAt: true,
+          createdAt: true,
+        },
+        orderBy: {
+          [sortBy]: sortOrder,
+        },
+        skip: users.length,
+        take: Math.max(0, limit - users.length),
+      });
+
+      users.push(...admins.map(admin => ({
+        id: admin.id,
+        role: 'ADMIN',
+        userId: admin.id,
+        email: admin.email,
+        firstName: admin.firstName,
+        lastName: admin.lastName,
+        phone: null,
+        photo: admin.photo,
+        specialities: null,
+        emailVerified: !!admin.emailVerifiedAt,
+        twoFactorEnabled: admin.twoFactorEnabled || false,
+        lastLoginAt: admin.lastLoginAt,
+        createdAt: admin.createdAt,
+      })));
+    }
+
+    if ((!query.role || query.role === 'DOCTOR') && users.length < limit) {
+      const doctors = await this.prisma.doctor.findMany({
+        where: doctorWhere,
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          photo: true,
+          specialities: true,
+          emailVerifiedAt: true,
+          twoFactorEnabled: true,
+          lastLoginAt: true,
+          createdAt: true,
+        },
+        orderBy: {
+          [sortBy]: sortOrder,
+        },
+        skip: Math.max(0, skip - (query.role === 'DOCTOR' ? 0 : await this.prisma.admin.count({ where: adminWhere }))),
+        take: Math.max(0, limit - users.length),
+      });
+
+      users.push(...doctors.map(doctor => ({
+        id: doctor.id,
+        role: 'DOCTOR',
+        userId: doctor.id,
+        email: doctor.email,
+        firstName: doctor.firstName,
+        lastName: doctor.lastName,
+        phone: doctor.phone,
+        photo: doctor.photo,
+        specialities: doctor.specialities,
+        emailVerified: !!doctor.emailVerifiedAt,
+        twoFactorEnabled: doctor.twoFactorEnabled || false,
+        lastLoginAt: doctor.lastLoginAt,
+        createdAt: doctor.createdAt,
+      })));
+    }
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+        previous: page > 1 ? page - 1 : null,
+        next: page < totalPages ? page + 1 : null,
+      },
+      users,
+    };
+  }
+
+  async deleteUser(id: string) {
+    try {
+      // First try to find the user as an admin
+      const admin = await this.prisma.admin.findUnique({
+        where: { id },
+        include: { user: true }
+      });
+
+      if (admin) {
+        // Delete admin and related user record
+        await this.prisma.admin.delete({
+          where: { id }
+        });
+
+        if (admin.user) {
+          await this.prisma.user.delete({
+            where: { id: admin.user.id }
+          });
+        }
+
+        return {
+          statusCode: 200,
+          success: true,
+          message: `ADMIN with ID ${id} deleted successfully`,
+        };
+      }
+
+      // If not found as admin, try to find as doctor
+      const doctor = await this.prisma.doctor.findUnique({
+        where: { id },
+        include: { user: true }
+      });
+
+      if (doctor) {
+        // Delete doctor and all related records first
+        await this.prisma.doctorNotificationSettings.deleteMany({
+          where: { doctorId: id }
+        });
+
+        await this.prisma.doctorRegionalSettings.deleteMany({
+          where: { doctorId: id }
+        });
+
+        await this.prisma.doctorSecuritySettings.deleteMany({
+          where: { doctorId: id }
+        });
+
+        await this.prisma.doctorWeeklySchedule.deleteMany({
+          where: { doctorId: id }
+        });
+
+        await this.prisma.staff.deleteMany({
+          where: { doctorId: id }
+        });
+
+        await this.prisma.subscriptionHistory.deleteMany({
+          where: { userId: id }
+        });
+
+        // Delete subscription if exists
+        const subscription = await this.prisma.subscription.findFirst({
+          where: { userId: id }
+        });
+        if (subscription) {
+          await this.prisma.subscription.delete({
+            where: { id: subscription.id }
+          });
+        }
+
+        // Delete the doctor record
+        await this.prisma.doctor.delete({
+          where: { id }
+        });
+
+        if (doctor.user) {
+          await this.prisma.user.delete({
+            where: { id: doctor.user.id }
+          });
+        }
+
+        return {
+          statusCode: 200,
+          success: true,
+          message: `DOCTOR with ID ${id} deleted successfully`,
+        };
+      }
+
+      // User not found in either table
+      return {
+        statusCode: 404,
+        success: false,
+        message: `User with ID ${id} not found`,
+      };
+
+    } catch (error) {
+      // Handle foreign key constraint errors
+      if (error.code === 'P2002') {
+        return {
+          statusCode: 400,
+          success: false,
+          message: `Cannot delete user due to existing dependencies`,
+        };
+      }
+
+      if (error.code === 'P2025') {
+        return {
+          statusCode: 404,
+          success: false,
+          message: `User with ID ${id} not found`,
+        };
+      }
+
+      return {
+        statusCode: 500,
+        success: false,
+        message: `Failed to delete user: ${error.message}`,
+      };
+    }
   }
 
   async getDoctorSubscriptionSummary() {

@@ -1,24 +1,18 @@
-// Chat Models
-
 model AdminConversation {
   id        String             @id @default(uuid())
-  userId    String // Doctor or Patient ID (references User table)
-  user      User               @relation("UserConversations", fields: [userId], references: [id])
-  userRole  UserRole // DOCTOR or PATIENT
-  doctorId  String // Direct reference to Doctor table
-  doctor    Doctor             @relation(fields: [doctorId], references: [id])
-  adminId   String? // Admin assigned to this conversation
-  admin     User?              @relation("AdminConversations", fields: [adminId], references: [id])
-  // TODO: Admin should be array of admins for multiple admin support
-  // admins   User[]   @relation("AdminConversations")
+  userId    String
+  userRole  UserRole
+  doctorId  String             @unique
+  adminId   String?
   status    ConversationStatus @default(OPEN)
   subject   String?
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
+  admin     User?              @relation("AdminConversations", fields: [adminId], references: [id])
+  doctor    Doctor             @relation(fields: [doctorId], references: [id])
+  user      User               @relation("UserConversations", fields: [userId], references: [id])
+  messages  SupportMessage[]
 
-  messages SupportMessage[]
-
-  @@unique([doctorId]) // One conversation per doctor
   @@index([userId])
   @@index([doctorId])
   @@index([adminId])
@@ -29,15 +23,15 @@ model AdminConversation {
 model SupportMessage {
   id             String            @id @default(uuid())
   conversationId String
-  conversation   AdminConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   senderId       String
-  sender         User              @relation(fields: [senderId], references: [id])
-  message        String            @db.Text
-  imageUrl       String? // Single image URL for chat messages
+  message        String
+  imageUrl       String?
   isRead         Boolean           @default(false)
-  attachments    Json? // Array of file URLs (for future use)
+  attachments    Json?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
+  conversation   AdminConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User              @relation(fields: [senderId], references: [id])
 
   @@index([conversationId])
   @@index([senderId])

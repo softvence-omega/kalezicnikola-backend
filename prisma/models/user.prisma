@@ -1,120 +1,94 @@
 model Admin {
-  id           String  @id @default(uuid())
-  email        String  @unique
-  passwordHash String?
-  firstName    String?
-  lastName     String?
-  photo        String?
-
+  id                   String          @id @default(uuid())
+  email                String          @unique
+  passwordHash         String?
+  firstName            String?
+  lastName             String?
+  photo                String?
   emailVerifiedAt      DateTime?
   twoFactorSecret      String?
-  twoFactorEnabled     Boolean?   @default(true)
-  failedLoginAttempts  Int        @default(0)
-  lastPasswordChangeAt DateTime?
+  twoFactorEnabled     Boolean?        @default(true)
   lastLoginAt          DateTime?
-  createdAt        DateTime? @default(now())
-  updatedAt        DateTime? @updatedAt
-  deletedAt        DateTime?
-
-  // Relations
-  sessions       Session[]
-  auditLogs      AuditLog[]
-  passwordResets PasswordReset[]
-  twoFactorOtps  TwoFactorOtp[]
-  user           User?
+  createdAt            DateTime?       @default(now())
+  updatedAt            DateTime?       @updatedAt
+  deletedAt            DateTime?
+  failedLoginAttempts  Int             @default(0)
+  lastPasswordChangeAt DateTime?
+  auditLogs            AuditLog[]
+  passwordResets       PasswordReset[]
+  sessions             Session[]
+  twoFactorOtps        TwoFactorOtp[]
+  user                 User?
 
   @@map("admins")
 }
 
 model Doctor {
-  id           String  @id @default(uuid())
-  email        String? @unique
-  phone        String? @unique
-  passwordHash String?
-  firstName    String?
-  lastName     String?
-
-  // Doctor Specific Fields
-  licenceNo    String?
-  specialities String[]
-  experience   String?
-
-  emailVerifiedAt      DateTime?
-  dob                  DateTime?
-  photo                String?
-  gender               Gender?
-  address              String?
-  twoFactorSecret      String?
-  twoFactorEnabled     Boolean?   @default(true)
-  failedLoginAttempts  Int        @default(0)
-  lastPasswordChangeAt DateTime?
-  lastLoginAt          DateTime?
-  createdAt        DateTime? @default(now())
-  updatedAt        DateTime? @updatedAt
-  deletedAt        DateTime?
-
-  // Relations
-  sessions       Session[]
-  appointments   Appointment[]   @relation("DoctorAppointments")
-  calls          Call[]          @relation("DoctorCalls")
-  prescriptions  Prescription[]  @relation("DoctorPrescriptions")
-  labs           Lab[]           @relation("DoctorLabs")
-  diagnoses      Diagnosis[]     @relation("DoctorDiagnoses")
-  auditLogs      AuditLog[]
-  passwordResets PasswordReset[]
-  twoFactorOtps  TwoFactorOtp[]
-  user           User?
-
-  staff Staff[]
-
-  weeklySchedules  DoctorWeeklySchedule[]
-  appointmentTypes AppointmentType[]
-
-  // Settings Relations
+  id                         String                      @id @default(uuid())
+  email                      String?                     @unique
+  phone                      String?                     @unique
+  passwordHash               String?
+  firstName                  String?
+  lastName                   String?
+  licenceNo                  String?
+  specialities               String[]
+  experience                 String?
+  emailVerifiedAt            DateTime?
+  dob                        DateTime?
+  photo                      String?
+  gender                     Gender?
+  address                    String?
+  twoFactorSecret            String?
+  twoFactorEnabled           Boolean?                    @default(true)
+  lastLoginAt                DateTime?
+  createdAt                  DateTime?                   @default(now())
+  updatedAt                  DateTime?                   @updatedAt
+  deletedAt                  DateTime?
+  failedLoginAttempts        Int                         @default(0)
+  lastPasswordChangeAt       DateTime?
+  conversations              AdminConversation?
+  appointmentTypes           AppointmentType[]
+  appointments               Appointment[]               @relation("DoctorAppointments")
+  auditLogs                  AuditLog[]
+  callTranscriptions         CallTranscription[]         @relation("DoctorCallTranscriptions")
+  calls                      Call[]                      @relation("DoctorCalls")
+  diagnoses                  Diagnosis[]                 @relation("DoctorDiagnoses")
+  absences                   DoctorAbsence[]             @relation("DoctorAbsences")
+  knowledgeBase              DoctorKnowledgeBase[]       @relation("DoctorKnowledgeBase")
   doctorNotificationSettings DoctorNotificationSettings?
   doctorRegionalSettings     DoctorRegionalSettings?
   doctorSecuritySettings     DoctorSecuritySettings?
-
-  // Subscription Relation
-  subscription       Subscription?
-  subscriptionHistory SubscriptionHistory[]
-  // AI Agent Relations
-  callTranscriptions CallTranscription[]   @relation("DoctorCallTranscriptions")
-  knowledgeBase      DoctorKnowledgeBase[] @relation("DoctorKnowledgeBase")
-  tasks              Task[]
-
-  // Chat Relations
-  conversations AdminConversation[]
-
-  // Event Relations
-  events Event[] @relation("DoctorEvents")
-
-  // Absence Relations
-  absences DoctorAbsence[] @relation("DoctorAbsences")
+  weeklySchedules            DoctorWeeklySchedule[]
+  events                     Event[]                     @relation("DoctorEvents")
+  labs                       Lab[]                       @relation("DoctorLabs")
+  passwordResets             PasswordReset[]
+  prescriptions              Prescription[]              @relation("DoctorPrescriptions")
+  sessions                   Session[]
+  staff                      Staff[]
+  subscriptionHistory        SubscriptionHistory[]
+  subscription               Subscription?
+  tasks                      Task[]
+  twoFactorOtps              TwoFactorOtp[]
+  user                       User?
 
   @@map("doctors")
 }
 
 model Session {
-  id       String  @id @default(uuid())
-  adminId  String?
-  doctorId String?
-
-  accessToken  String @unique
-  refreshToken String @unique
-
-  isActive  Boolean   @default(true)
-  isRevoked Boolean   @default(false)
-  revokedAt DateTime?
-
-  lastActivity          DateTime @default(now())
+  id                    String    @id @default(uuid())
+  adminId               String?
+  doctorId              String?
+  accessToken           String    @unique
+  refreshToken          String    @unique
+  isActive              Boolean   @default(true)
+  isRevoked             Boolean   @default(false)
+  revokedAt             DateTime?
+  lastActivity          DateTime  @default(now())
   refreshTokenExpiresAt DateTime
-
-  createdAt DateTime? @default(now())
-  updatedAt DateTime  @updatedAt
-
-  admin  Admin?  @relation(fields: [adminId], references: [id])
-  doctor Doctor? @relation(fields: [doctorId], references: [id])
+  createdAt             DateTime? @default(now())
+  updatedAt             DateTime  @updatedAt
+  admin                 Admin?    @relation(fields: [adminId], references: [id])
+  doctor                Doctor?   @relation(fields: [doctorId], references: [id])
 
   @@map("sessions")
 }
@@ -128,54 +102,42 @@ model PasswordReset {
   verifiedAt DateTime?
   usedAt     DateTime?
   createdAt  DateTime  @default(now())
-
-  // Relation to track which user
-  adminId  String?
-  doctorId String?
-
-  admin  Admin?  @relation(fields: [adminId], references: [id])
-  doctor Doctor? @relation(fields: [doctorId], references: [id])
+  adminId    String?
+  doctorId   String?
+  admin      Admin?    @relation(fields: [adminId], references: [id])
+  doctor     Doctor?   @relation(fields: [doctorId], references: [id])
 
   @@map("password_resets")
 }
 
-// Unified User model for chat
 model User {
-  id       String   @id @default(uuid())
-  adminId  String?  @unique
-  doctorId String?  @unique
-  role     UserRole
-
-  admin  Admin?  @relation(fields: [adminId], references: [id])
-  doctor Doctor? @relation(fields: [doctorId], references: [id])
-
-  // Conversations where this user is the participant
-  conversations      AdminConversation[] @relation("UserConversations")
-  // Conversations where this user is the admin
+  id                 String              @id @default(uuid())
+  adminId            String?             @unique
+  doctorId           String?             @unique
+  role               UserRole
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
   adminConversations AdminConversation[] @relation("AdminConversations")
+  conversations      AdminConversation[] @relation("UserConversations")
   sentMessages       SupportMessage[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  admin              Admin?              @relation(fields: [adminId], references: [id])
+  doctor             Doctor?             @relation(fields: [doctorId], references: [id])
 
   @@map("users")
 }
 
 model TwoFactorOtp {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   email      String
   otp        String
   expiresAt  DateTime
   verifiedAt DateTime?
   usedAt     DateTime?
-  createdAt  DateTime @default(now())
-
-  // Relation to track which user
-  adminId  String?
-  doctorId String?
-
-  admin  Admin?  @relation(fields: [adminId], references: [id])
-  doctor Doctor? @relation(fields: [doctorId], references: [id])
+  createdAt  DateTime  @default(now())
+  adminId    String?
+  doctorId   String?
+  admin      Admin?    @relation(fields: [adminId], references: [id])
+  doctor     Doctor?   @relation(fields: [doctorId], references: [id])
 
   @@map("two_factor_otps")
 }

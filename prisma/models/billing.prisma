@@ -1,10 +1,3 @@
-enum BillingCycle {
-  MONTHLY
-  YEARLY
-  LIFETIME
-  SEVEN_DAYS
-}
-
 model SubscriptionPlan {
   id            String       @id @default(uuid())
   planType      PlanType
@@ -24,44 +17,40 @@ model SubscriptionPlan {
 
 model Subscription {
   id                   String              @id @default(uuid())
-  userId               String?             @unique // Link to user
+  userId               String?             @unique
   stripeCustomerId     String?             @unique
   stripeSubscriptionId String?             @unique
   plan                 Plan?
-  planType             PlanType? // Current plan type
-  billingCycle         BillingCycle? // Added billing cycle
+  planType             PlanType?
+  billingCycle         BillingCycle?
   status               SubscriptionStatus?
-  minutesAllocated     Int? // Minutes for current plan
+  minutesAllocated     Int?
   minutesUsed          Int?                @default(0)
-  extraMinutes         Int?                @default(0)
   currentPeriodStart   DateTime?
   currentPeriodEnd     DateTime?
   cancelledAt          DateTime?
-  isActive             Boolean?            @default(true) // Set to false when period ends after cancellation
+  isActive             Boolean?            @default(true)
   createdAt            DateTime?           @default(now())
   updatedAt            DateTime?           @updatedAt
-
-  // Relations
-  doctor Doctor? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  extraMinutes         Int?                @default(0)
+  doctor               Doctor?             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("subscriptions")
 }
 
 model SubscriptionHistory {
-  id               String              @id @default(uuid())
+  id               String             @id @default(uuid())
   userId           String
   planType         PlanType
   billingCycle     BillingCycle
   status           SubscriptionStatus
   minutesAllocated Int
   minutesUsed      Int
-  extraMinutes     Int                 @default(0)
+  extraMinutes     Int                @default(0)
   startDate        DateTime
   endDate          DateTime?
-  archivedAt       DateTime            @default(now())
-
-  // Relations
-  doctor Doctor @relation(fields: [userId], references: [id], onDelete: Cascade)
+  archivedAt       DateTime           @default(now())
+  doctor           Doctor             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("subscription_histories")
@@ -70,8 +59,8 @@ model SubscriptionHistory {
 model Invoice {
   id               String    @id @default(uuid())
   stripeInvoiceId  String?   @unique
-  stripeCustomerId String? // Added to filter by customer
-  planType         PlanType? // Added for statistics
+  stripeCustomerId String?
+  planType         PlanType?
   invoiceNo        String?
   amountDue        Int?
   amountPaid       Int?
@@ -94,4 +83,11 @@ model NotificationQueue {
   createdAt DateTime?           @default(now())
 
   @@map("notification_queues")
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+  LIFETIME
+  SEVEN_DAYS
 }
