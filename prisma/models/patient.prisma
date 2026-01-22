@@ -1,45 +1,39 @@
 model Patient {
-  id                 String         @id @default(uuid())
-  firstName          String?
-  lastName           String?
-  photo              String?
-  phone              String?
-  alternativePhone   String?
-  email              String?
-  insuranceId        String?        @unique
-  address            String?
-  emergencyContact   String?
-  dob                DateTime?
-  maritalStatus      MaritalStatus?
-  city               String?
-  gender             Gender?
-  bloodGroup         BloodGroup?
-  conditionName      String?
-  diagnosedDate      DateTime?
-  severity           String?
-  status             PatientStatus  @default(ACTIVE)
-  retentionExpiresAt DateTime?
-  createdAt          DateTime?      @default(now())
-  updatedAt          DateTime?      @updatedAt
-  deletedAt          DateTime?
-
-  // emergency contact
+  id                           String              @id @default(uuid())
+  firstName                    String?
+  lastName                     String?
+  photo                        String?
+  phone                        String?
+  alternativePhone             String?
+  email                        String?
+  insuranceId                  String?             @unique
+  address                      String?
+  emergencyContact             String?
+  dob                          DateTime?
+  maritalStatus                MaritalStatus?
+  city                         String?
+  gender                       Gender?
+  bloodGroup                   BloodGroup?
+  conditionName                String?
+  diagnosedDate                DateTime?
+  severity                     String?
+  status                       PatientStatus       @default(ACTIVE)
+  retentionExpiresAt           DateTime?
+  createdAt                    DateTime?           @default(now())
+  updatedAt                    DateTime?           @updatedAt
+  deletedAt                    DateTime?
   emergencyContactName         String?
   emergencyContactPhone        String?
   emergencyContactRelationship String?
-
-  // Relations
-  appointments  Appointment[]    @relation("PatientAppointments")
-  calls         Call[]
-  labs          Lab[]
-  prescriptions Prescription[]
-  tasks         Task[]
-  dataRequests  DataRequest[]
-  diagnoses     Diagnosis[]
-  consents      PatientConsent[]
-
-  // AI Agent Relations
-  callTranscriptions CallTranscription[] @relation("PatientCallTranscriptions")
+  appointments                 Appointment[]       @relation("PatientAppointments")
+  callTranscriptions           CallTranscription[] @relation("PatientCallTranscriptions")
+  calls                        Call[]
+  dataRequests                 DataRequest[]
+  diagnoses                    Diagnosis[]
+  labs                         Lab[]
+  consents                     PatientConsent[]
+  prescriptions                Prescription[]
+  tasks                        Task[]
 
   @@map("patients")
 }

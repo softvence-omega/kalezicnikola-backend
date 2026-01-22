@@ -1,9 +1,8 @@
 model Appointment {
-  id          Int     @id @default(autoincrement())
-  patientId   String?
-  insuranceId String?
-  doctorId    String?
-
+  id                 Int                 @id @default(autoincrement())
+  patientId          String?
+  insuranceId        String?
+  doctorId           String?
   firstName          String?
   lastName           String?
   email              String?
@@ -11,62 +10,51 @@ model Appointment {
   dob                DateTime?
   gender             Gender?
   bloodGroup         BloodGroup?
-  appointmentDate    DateTime? // Specific date for the appointment
-  startTime          String?   // e.g., "08:00"
-  endTime            String?   // e.g., "08:20"
+  appointmentDate    DateTime?
+  startTime          String?
+  endTime            String?
   scheduleSlotId     String?
   appointmentTypeId  String?
   appointmentDetails String?
   address            String?
-  status             AppointmentStatus? @default(SCHEDULED)
-
-  createdAt DateTime? @default(now())
-  updatedAt DateTime? @updatedAt
-  deletedAt DateTime?
-
-  // Relations
-  doctor          Doctor?          @relation("DoctorAppointments", fields: [doctorId], references: [id])
-  patient         Patient?         @relation("PatientAppointments", fields: [patientId], references: [id])
-  scheduleSlot    DoctorScheduleSlot? @relation("AppointmentScheduleSlot", fields: [scheduleSlotId], references: [id])
-  appointmentType AppointmentType? @relation(fields: [appointmentTypeId], references: [id])
-
-  prescriptions      Prescription[]
-  labs               Lab[]
-  // AI Agent Relations
+  status             AppointmentStatus?  @default(SCHEDULED)
+  createdAt          DateTime?           @default(now())
+  updatedAt          DateTime?           @updatedAt
+  deletedAt          DateTime?
+  appointmentType    AppointmentType?    @relation(fields: [appointmentTypeId], references: [id])
+  doctor             Doctor?             @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  patient            Patient?            @relation("PatientAppointments", fields: [patientId], references: [id])
+  scheduleSlot       DoctorScheduleSlot? @relation("AppointmentScheduleSlot", fields: [scheduleSlotId], references: [id])
   callTranscriptions CallTranscription[] @relation("AppointmentCallTranscription")
+  labs               Lab[]
+  prescriptions      Prescription[]
 
   @@map("appointments")
 }
 
 model DoctorWeeklySchedule {
-  id       String  @id @default(uuid())
-  doctorId String
-  day      WeekDay
-  isClosed Boolean @default(false)
+  id                  String               @id @default(uuid())
+  doctorId            String
+  day                 WeekDay
+  isClosed            Boolean              @default(false)
+  firstHalfStartTime  String?
+  firstHalfEndTime    String?
+  secondHalfStartTime String?
+  secondHalfEndTime   String?
+  slots               DoctorScheduleSlot[]
+  doctor              Doctor               @relation(fields: [doctorId], references: [id])
 
-  firstHalfStartTime String? // e.g., "08:00"
-  firstHalfEndTime   String? // e.g., "12:00"
-  secondHalfStartTime String? // e.g., "13:00"
-  secondHalfEndTime   String? // e.g., "17:00"
-
-  // One-to-many: legacy slots
-  slots DoctorScheduleSlot[]
-
-  doctor Doctor @relation(fields: [doctorId], references: [id])
-
-  @@unique([doctorId, day]) // Only one schedule record per day per doctor
+  @@unique([doctorId, day])
   @@map("doctor_weekly_schedules")
 }
 
 model DoctorScheduleSlot {
-  id         String @id @default(uuid())
-  scheduleId String
-
-  startTime String // e.g., "09:00"
-  endTime   String // e.g., "13:00"
-
-  schedule     DoctorWeeklySchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  id           String               @id @default(uuid())
+  scheduleId   String
+  startTime    String
+  endTime      String
   appointments Appointment[]        @relation("AppointmentScheduleSlot")
+  schedule     DoctorWeeklySchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
 
   @@map("doctor_schedule_slots")
 }
@@ -89,8 +77,8 @@ model Call {
   updatedAt          DateTime?   @updatedAt
   aiModelId          String?
   aiDecision         String?
-  patient            Patient?    @relation(fields: [patientId], references: [id])
   doctor             Doctor?     @relation("DoctorCalls", fields: [doctorId], references: [id])
+  patient            Patient?    @relation(fields: [patientId], references: [id])
 
   @@map("calls")
 }
@@ -107,29 +95,26 @@ model Diagnosis {
   resolvedDate  DateTime?
   createdAt     DateTime? @default(now())
   updatedAt     DateTime? @updatedAt
-
-  patient Patient? @relation(fields: [patientId], references: [id])
-  doctor  Doctor?  @relation("DoctorDiagnoses", fields: [doctorId], references: [id])
+  doctor        Doctor?   @relation("DoctorDiagnoses", fields: [doctorId], references: [id])
+  patient       Patient?  @relation(fields: [patientId], references: [id])
 
   @@map("diagnoses")
 }
 
 model Lab {
-  id              String    @id @default(uuid())
+  id              String       @id @default(uuid())
   patientId       String?
   doctorId        String?
   appointmentId   Int?
   testDate        DateTime?
   additionalNotes String?
-
-  createdAt DateTime? @default(now())
-  updatedAt DateTime? @updatedAt
-  deletedAt DateTime?
-
-  doctor      Doctor?      @relation("DoctorLabs", fields: [doctorId], references: [id])
-  appointment Appointment? @relation(fields: [appointmentId], references: [id])
-  patient     Patient?     @relation(fields: [patientId], references: [id])
-  results     LabResult[]
+  createdAt       DateTime?    @default(now())
+  updatedAt       DateTime?    @updatedAt
+  deletedAt       DateTime?
+  results         LabResult[]
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id])
+  doctor          Doctor?      @relation("DoctorLabs", fields: [doctorId], references: [id])
+  patient         Patient?     @relation(fields: [patientId], references: [id])
 
   @@map("labs")
 }
@@ -143,111 +128,75 @@ model LabResult {
   normalMin Float?
   normalMax Float?
   flag      Flag?
-
-  lab Lab? @relation(fields: [labId], references: [id])
+  lab       Lab?    @relation(fields: [labId], references: [id])
 
   @@map("lab_results")
 }
 
 model Prescription {
-  id            String  @id @default(uuid())
-  patientId     String?
-  doctorId      String?
-  appointmentId Int?
-
-  prescriptionNo String?             @unique
-  status         PrescriptionStatus? @default(ACTIVE)
-
-  // General prescription instructions (optional)
-  instructions String?
-
-  // Additional notes (optional)
+  id              String              @id @default(uuid())
+  patientId       String?
+  doctorId        String?
+  appointmentId   Int?
+  prescriptionNo  String?             @unique
+  status          PrescriptionStatus? @default(ACTIVE)
+  instructions    String?
   additionalNotes String?
-
-  createdAt DateTime? @default(now())
-  updatedAt DateTime? @updatedAt
-  deletedAt DateTime?
-
-  patient Patient? @relation(fields: [patientId], references: [id])
-  doctor  Doctor?  @relation("DoctorPrescriptions", fields: [doctorId], references: [id])
-
-  appointment Appointment? @relation(fields: [appointmentId], references: [id])
-
-  // One prescription can have multiple medicines
-  items PrescriptionItem[]
+  createdAt       DateTime?           @default(now())
+  updatedAt       DateTime?           @updatedAt
+  deletedAt       DateTime?
+  items           PrescriptionItem[]
+  appointment     Appointment?        @relation(fields: [appointmentId], references: [id])
+  doctor          Doctor?             @relation("DoctorPrescriptions", fields: [doctorId], references: [id])
+  patient         Patient?            @relation(fields: [patientId], references: [id])
 
   @@map("prescriptions")
 }
 
 model PrescriptionItem {
-  id             String @id @default(uuid())
-  prescriptionId String
-
+  id                   String       @id @default(uuid())
+  prescriptionId       String
   medicineName         String?
   medicineInstructions String?
-
-  // Dosage per time of day (e.g., 0, 0.5, 1, 2 tablets/spoons)
-  morningDosage   Float?
-  afternoonDosage Float?
-  nightDosage     Float?
-
-  createdAt DateTime? @default(now())
-  updatedAt DateTime? @updatedAt
-
-  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  morningDosage        Float?
+  afternoonDosage      Float?
+  nightDosage          Float?
+  createdAt            DateTime?    @default(now())
+  updatedAt            DateTime?    @updatedAt
+  prescription         Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
 
   @@map("prescription_items")
 }
 
-// AI Agent Models
-
 model CallTranscription {
-  id        String  @id @default(uuid())
-  doctorId  String
-  patientId String?
-
-  // Call metadata
-  callSid     String? @unique // ElevenLabs/Twilio call identifier
-  agentId     String? // ElevenLabs Agent Identifier
-  phoneNumber String?
-  duration    Int? // Duration in seconds
-
-  // Audio & transcription
-  audioUrl      String? // Path to stored audio file
-  transcription String? @db.Text
-
-  // AI analysis
-  intent    CallIntent?
-  sentiment Sentiment?
-  summary   String?     @db.Text
-
-  // Call outcome and details
-  callStatus       CallStatus? // Status of the call
-  reasonForCalling String? // Why patient called
+  id               String       @id @default(uuid())
+  doctorId         String
+  patientId        String?
+  callSid          String?      @unique
+  agentId          String?
+  phoneNumber      String?
+  duration         Int?
+  audioUrl         String?
+  transcription    String?
+  intent           CallIntent?
+  sentiment        Sentiment?
+  summary          String?
+  callStatus       CallStatus?
+  reasonForCalling String?
   insuranceId      String?
   callerName       String?
-
-  // Appointment context (if booking was made)
-  appointmentId Int?
-
-  // Fallback info
-  fallbackNumber String? // Physical assistant number if agent is busy
-  wasTransferred Boolean? @default(false)
-  isReviewed     Boolean  @default(false)
-  
-  // Billing
-  minutesDeducted Int?    @default(0)
-
-  // Timestamps
-  callStartedAt DateTime?
-  callEndedAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  // Relations
-  doctor      Doctor       @relation("DoctorCallTranscriptions", fields: [doctorId], references: [id])
-  patient     Patient?     @relation("PatientCallTranscriptions", fields: [patientId], references: [id])
-  appointment Appointment? @relation("AppointmentCallTranscription", fields: [appointmentId], references: [id])
+  appointmentId    Int?
+  fallbackNumber   String?
+  wasTransferred   Boolean?     @default(false)
+  isReviewed       Boolean      @default(false)
+  callStartedAt    DateTime?
+  callEndedAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  minutesDeducted  Int?         @default(0)
+  appointment      Appointment? @relation("AppointmentCallTranscription", fields: [appointmentId], references: [id])
+  doctor           Doctor       @relation("DoctorCallTranscriptions", fields: [doctorId], references: [id])
+  patient          Patient?     @relation("PatientCallTranscriptions", fields: [patientId], references: [id])
 
   @@index([doctorId, createdAt])
   @@index([patientId, createdAt])
@@ -256,24 +205,17 @@ model CallTranscription {
 }
 
 model DoctorKnowledgeBase {
-  id       String @id @default(uuid())
-  doctorId String
-
-  // Knowledge content
-  category KnowledgeBaseCategory? @default(GENERAL)
-  question String                 @db.Text
-  answer   String                 @db.Text
-  keywords String[] // Array of keywords for better matching
-
-  // Metadata
-  isActive Boolean @default(true)
-  priority Int     @default(0) // Higher priority answers shown first
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  doctor Doctor @relation("DoctorKnowledgeBase", fields: [doctorId], references: [id])
+  id        String                 @id @default(uuid())
+  doctorId  String
+  category  KnowledgeBaseCategory? @default(GENERAL)
+  question  String
+  answer    String
+  keywords  String[]
+  isActive  Boolean                @default(true)
+  priority  Int                    @default(0)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  doctor    Doctor                 @relation("DoctorKnowledgeBase", fields: [doctorId], references: [id])
 
   @@index([doctorId, category])
   @@index([doctorId, isActive])
@@ -281,34 +223,28 @@ model DoctorKnowledgeBase {
 }
 
 model AppointmentType {
-  id       String @id @default(uuid())
-  doctorId String
-  name     String
-  duration Int // in minutes
-
+  id           String        @id @default(uuid())
+  doctorId     String
+  name         String
+  duration     Int
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   doctor       Doctor        @relation(fields: [doctorId], references: [id])
   appointments Appointment[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
   @@map("appointment_types")
 }
 
 model DoctorAbsence {
-  id       String   @id @default(uuid())
-  doctorId String
-  
-  fromDate DateTime // Start date of absence period
-  toDate   DateTime // End date of absence period (inclusive)
-  
-  reason   String?  @db.Text // Optional reason for absence
-  
+  id        String   @id @default(uuid())
+  doctorId  String
+  fromDate  DateTime
+  toDate    DateTime
+  reason    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
-  doctor Doctor @relation("DoctorAbsences", fields: [doctorId], references: [id], onDelete: Cascade)
-  
+  doctor    Doctor   @relation("DoctorAbsences", fields: [doctorId], references: [id], onDelete: Cascade)
+
   @@index([doctorId, fromDate, toDate])
   @@map("doctor_absences")
 }

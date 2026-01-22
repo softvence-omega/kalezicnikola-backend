@@ -1,40 +1,23 @@
-// ================================
-// EVENT MANAGEMENT MODELS
-// ================================
-
-// Main Event Model
 model Event {
-  id        String    @id @default(uuid())
-  title     String
-  eventType EventType @default(EVENT)
-
-  // Date & Time
-  startDate DateTime
-  startTime String // Stored as "HH:mm" format
-  endTime   String // Stored as "HH:mm" format
-  isAllDay  Boolean  @default(false)
-
-  // Location
+  id           String            @id @default(uuid())
+  title        String
+  eventType    EventType         @default(EVENT)
+  startDate    DateTime
+  startTime    String
+  endTime      String
+  isAllDay     Boolean           @default(false)
   locationType EventLocationType @default(OFFLINE)
-  location     String? // Physical address or general location
-  meetingLink  String? // Google Meet, Zoom, or other meeting links
-
-  // Content
-  description String? @db.Text
-  coverImage  String? // File path to uploaded image
-
-  // Ownership
-  createdById String
-  createdBy   Doctor @relation("DoctorEvents", fields: [createdById], references: [id], onDelete: Cascade)
-
-  // Timestamps
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime? // Soft delete
-
-  // Relations
-  guests      EventGuest[]
-  attachments EventAttachment[]
+  location     String?
+  meetingLink  String?
+  description  String?
+  coverImage   String?
+  createdById  String
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
+  attachments  EventAttachment[]
+  guests       EventGuest[]
+  createdBy    Doctor            @relation("DoctorEvents", fields: [createdById], references: [id], onDelete: Cascade)
 
   @@index([createdById])
   @@index([startDate])
@@ -42,37 +25,27 @@ model Event {
   @@map("events")
 }
 
-// Event Guest Model
 model EventGuest {
-  id               String  @id @default(uuid())
+  id               String   @id @default(uuid())
   eventId          String
   email            String
-  notificationSent Boolean @default(false)
-
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  notificationSent Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  event            Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@index([eventId])
   @@index([email])
   @@map("event_guests")
 }
 
-// Event Attachment Model (for links)
 model EventAttachment {
-  id      String  @id @default(uuid())
-  eventId String
-  url     String
-  title   String?
-
-  // Timestamp
+  id        String   @id @default(uuid())
+  eventId   String
+  url       String
+  title     String?
   createdAt DateTime @default(now())
-
-  // Relations
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@index([eventId])
   @@map("event_attachments")

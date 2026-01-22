@@ -1,16 +1,14 @@
 model Staff {
-  id       String  @id @default(uuid())
-  doctorId String?
-
-  // personal details
-  employmentId     String         @unique
+  id               String          @id @default(uuid())
+  doctorId         String?
+  employmentId     String          @unique
   firstName        String
   lastName         String
   dob              DateTime
   gender           Gender
   photo            String?
-  email            String         @unique
-  phone            String         @unique
+  email            String          @unique
+  phone            String          @unique
   presentAddress   String
   permanentAddress String?
   maritalStatus    MaritalStatus?
@@ -19,8 +17,6 @@ model Staff {
   country          String
   nationality      String
   nationalIdNumber String?
-
-  // employment details
   department       Department?
   position         String?
   description      String?
@@ -29,12 +25,9 @@ model Staff {
   workSchedule     String?
   weeklyHours      Int?
   employmentStatus StaffStatus?
-
-  createdAt DateTime? @default(now())
-  updatedAt DateTime? @updatedAt
-
-  // Relations
-  doctor Doctor? @relation(fields: [doctorId], references: [id])
+  createdAt        DateTime?       @default(now())
+  updatedAt        DateTime?       @updatedAt
+  doctor           Doctor?         @relation(fields: [doctorId], references: [id])
 
   @@map("staffs")
 }
@@ -47,19 +40,16 @@ model Task {
   priority    Flag?
   time        String?
   dueDate     DateTime?
-
   patientId   String?
   insuranceId String?
   callerName  String?
   doctorId    String?
   phone       String?
-
-  createdAt DateTime? @default(now())
-  updatedAt DateTime? @updatedAt
-  deletedAt DateTime?
-
-  patient Patient? @relation(fields: [patientId], references: [id])
-  doctor  Doctor?  @relation(fields: [doctorId], references: [id])
+  createdAt   DateTime?   @default(now())
+  updatedAt   DateTime?   @updatedAt
+  deletedAt   DateTime?
+  doctor      Doctor?     @relation(fields: [doctorId], references: [id])
+  patient     Patient?    @relation(fields: [patientId], references: [id])
 
   @@map("tasks")
 }

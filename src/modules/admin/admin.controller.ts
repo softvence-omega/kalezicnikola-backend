@@ -1,9 +1,10 @@
-import { Controller, Get, Query, UseGuards, Param } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Param, Delete } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { GetDoctorsDto } from './dto/get-doctors.dto';
 import { GetDoctorSubscriptionsDto } from './dto/get-doctor-subscriptions.dto';
 import { GetDashboardStatsDto } from './dto/get-dashboard-stats.dto';
 import { GetRevenueGraphDto } from './dto/get-revenue-graph.dto';
+import { GetUsersDto } from './dto/get-users.dto';
 import { AdminGuard } from 'src/common/guard/admin.guard';
 
 @Controller('admin')
@@ -14,6 +15,16 @@ export class AdminController {
   @Get('doctors')
   async getAllDoctors(@Query() query: GetDoctorsDto) {
     return this.adminService.getAllDoctors(query);
+  }
+
+  @Get('users/all')
+  async getAllUsers(@Query() query: GetUsersDto) {
+    return this.adminService.getAllUsers(query);
+  }
+
+  @Delete('users/delete/:id')
+  async deleteUser(@Param('id') id: string) {
+    return this.adminService.deleteUser(id);
   }
 
   @Get('doctor-subscriptions/summary')

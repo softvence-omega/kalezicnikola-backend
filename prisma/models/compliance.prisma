@@ -1,19 +1,18 @@
 model ConsentVersion {
-  id            String       @id @default(uuid())
-  type          ConsentType?
-  version       String?
-  title         String?
-  body          String?
-  effectiveDate DateTime?
-  createdAt     DateTime?    @default(now())
-
+  id              String           @id @default(uuid())
+  type            ConsentType?
+  version         String?
+  title           String?
+  body            String?
+  effectiveDate   DateTime?
+  createdAt       DateTime?        @default(now())
   patientConsents PatientConsent[]
 
   @@map("consent_versions")
 }
 
 model PatientConsent {
-  id               String       @id @default(uuid())
+  id               String          @id @default(uuid())
   patientId        String?
   consentVersionId String?
   type             ConsentType?
@@ -22,11 +21,10 @@ model PatientConsent {
   withdrawnAt      DateTime?
   ip               String?
   userAgent        String?
-  createdAt        DateTime?    @default(now())
-  updatedAt        DateTime?    @updatedAt
-
-  patient        Patient?        @relation(fields: [patientId], references: [id])
-  consentVersion ConsentVersion? @relation(fields: [consentVersionId], references: [id])
+  createdAt        DateTime?       @default(now())
+  updatedAt        DateTime?       @updatedAt
+  consentVersion   ConsentVersion? @relation(fields: [consentVersionId], references: [id])
+  patient          Patient?        @relation(fields: [patientId], references: [id])
 
   @@map("patient_consents")
 }
@@ -42,23 +40,19 @@ model KeyManagement {
 }
 
 model AuditLog {
-  id        String  @id @default(uuid())
-  table     String?
-  rowId     String?
-  action    String?
-  oldValues Json?
-  newValues Json?
-
-  // Can be triggered by Admin or Doctor
-  adminId  String?
-  doctorId String?
-
+  id         String    @id @default(uuid())
+  table      String?
+  rowId      String?
+  action     String?
+  oldValues  Json?
+  newValues  Json?
+  adminId    String?
+  doctorId   String?
   ip         String?
   userAgent  String?
   occurredAt DateTime?
-
-  admin  Admin?  @relation(fields: [adminId], references: [id])
-  doctor Doctor? @relation(fields: [doctorId], references: [id])
+  admin      Admin?    @relation(fields: [adminId], references: [id])
+  doctor     Doctor?   @relation(fields: [doctorId], references: [id])
 
   @@map("audit_logs")
 }
@@ -73,8 +67,7 @@ model DataRequest {
   completedAt       DateTime?
   downloadUrl       String?
   downloadExpiresAt DateTime?
-
-  patient Patient? @relation(fields: [patientId], references: [id])
+  patient           Patient?           @relation(fields: [patientId], references: [id])
 
   @@map("data_requests")
 }
