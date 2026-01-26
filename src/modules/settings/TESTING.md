@@ -41,7 +41,6 @@ curl -X GET http://localhost:7000/api/v1/settings/doctor/notification \
     "callLogs": true,
     "taskDeadlines": false,
     "securityAlerts": true,
-    "emailNotifications": true,
     "createdAt": "2025-12-01T...",
     "updatedAt": "2025-12-01T..."
   }
@@ -55,8 +54,7 @@ curl -X PATCH http://localhost:7000/api/v1/settings/doctor/notification \
   -H "Content-Type: application/json" \
   -d '{
     "appointmentReminders": false,
-    "patientUpdates": true,
-    "emailNotifications": false
+    "patientUpdates": true
   }'
 ```
 
@@ -71,7 +69,7 @@ curl -X PATCH http://localhost:7000/api/v1/settings/doctor/notification \
 - `callLogs` (boolean)
 - `taskDeadlines` (boolean)
 - `securityAlerts` (boolean)
-- `emailNotifications` (boolean)
+- `securityAlerts` (boolean)
 
 ---
 
@@ -357,7 +355,7 @@ Import this JSON into Postman:
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"appointmentReminders\": false,\n  \"emailNotifications\": true\n}"
+              "raw": "{\n  \"appointmentReminders\": false,\n  \"patientUpdates\": true\n}"
             },
             "url": "{{baseUrl}}/settings/doctor/notification"
           }

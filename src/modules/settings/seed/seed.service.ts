@@ -15,7 +15,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class SeedService implements OnModuleInit {
   private readonly logger = new Logger(SeedService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async onModuleInit() {
     this.logger.log('Starting settings seeding process...');
@@ -62,7 +62,6 @@ export class SeedService implements OnModuleInit {
               callLogs: true,
               taskDeadlines: false,
               securityAlerts: true,
-              emailNotifications: true,
             },
           });
           notificationCreated++;

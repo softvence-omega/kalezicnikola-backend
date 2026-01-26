@@ -6,7 +6,6 @@ model DoctorNotificationSettings {
   callLogs             Boolean  @default(true)
   taskDeadlines        Boolean  @default(false)
   securityAlerts       Boolean  @default(true)
-  emailNotifications   Boolean  @default(true)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   doctor               Doctor   @relation(fields: [doctorId], references: [id])
