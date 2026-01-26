@@ -2131,10 +2131,6 @@ export class AiAgentService {
       create: {
         doctorId,
         bufferTimeBetween: bufferValue as any,
-        timezone: 'Asia_Dhaka', // Default required field
-        dateFormat: 'DD_MM_YYYY',
-        timeFormat: 'HOUR_24',
-        language: 'English'
       }
     });
   }

@@ -20,8 +20,4 @@ export class UpdateNotificationSettingsDto {
   @IsOptional()
   @IsBoolean()
   securityAlerts?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
-  emailNotifications?: boolean;
 }

@@ -15,7 +15,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class SeedService implements OnModuleInit {
   private readonly logger = new Logger(SeedService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async onModuleInit() {
     this.logger.log('Starting settings seeding process...');
@@ -62,7 +62,6 @@ export class SeedService implements OnModuleInit {
               callLogs: true,
               taskDeadlines: false,
               securityAlerts: true,
-              emailNotifications: true,
             },
           });
           notificationCreated++;
@@ -83,14 +82,8 @@ export class SeedService implements OnModuleInit {
           await this.prisma.doctorRegionalSettings.create({
             data: {
               doctorId: doctor.id,
-              timezone: Timezone.Asia_Dhaka,
-              dateFormat: DateFormat.DD_MM_YYYY,
-              timeFormat: TimeFormat.HOUR_24,
-              language: Language.English,
               defaultCalendarView: CalendarView.DayView,
               defaultAppointmentDuration: AppointmentDuration.Minutes_20,
-              allowOnlineBooking: true,
-              requireApprovalForBooking: false,
               sendAppointmentReminders: false,
               reminderTime: ReminderTime.Minutes_30_Before,
               bufferTimeBetween: BufferTime.Minutes_10,
