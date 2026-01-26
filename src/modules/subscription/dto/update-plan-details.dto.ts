@@ -2,19 +2,21 @@ import { IsString, IsNumber, IsArray, IsOptional, IsEnum } from 'class-validator
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum PlanTypeEnum {
+  TRIAL = 'TRIAL',
+  BASIC = 'BASIC',
   STANDARD = 'STANDARD',
   PREMIUM = 'PREMIUM',
   ENTERPRISE = 'ENTERPRISE',
 }
 
 export class UpdatePlanDetailsDto {
-//   @ApiProperty({
-//     description: 'Plan type to update',
-//     enum: PlanTypeEnum,
-//     example: PlanTypeEnum.PROFESSIONAL,
-//   })
-//   @IsEnum(PlanTypeEnum)
-//   planType: PlanTypeEnum;
+  //   @ApiProperty({
+  //     description: 'Plan type to update',
+  //     enum: PlanTypeEnum,
+  //     example: PlanTypeEnum.PROFESSIONAL,
+  //   })
+  //   @IsEnum(PlanTypeEnum)
+  //   planType: PlanTypeEnum;
 
   @ApiProperty({
     description: 'Plan display name',

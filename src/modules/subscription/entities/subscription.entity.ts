@@ -1,7 +1,7 @@
 export class Subscription {
   id: string;
   userId: string;
-  planType: 'BASIC' | 'PROFESSIONAL' | 'ENTERPRISE';
+  planType: 'TRIAL' | 'BASIC' | 'STANDARD' | 'PREMIUM' | 'ENTERPRISE';
   stripeCustomerId: string;
   stripeSubscriptionId: string;
   stripePriceId: string;
