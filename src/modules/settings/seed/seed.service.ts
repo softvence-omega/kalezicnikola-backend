@@ -82,14 +82,8 @@ export class SeedService implements OnModuleInit {
           await this.prisma.doctorRegionalSettings.create({
             data: {
               doctorId: doctor.id,
-              timezone: Timezone.Asia_Dhaka,
-              dateFormat: DateFormat.DD_MM_YYYY,
-              timeFormat: TimeFormat.HOUR_24,
-              language: Language.English,
               defaultCalendarView: CalendarView.DayView,
               defaultAppointmentDuration: AppointmentDuration.Minutes_20,
-              allowOnlineBooking: true,
-              requireApprovalForBooking: false,
               sendAppointmentReminders: false,
               reminderTime: ReminderTime.Minutes_30_Before,
               bufferTimeBetween: BufferTime.Minutes_10,

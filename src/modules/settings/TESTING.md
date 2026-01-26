@@ -89,14 +89,8 @@ curl -X GET http://localhost:7000/api/v1/settings/doctor/regional \
   "data": {
     "id": "uuid",
     "doctorId": "uuid",
-    "timezone": "Asia_Dhaka",
-    "dateFormat": "DD_MM_YYYY",
-    "timeFormat": "HOUR_24",
-    "language": "English",
     "defaultCalendarView": "DayView",
     "defaultAppointmentDuration": "Minutes_20",
-    "allowOnlineBooking": true,
-    "requireApprovalForBooking": false,
     "sendAppointmentReminders": false,
     "reminderTime": "Minutes_30_Before",
     "bufferTimeBetween": "Minutes_10",
@@ -112,36 +106,13 @@ curl -X PATCH http://localhost:7000/api/v1/settings/doctor/regional \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "timezone": "America_New_York",
-    "dateFormat": "MM_DD_YYYY",
-    "language": "English",
-    "allowOnlineBooking": false
+    "defaultCalendarView": "WeekView",
+    "defaultAppointmentDuration": "Minutes_30",
+    "sendAppointmentReminders": true
   }'
 ```
 
 **Available Fields & Enum Values:**
-
-**Timezone:**
-- `UTC`, `Africa_Cairo`, `Africa_Johannesburg`
-- `America_New_York`, `America_Chicago`, `America_Denver`, `America_Los_Angeles`
-- `America_Toronto`, `America_Sao_Paulo`
-- `Asia_Dhaka`, `Asia_Dubai`, `Asia_Riyadh`, `Asia_Singapore`, `Asia_Kuala_Lumpur`, `Asia_Tokyo`
-- `Europe_London`, `Europe_Berlin`, `Europe_Paris`, `Europe_Madrid`, `Europe_Rome`
-- `Australia_Sydney`
-
-**DateFormat:**
-- `DD_MM_YYYY` (31-12-2025)
-- `MM_DD_YYYY` (12-31-2025)
-- `YYYY_MM_DD` (2025-12-31)
-- `DD_MMM_YYYY` (31 Dec 2025)
-- `MMM_DD_YYYY` (Dec 31 2025)
-
-**TimeFormat:**
-- `HOUR_12` (03:30 PM)
-- `HOUR_24` (15:30)
-
-**Language:**
-- `English`, `Arabic`, `Bengali`, `French`, `German`, `Spanish`, `Italian`, `Hindi`, `Chinese`
 
 **CalendarView:**
 - `DayView`, `WeekView`, `MonthView`, `AgendaView`
@@ -156,8 +127,6 @@ curl -X PATCH http://localhost:7000/api/v1/settings/doctor/regional \
 - `Minutes_5`, `Minutes_10`, `Minutes_15`, `Minutes_20`, `Minutes_30`
 
 **Boolean Fields:**
-- `allowOnlineBooking`
-- `requireApprovalForBooking`
 - `sendAppointmentReminders`
 
 ---
@@ -285,7 +254,7 @@ echo "5. UPDATE Regional Settings"
 curl -s -X PATCH "$BASE_URL/settings/doctor/regional" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"timezone": "America_New_York"}' | jq
+  -d '{"defaultCalendarView": "WeekView"}' | jq
 
 echo ""
 echo "6. UPDATE Security Settings"
