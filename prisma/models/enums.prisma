@@ -65,10 +65,10 @@ enum EventLocationType {
 
 enum PlanType {
   TRIAL
-  BASIC
   STANDARD
   PREMIUM
   ENTERPRISE
+  BASIC
 }
 
 enum SubscriptionStatus {

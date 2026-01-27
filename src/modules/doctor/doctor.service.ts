@@ -28,7 +28,7 @@ export class DoctorService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
-  ) {}
+  ) { }
 
   // ----------------- GET ALL DOCTORS -------------------
   async getAllDoctors() {
@@ -1020,50 +1020,74 @@ export class DoctorService {
 
     // Prepare update data
     const updateData: any = {};
-    if (dto.isClosed !== undefined) updateData.isClosed = dto.isClosed;
 
-    if (!dto.isClosed) {
-      // Validate and update halves
-      let firstRange, secondRange;
-      
-      // Use existing values if not provided in dto but needed for overlap check
-      const firstHalf = dto.firstHalf || (dto.isClosed === false ? { startTime: existingSchedule.firstHalfStartTime, endTime: existingSchedule.firstHalfEndTime } : null);
-      const secondHalf = dto.secondHalf || (dto.isClosed === false ? { startTime: existingSchedule.secondHalfStartTime, endTime: existingSchedule.secondHalfEndTime } : null);
-
-      if (dto.firstHalf) {
-        validateTimeRange(dto.firstHalf.startTime, dto.firstHalf.endTime, 'First Half');
-        updateData.firstHalfStartTime = dto.firstHalf.startTime;
-        updateData.firstHalfEndTime = dto.firstHalf.endTime;
-      }
-      if (dto.secondHalf) {
-        validateTimeRange(dto.secondHalf.startTime, dto.secondHalf.endTime, 'Second Half');
-        updateData.secondHalfStartTime = dto.secondHalf.startTime;
-        updateData.secondHalfEndTime = dto.secondHalf.endTime;
-      }
-
-      // Overlap check (needs both halves' current/new values)
-      const currentFirst = {
-        start: dto.firstHalf?.startTime || existingSchedule.firstHalfStartTime,
-        end: dto.firstHalf?.endTime || existingSchedule.firstHalfEndTime
-      };
-      const currentSecond = {
-        start: dto.secondHalf?.startTime || existingSchedule.secondHalfStartTime,
-        end: dto.secondHalf?.endTime || existingSchedule.secondHalfEndTime
-      };
-
-      if (currentFirst.start && currentFirst.end && currentSecond.start && currentSecond.end) {
-        const r1 = validateTimeRange(currentFirst.start, currentFirst.end, 'First Half');
-        const r2 = validateTimeRange(currentSecond.start, currentSecond.end, 'Second Half');
-        if (r1.startMinutes < r2.endMinutes && r2.startMinutes < r1.endMinutes) {
-          throw new BadRequestException('First half and second half cannot overlap');
-        }
-      }
-    } else {
-      // If closed, clear halves
+    if (dto.isClosed === true) {
+      updateData.isClosed = true;
       updateData.firstHalfStartTime = null;
       updateData.firstHalfEndTime = null;
       updateData.secondHalfStartTime = null;
       updateData.secondHalfEndTime = null;
+    } else {
+      if (dto.isClosed !== undefined) updateData.isClosed = dto.isClosed;
+
+      const firstHalfProvided = dto.firstHalf !== undefined;
+      const secondHalfProvided = dto.secondHalf !== undefined;
+
+      // Logic: If at least one shift is provided, the other(s) should be cleared if missing
+      // This allows the user to "remove" a shift by simply not sending it, 
+      // as long as they send the other shift.
+      if (firstHalfProvided || secondHalfProvided) {
+        // Handle first half
+        if (dto.firstHalf === null || (!firstHalfProvided && secondHalfProvided)) {
+          updateData.firstHalfStartTime = null;
+          updateData.firstHalfEndTime = null;
+        } else if (dto.firstHalf) {
+          validateTimeRange(dto.firstHalf.startTime, dto.firstHalf.endTime, 'First Half');
+          updateData.firstHalfStartTime = dto.firstHalf.startTime;
+          updateData.firstHalfEndTime = dto.firstHalf.endTime;
+        }
+
+        // Handle second half
+        if (dto.secondHalf === null || (!secondHalfProvided && firstHalfProvided)) {
+          updateData.secondHalfStartTime = null;
+          updateData.secondHalfEndTime = null;
+        } else if (dto.secondHalf) {
+          validateTimeRange(dto.secondHalf.startTime, dto.secondHalf.endTime, 'Second Half');
+          updateData.secondHalfStartTime = dto.secondHalf.startTime;
+          updateData.secondHalfEndTime = dto.secondHalf.endTime;
+        }
+      }
+
+      // Merge with existing data to validate final state
+      const finalFirstStart = updateData.firstHalfStartTime !== undefined ? updateData.firstHalfStartTime : existingSchedule.firstHalfStartTime;
+      const finalFirstEnd = updateData.firstHalfEndTime !== undefined ? updateData.firstHalfEndTime : existingSchedule.firstHalfEndTime;
+      const finalSecondStart = updateData.secondHalfStartTime !== undefined ? updateData.secondHalfStartTime : existingSchedule.secondHalfStartTime;
+      const finalSecondEnd = updateData.secondHalfEndTime !== undefined ? updateData.secondHalfEndTime : existingSchedule.secondHalfEndTime;
+      const finalIsClosed = updateData.isClosed !== undefined ? updateData.isClosed : existingSchedule.isClosed;
+
+      if (!finalIsClosed) {
+        // Must have at least one valid half if open
+        const hasFirstHalf = finalFirstStart && finalFirstEnd;
+        const hasSecondHalf = finalSecondStart && finalSecondEnd;
+
+        if (!hasFirstHalf && !hasSecondHalf) {
+          throw new BadRequestException('Schedule must have at least one half of hours if it is open');
+        }
+
+        // Overlap check if both halves exist
+        if (hasFirstHalf && hasSecondHalf) {
+          const r1 = validateTimeRange(finalFirstStart, finalFirstEnd, 'First Half');
+          const r2 = validateTimeRange(finalSecondStart, finalSecondEnd, 'Second Half');
+          if (r1.startMinutes < r2.endMinutes && r2.startMinutes < r1.endMinutes) {
+            throw new BadRequestException('First half and second half cannot overlap');
+          }
+        }
+
+        // Automatically set isClosed to false if a non-null shift is provided
+        if ((dto.firstHalf && dto.firstHalf !== null) || (dto.secondHalf && dto.secondHalf !== null)) {
+          updateData.isClosed = false;
+        }
+      }
     }
 
     const updatedSchedule = await this.prisma.doctorWeeklySchedule.update({

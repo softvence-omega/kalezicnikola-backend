@@ -29,10 +29,10 @@ export class UpdateScheduleDto {
   @IsOptional()
   @ValidateNested()
   @Type(() => HalfDayDto)
-  firstHalf?: HalfDayDto;
+  firstHalf?: HalfDayDto | null;
 
   @IsOptional()
   @ValidateNested()
   @Type(() => HalfDayDto)
-  secondHalf?: HalfDayDto;
+  secondHalf?: HalfDayDto | null;
 }
