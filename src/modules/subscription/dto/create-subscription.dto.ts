@@ -2,6 +2,7 @@ import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum PlanType {
+  BASIC = 'BASIC',
   STANDARD = 'STANDARD',
   PREMIUM = 'PREMIUM',
   ENTERPRISE = 'ENTERPRISE',
@@ -10,6 +11,7 @@ export enum PlanType {
 export enum BillingCycle {
   MONTHLY = 'MONTHLY',
   YEARLY = 'YEARLY',
+  ONETIME = 'ONETIME',
 }
 
 export class CreateSubscriptionDto {

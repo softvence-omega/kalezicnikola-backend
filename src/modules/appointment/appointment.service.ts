@@ -20,7 +20,7 @@ export class AppointmentService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
-  ) {}
+  ) { }
 
   // ----------------- CREATE APPOINTMENT -------------------
   async createAppointment(accessToken: string, dto: CreateAppointmentDto) {
@@ -83,7 +83,7 @@ export class AppointmentService {
 
     const startMins = parseTimeToMinutes(dto.startTime);
     const endMins = startMins + appointmentType.duration;
-    
+
     const minutesToTime = (mins: number) => {
       const h = Math.floor(mins / 60);
       const m = mins % 60;
@@ -127,7 +127,7 @@ export class AppointmentService {
     // 4.5. Check if appointment date falls within an absence period
     const apptCheckDate = new Date(appointmentDate);
     apptCheckDate.setHours(0, 0, 0, 0);
-    
+
     const absenceCheck = await this.prisma.doctorAbsence.findFirst({
       where: {
         doctorId,
@@ -140,12 +140,12 @@ export class AppointmentService {
       // Find next available date
       let nextAvailableDate = new Date(absenceCheck.toDate);
       nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
-      
+
       // Check if there are more absence periods after this one
       let currentDate = new Date(nextAvailableDate);
       const maxDaysToCheck = 365;
       let daysChecked = 0;
-      
+
       while (daysChecked < maxDaysToCheck) {
         const futureAbsence = await this.prisma.doctorAbsence.findFirst({
           where: {
@@ -154,21 +154,21 @@ export class AppointmentService {
             toDate: { gte: currentDate },
           },
         });
-        
+
         if (!futureAbsence) {
           nextAvailableDate = currentDate;
           break;
         }
-        
+
         currentDate = new Date(futureAbsence.toDate);
         currentDate.setDate(currentDate.getDate() + 1);
         daysChecked++;
       }
-      
+
       const fromDateStr = absenceCheck.fromDate.toISOString().split('T')[0];
       const toDateStr = absenceCheck.toDate.toISOString().split('T')[0];
       const nextDateStr = nextAvailableDate.toISOString().split('T')[0];
-      
+
       const reasonMsg = absenceCheck.reason ? ` (${absenceCheck.reason})` : '';
       throw new BadRequestException(
         `Doctor is unavailable from ${fromDateStr} to ${toDateStr}${reasonMsg}. Next available date is ${nextDateStr}.`
@@ -190,9 +190,9 @@ export class AppointmentService {
     const buffer = regionalSettings ? bufferMap[regionalSettings.bufferTimeBetween] || 0 : 0;
 
     const dayStart = new Date(dto.appointmentDate);
-    dayStart.setUTCHours(0,0,0,0);
+    dayStart.setUTCHours(0, 0, 0, 0);
     const dayEnd = new Date(dto.appointmentDate);
-    dayEnd.setUTCHours(23,59,59,999);
+    dayEnd.setUTCHours(23, 59, 59, 999);
 
     const existingAppointments = await this.prisma.appointment.findMany({
       where: {
@@ -462,9 +462,9 @@ export class AppointmentService {
 
     // Get existing appointments to check for conflicts
     const dayStart = new Date(queryDate);
-    dayStart.setUTCHours(0,0,0,0);
+    dayStart.setUTCHours(0, 0, 0, 0);
     const dayEnd = new Date(queryDate);
-    dayEnd.setUTCHours(23,59,59,999);
+    dayEnd.setUTCHours(23, 59, 59, 999);
 
     const appointments = await this.prisma.appointment.findMany({
       where: {
@@ -604,8 +604,8 @@ export class AppointmentService {
       updateData.appointmentTypeId = dto.appointmentTypeId;
       duration = type.duration;
     } else {
-      const currentType = await this.prisma.appointmentType.findUnique({ 
-        where: { id: existingAppointment.appointmentTypeId || '' } 
+      const currentType = await this.prisma.appointmentType.findUnique({
+        where: { id: existingAppointment.appointmentTypeId || '' }
       });
       duration = currentType?.duration || 20;
     }
@@ -635,7 +635,9 @@ export class AppointmentService {
       updateData.appointmentDate = appointmentDate;
 
       // 3. Half-Day Check
-      const dayOfWeek = appointmentDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() as WeekDay;
+      const dayOfWeek = appointmentDate
+        .toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })
+        .toUpperCase() as WeekDay;
       const schedule = await this.prisma.doctorWeeklySchedule.findUnique({
         where: { doctorId_day: { doctorId, day: dayOfWeek } },
       });
@@ -663,7 +665,7 @@ export class AppointmentService {
       // 3.5. Check if reschedule date falls within an absence period
       const rescheduleCheckDate = new Date(appointmentDate);
       rescheduleCheckDate.setHours(0, 0, 0, 0);
-      
+
       const absenceCheck = await this.prisma.doctorAbsence.findFirst({
         where: {
           doctorId,
@@ -676,12 +678,12 @@ export class AppointmentService {
         // Find next available date
         let nextAvailableDate = new Date(absenceCheck.toDate);
         nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
-        
+
         // Check if there are more absence periods after this one
         let currentDate = new Date(nextAvailableDate);
         const maxDaysToCheck = 365;
         let daysChecked = 0;
-        
+
         while (daysChecked < maxDaysToCheck) {
           const futureAbsence = await this.prisma.doctorAbsence.findFirst({
             where: {
@@ -690,21 +692,21 @@ export class AppointmentService {
               toDate: { gte: currentDate },
             },
           });
-          
+
           if (!futureAbsence) {
             nextAvailableDate = currentDate;
             break;
           }
-          
+
           currentDate = new Date(futureAbsence.toDate);
           currentDate.setDate(currentDate.getDate() + 1);
           daysChecked++;
         }
-        
+
         const fromDateStr = absenceCheck.fromDate.toISOString().split('T')[0];
         const toDateStr = absenceCheck.toDate.toISOString().split('T')[0];
         const nextDateStr = nextAvailableDate.toISOString().split('T')[0];
-        
+
         const reasonMsg = absenceCheck.reason ? ` (${absenceCheck.reason})` : '';
         throw new BadRequestException(
           `Cannot reschedule: Doctor is unavailable from ${fromDateStr} to ${toDateStr}${reasonMsg}. Next available date is ${nextDateStr}.`
@@ -722,8 +724,8 @@ export class AppointmentService {
         where: {
           doctorId,
           appointmentDate: {
-            gte: new Date(new Date(appointmentDate).setHours(0,0,0,0)),
-            lte: new Date(new Date(appointmentDate).setHours(23,59,59,999)),
+            gte: new Date(new Date(appointmentDate).setHours(0, 0, 0, 0)),
+            lte: new Date(new Date(appointmentDate).setHours(23, 59, 59, 999)),
           },
           status: 'SCHEDULED',
           id: { not: appointmentId }

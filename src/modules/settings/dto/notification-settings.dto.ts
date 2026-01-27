@@ -6,7 +6,6 @@ export class NotificationSettingsDto {
   callLogs: boolean;
   taskDeadlines: boolean;
   securityAlerts: boolean;
-  emailNotifications: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

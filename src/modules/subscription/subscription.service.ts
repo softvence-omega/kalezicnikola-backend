@@ -42,11 +42,11 @@ export class SubscriptionService implements OnModuleInit {
   private async seedSubscriptionPlans() {
     try {
       const defaultPlans = [
-        // TRIAL PLAN (Lifetime, Enterprise features, no Stripe)
+        // TRIAL PLANS
         {
           planType: 'TRIAL' as const,
           billingCycle: 'LIFETIME' as const,
-          name: 'Trial Plan',
+          name: 'Trial Lifetime',
           price: 0,
           stripePriceId: 'trial_no_stripe', // Placeholder, won't be used
           minutes: 8000, // Same as Enterprise
@@ -59,6 +59,44 @@ export class SubscriptionService implements OnModuleInit {
             'Multilingual (25+ languages)',
             '24/7 Premium support',
             '✨ Lifetime access',
+          ],
+        },
+        {
+          planType: 'TRIAL' as const,
+          billingCycle: 'SEVEN_DAYS' as const,
+          name: 'Trial 7 Days',
+          price: 0,
+          stripePriceId: 'trial_7_days_no_stripe',
+          minutes: 500,
+          features: [
+            'AI Agent creation & setup',
+            '24/7 availability & call logging',
+            'Intelligent triage & task creation',
+            '500 call minutes / month included',
+            '€0.25 per extra minute',
+            'Multilingual (25+ languages)',
+            '24/7 Premium support',
+            '7 Days of Trial',
+          ],
+        },
+        // BASIC PLANS
+        {
+          planType: 'BASIC' as const,
+          billingCycle: 'ONETIME' as const,
+          name: 'Basic Onetime',
+          price: 279,
+          stripePriceId:
+            this.configService.get<string>('STRIPE_BASIC_ONETIME_PRICE_ID') ||
+            'basic_onetime_no_stripe',
+          minutes: 1000,
+          features: [
+            'AI Agent creation & setup',
+            '24/7 availability & call logging',
+            'Intelligent triage & task creation',
+            '1000 call minutes included',
+            'Multilingual (25+ languages)',
+            '24/7 Premium support',
+            '1 Month Access',
           ],
         },
         // STANDARD PLANS
@@ -185,6 +223,17 @@ export class SubscriptionService implements OnModuleInit {
       let skipped = 0;
 
       for (const plan of defaultPlans) {
+        await this.prisma.subscriptionPlan.upsert({
+          where: {
+            planType_billingCycle: {
+              planType: plan.planType,
+              billingCycle: plan.billingCycle,
+            },
+          },
+          update: plan,
+          create: plan,
+        });
+
         const existingPlan = await this.prisma.subscriptionPlan.findUnique({
           where: {
             planType_billingCycle: {
@@ -194,10 +243,7 @@ export class SubscriptionService implements OnModuleInit {
           },
         });
 
-        if (!existingPlan) {
-          await this.prisma.subscriptionPlan.create({
-            data: plan,
-          });
+        if (existingPlan && existingPlan.createdAt.getTime() === existingPlan.updatedAt.getTime()) {
           created++;
           console.log(
             `✅ Created plan: ${plan.planType} (${plan.billingCycle})`,
@@ -205,7 +251,7 @@ export class SubscriptionService implements OnModuleInit {
         } else {
           skipped++;
           console.log(
-            `⏭️ Skipped existing plan: ${plan.planType} (${plan.billingCycle})`,
+            `🆙 Updated plan: ${plan.planType} (${plan.billingCycle})`,
           );
         }
       }
@@ -307,6 +353,37 @@ export class SubscriptionService implements OnModuleInit {
     }
   }
 
+  // Check if user is eligible to purchase the BASIC plan (limited to once per account and new users only)
+  private async checkBasicPlanEligibility(userId: string) {
+    const paidPlans = ['BASIC', 'STANDARD', 'PREMIUM', 'ENTERPRISE'];
+
+    // Check current subscription
+    const currentSub = await this.prisma.subscription.findUnique({
+      where: { userId },
+      select: { planType: true },
+    });
+
+    if (currentSub?.planType && paidPlans.includes(currentSub.planType)) {
+      throw new BadRequestException(
+        'The Basic plan is only available for new customers who have not previously purchased a paid plan.',
+      );
+    }
+
+    // Check history
+    const pastSub = await this.prisma.subscriptionHistory.findFirst({
+      where: {
+        userId,
+        planType: { in: paidPlans as any },
+      },
+    });
+
+    if (pastSub) {
+      throw new BadRequestException(
+        'The Basic plan is only available for new customers who have not previously purchased a paid plan.',
+      );
+    }
+  }
+
   // Assign Trial Plan (Admin only, no Stripe integration)
   async assignTrialPlan(
     userId: string,
@@ -329,7 +406,7 @@ export class SubscriptionService implements OnModuleInit {
         where: {
           planType_billingCycle: {
             planType: 'TRIAL',
-            billingCycle: 'LIFETIME',
+            billingCycle: !dto.trialType || dto.trialType === 'LIFETIME' ? 'LIFETIME' : 'SEVEN_DAYS',
           },
         },
       });
@@ -545,6 +622,11 @@ export class SubscriptionService implements OnModuleInit {
         throw new BadRequestException('Invalid plan type');
       }
 
+      // Check eligibility for BASIC plan
+      if (planType === 'BASIC') {
+        await this.checkBasicPlanEligibility(userId);
+      }
+
       // Create or retrieve customer
       const user = await this.prisma.doctor.findUnique({
         where: { id: userId },
@@ -628,13 +710,7 @@ export class SubscriptionService implements OnModuleInit {
       }
 
       // Get plan details from database
-      let searchBillingCycle = subscription.billingCycle || 'MONTHLY';
-      if (
-        subscription.planType === 'TRIAL' &&
-        searchBillingCycle === 'SEVEN_DAYS'
-      ) {
-        searchBillingCycle = 'LIFETIME' as any;
-      }
+      const searchBillingCycle = subscription.billingCycle || 'MONTHLY';
 
       const planDetails = await this.prisma.subscriptionPlan.findFirst({
         where: {
@@ -790,6 +866,11 @@ export class SubscriptionService implements OnModuleInit {
 
       if (!planDetails) {
         throw new BadRequestException('Invalid plan type');
+      }
+
+      // Check eligibility for BASIC plan
+      if (planType === 'BASIC') {
+        await this.checkBasicPlanEligibility(userId);
       }
 
       // Check if it's the same plan
@@ -1211,6 +1292,11 @@ export class SubscriptionService implements OnModuleInit {
         throw new BadRequestException('Invalid plan type');
       }
 
+      // Check eligibility for BASIC plan
+      if (planType === 'BASIC') {
+        await this.checkBasicPlanEligibility(userId);
+      }
+
       const session = await this.stripe.checkout.sessions.create({
         payment_method_types: ['card'],
         line_items: [
@@ -1219,7 +1305,7 @@ export class SubscriptionService implements OnModuleInit {
             quantity: 1,
           },
         ],
-        mode: 'subscription',
+        mode: billingCycle === 'ONETIME' ? 'payment' : 'subscription',
         success_url: `${this.configService.get<string>('ClIENT_URL')}/subscription/success?session_id={CHECKOUT_SESSION_ID}&status=success`,
         cancel_url: `${this.configService.get<string>('ClIENT_URL')}/subscription/cancelled?status=fail`,
         customer_email: user.email,
@@ -1275,21 +1361,6 @@ export class SubscriptionService implements OnModuleInit {
         throw new BadRequestException('Invalid plan type');
       }
 
-      // Get the subscription from Stripe with expanded data
-      const stripeSubscription = await this.stripe.subscriptions.retrieve(
-        session.subscription as string,
-        { expand: ['latest_invoice', 'customer'] },
-      );
-
-      // Extract period dates safely with type casting
-      const subscriptionData = stripeSubscription as any;
-      const periodStart = subscriptionData.current_period_start
-        ? new Date(subscriptionData.current_period_start * 1000)
-        : new Date();
-      const periodEnd = subscriptionData.current_period_end
-        ? new Date(subscriptionData.current_period_end * 1000)
-        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default 30 days
-
       // Map Stripe status to SubscriptionStatus enum
       const mapStripeStatus = (stripeStatus: string) => {
         const statusMap: { [key: string]: string } = {
@@ -1305,6 +1376,39 @@ export class SubscriptionService implements OnModuleInit {
         return statusMap[stripeStatus] || 'PENDING';
       };
 
+      // Extract period dates safely with type casting
+      let periodStart = new Date();
+      let periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default 30 days
+      let stripeSubscriptionId: string | null = null;
+      let subscriptionStatus: string = 'ACTIVE';
+
+      if (session.mode === 'subscription') {
+        // Get the subscription from Stripe with expanded data
+        const stripeSubscription = await this.stripe.subscriptions.retrieve(
+          session.subscription as string,
+          { expand: ['latest_invoice', 'customer'] },
+        );
+
+        const subscriptionData = stripeSubscription as any;
+        periodStart = subscriptionData.current_period_start
+          ? new Date(subscriptionData.current_period_start * 1000)
+          : new Date();
+        periodEnd = subscriptionData.current_period_end
+          ? new Date(subscriptionData.current_period_end * 1000)
+          : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        stripeSubscriptionId = stripeSubscription.id;
+        subscriptionStatus = mapStripeStatus(stripeSubscription.status);
+      } else {
+        // One-time payment mode
+        periodStart = new Date();
+        periodEnd = new Date();
+        periodEnd.setMonth(periodEnd.getMonth() + 1); // 1 month access for BASIC
+        stripeSubscriptionId = null;
+        subscriptionStatus = 'ACTIVE';
+      }
+
+
+
       // Check if user already has a subscription
       const existingSubscription = await this.prisma.subscription.findUnique({
         where: { userId },
@@ -1317,10 +1421,10 @@ export class SubscriptionService implements OnModuleInit {
           where: { userId },
           data: {
             stripeCustomerId: session.customer as string,
-            stripeSubscriptionId: stripeSubscription.id,
+            stripeSubscriptionId: stripeSubscriptionId,
             planType: planType as any,
             billingCycle: billingCycle as any,
-            status: mapStripeStatus(stripeSubscription.status) as any,
+            status: subscriptionStatus as any,
             currentPeriodStart: periodStart,
             currentPeriodEnd: periodEnd,
             minutesAllocated: planDetails.minutes,
@@ -1333,10 +1437,10 @@ export class SubscriptionService implements OnModuleInit {
           data: {
             userId,
             stripeCustomerId: session.customer as string,
-            stripeSubscriptionId: stripeSubscription.id,
+            stripeSubscriptionId: stripeSubscriptionId,
             planType: planType as any,
             billingCycle: billingCycle as any,
-            status: mapStripeStatus(stripeSubscription.status) as any,
+            status: subscriptionStatus as any,
             currentPeriodStart: periodStart,
             currentPeriodEnd: periodEnd,
             minutesAllocated: planDetails.minutes,

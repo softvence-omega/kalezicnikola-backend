@@ -63,17 +63,12 @@ enum EventLocationType {
   OFFLINE
 }
 
-enum Plan {
-  BASIC
-  PROFESSIONAL
-  ENTERPRISE
-}
-
 enum PlanType {
   TRIAL
   STANDARD
   PREMIUM
   ENTERPRISE
+  BASIC
 }
 
 enum SubscriptionStatus {

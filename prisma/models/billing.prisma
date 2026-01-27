@@ -20,7 +20,6 @@ model Subscription {
   userId               String?             @unique
   stripeCustomerId     String?             @unique
   stripeSubscriptionId String?             @unique
-  plan                 Plan?
   planType             PlanType?
   billingCycle         BillingCycle?
   status               SubscriptionStatus?
@@ -90,4 +89,5 @@ enum BillingCycle {
   YEARLY
   LIFETIME
   SEVEN_DAYS
+  ONETIME
 }
