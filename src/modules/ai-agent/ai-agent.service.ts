@@ -14,6 +14,7 @@ import { TranscriptionSaveDto } from './dto/transcription-save.dto';
 import { ElevenLabsPostCallDto } from './dto/elevenlabs-post-call.dto';
 import { AgentCreateTaskDto } from './dto/agent-create-task.dto';
 import { BufferTime, WeekDay } from 'generated/prisma';
+import { NotificationHelperService } from '../notification/notification-helper.service';
 
 import axios from 'axios';
 
@@ -26,6 +27,7 @@ export class AiAgentService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private notificationHelper: NotificationHelperService,
   ) {
     this.twilioNumber = '+15095091987'; // Twilio number from client
     this.fallbackNumber = '+8801742460399'; // Physical assistant number
@@ -1217,6 +1219,20 @@ export class AiAgentService {
       },
     });
 
+    // Send Real-time Notification
+    try {
+      if (dto.doctor_id) {
+        await this.notificationHelper.notifyCallLog(dto.doctor_id, {
+          callId: transcription.id,
+          callerName: transcription.callerName || undefined,
+          callType: transcription.callStatus || 'RECEIVED',
+          timestamp: transcription.createdAt,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to send call notification:', error);
+    }
+
     return {
       success: true,
       transcription_id: transcription.id,
@@ -1539,6 +1555,19 @@ export class AiAgentService {
     }
 
     console.log(`Created NEW CallTranscription for SID ${incomingCallSid}`);
+
+    // Send Real-time Notification
+    try {
+      await this.notificationHelper.notifyCallLog(finalDoctorId, {
+        callId: createdRecord.id,
+        callerName: createdRecord.callerName || undefined,
+        callType: createdRecord.callStatus || 'RECEIVED',
+        timestamp: createdRecord.createdAt,
+      });
+    } catch (error) {
+      console.error('Failed to send call notification:', error);
+    }
+
     return { success: true, message: 'Created new transcription' };
   }
 

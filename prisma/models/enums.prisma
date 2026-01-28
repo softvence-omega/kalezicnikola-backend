@@ -345,3 +345,10 @@ enum ConversationStatus {
   RESOLVED
   CLOSED
 }
+
+enum DoctorNotificationType {
+  APPOINTMENT_REMINDER
+  PATIENT_UPDATE
+  CALL_LOG
+  TASK_DEADLINE
+}

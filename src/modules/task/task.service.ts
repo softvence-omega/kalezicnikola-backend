@@ -8,10 +8,14 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { GetAllTasksDto } from './dto/get-all-tasks.dto';
+import { NotificationHelperService } from '../notification/notification-helper.service';
 
 @Injectable()
 export class TaskService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationHelper: NotificationHelperService,
+  ) { }
 
   // ----------------- CREATE TASK -------------------
   async createTask(accessToken: string, dto: CreateTaskDto) {
@@ -63,6 +67,20 @@ export class TaskService {
         },
       },
     });
+
+    // Trigger Notification
+    try {
+      if (task.dueDate && task.doctorId) {
+        await this.notificationHelper.notifyTaskDeadline(task.doctorId, {
+          taskId: task.id,
+          taskTitle: task.title || 'Untitled Task',
+          deadline: task.dueDate,
+          priority: task.priority ? task.priority.toString() : undefined,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to send task notification:', error);
+    }
 
     return { task };
   }
