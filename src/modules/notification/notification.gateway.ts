@@ -12,12 +12,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 
 @WebSocketGateway({
     cors: {
-        origin: [
-            'http://localhost:3000',
-            'http://localhost:8080',
-            'https://docline.ai',
-            'https://kalezicnikola-frontend.vercel.app',
-        ],
+        origin: '*',
         credentials: true,
     },
     namespace: '/notifications',
@@ -33,18 +28,37 @@ export class NotificationGateway
     constructor(
         private prisma: PrismaService,
         private notificationService: NotificationService,
-    ) { }
+    ) {
+        console.log('🚀 NotificationGateway initialized');
+    }
 
     /**
      * Handle client connection
      */
     async handleConnection(client: Socket) {
+        console.log(`📡 Socket connection attempt on namespace: ${client.nsp.name}`);
+        console.log(`🔑 Full handshake data:`, {
+            auth: client.handshake.auth,
+            query: client.handshake.query,
+            headers: {
+                authorization: client.handshake.headers.authorization,
+                ...Object.fromEntries(
+                    Object.entries(client.handshake.headers).filter(([key]) => 
+                        key.toLowerCase().includes('auth') || key.toLowerCase().includes('token')
+                    )
+                )
+            }
+        });
+        
         try {
             // Extract token from handshake auth, headers, OR query parameters
             const token =
                 client.handshake.auth?.token ||
                 client.handshake.headers.authorization?.split(' ')[1] ||
                 client.handshake.query?.token;
+
+            console.log(`🔑 Extracted token: ${token ? token.substring(0, 20) + '...' : 'NULL'}`);
+            console.log(`🔑 Token sources: auth=${!!client.handshake.auth?.token}, headers=${!!client.handshake.headers.authorization}, query=${!!client.handshake.query?.token}`);
 
             if (!token) {
                 console.log('❌ Connection attempt failed: No token provided');
@@ -54,22 +68,33 @@ export class NotificationGateway
             // Verify token using session lookup
             const session = await this.prisma.session.findUnique({
                 where: { accessToken: token },
+                include: { doctor: { select: { id: true, firstName: true, lastName: true } } }
             });
 
-            if (!session || !session.doctorId) {
-                throw new UnauthorizedException('Invalid session or not a doctor');
+            console.log(`🔍 Session lookup result:`, session ? 'FOUND' : 'NOT FOUND');
+
+            if (!session) {
+                console.log(`❌ No session found for token: ${token.substring(0, 20)}...`);
+                throw new UnauthorizedException('Invalid session');
+            }
+
+            if (!session.doctorId) {
+                console.log(`❌ Session found but doctorId is missing. ID: ${session.id}`);
+                throw new UnauthorizedException('Not a doctor session');
             }
 
             const doctorId = session.doctorId;
+            console.log(`👤 Authenticated doctor: ${doctorId} (${session.doctor?.firstName})`);
 
             // Store connection
             this.connectedDoctors.set(doctorId, client.id);
 
             // Join doctor-specific room
-            client.join(`doctor:${doctorId}`);
+            const roomName = `doctor:${doctorId}`;
+            await client.join(roomName);
             client.data.doctorId = doctorId;
 
-            console.log(`✅ Doctor ${doctorId} connected to notifications (socket: ${client.id})`);
+            console.log(`✅ Doctor ${doctorId} connected to notifications (socket: ${client.id}, room: ${roomName})`);
 
             // Send pending unread notifications
             const unreadNotifications = await this.notificationService.getUnreadNotifications(doctorId);
@@ -87,6 +112,7 @@ export class NotificationGateway
 
         } catch (error) {
             console.error('WebSocket connection error:', error.message);
+            console.error('Full error:', error);
             client.emit('error', { message: 'Authentication failed' });
             client.disconnect();
         }
@@ -108,12 +134,27 @@ export class NotificationGateway
      * Emit notification to a specific doctor
      */
     async emitNotificationToDoctor(doctorId: string, notification: any) {
+        const roomName = `doctor:${doctorId}`;
+        console.log(`📣 Attempting to emit notification to room ${roomName}:`, notification.title);
+        console.log(`📣 Notification data:`, JSON.stringify(notification, null, 2));
+
+        // Check if doctor is connected
+        const socketId = this.connectedDoctors.get(doctorId);
+        console.log(`📣 Connected doctors:`, Array.from(this.connectedDoctors.entries()));
+        console.log(`📣 Socket ID for doctor ${doctorId}:`, socketId || 'NOT CONNECTED');
+
+        // Check room members - simplified logging
+        console.log(`📣 Attempting to emit to room: ${roomName}`);
+
         // Emit to doctor's room
-        this.server.to(`doctor:${doctorId}`).emit('new-notification', notification);
+        const emitResult = this.server.to(roomName).emit('new-notification', notification);
+        console.log(`📣 Emit result:`, emitResult);
+        console.log(`📣 Emitted 'new-notification' to room ${roomName}`);
 
         // Update unread count
         const unreadCount = await this.notificationService.getUnreadCount(doctorId);
-        this.server.to(`doctor:${doctorId}`).emit('unread-count', { count: unreadCount });
+        console.log(`📣 Emitting unread-count update to room ${roomName}: ${unreadCount}`);
+        this.server.to(roomName).emit('unread-count', { count: unreadCount });
     }
 
     /**

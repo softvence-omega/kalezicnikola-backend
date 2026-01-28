@@ -24,6 +24,7 @@ export class NotificationHelperService {
             appointmentTime: Date;
         },
     ): Promise<void> {
+        console.log(`🔔 notifyAppointmentReminder called for doctor ${doctorId}`);
         const notification = await this.notificationService.createNotification({
             doctorId,
             type: DoctorNotificationType.APPOINTMENT_REMINDER,

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket.IO Test</title>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Socket.IO Notification Test</h1>
+    <div id="status">Connecting...</div>
+    <div id="notifications"></div>
+    
+    <script>
+        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJlYjRmOGI1ZC0yNzY5LTQzNGUtYmQwZS03MGFlYjVlMTA1ZTYiLCJyb2xlIjoiZG9jdG9yIiwiaWF0IjoxNzY5NTgyMDYyLCJleHAiOjE3Njk2Njg0NjJ9.adf_0Djx_v0MPPoECYE5aqPxTMReELgoVGnuoZJhv4s";
+        
+        const socket = io("http://localhost:8000/notifications", {
+            query: { token },
+            transports: ["websocket"]
+        });
+        
+        const statusDiv = document.getElementById('status');
+        const notificationsDiv = document.getElementById('notifications');
+        
+        socket.on('connect', () => {
+            statusDiv.innerHTML = '✅ Connected to Socket.IO';
+            statusDiv.style.color = 'green';
+        });
+        
+        socket.on('disconnect', () => {
+            statusDiv.innerHTML = '❌ Disconnected';
+            statusDiv.style.color = 'red';
+        });
+        
+        socket.on('new-notification', (data) => {
+            console.log('New notification:', data);
+            const notificationEl = document.createElement('div');
+            notificationEl.style.border = '1px solid #ccc';
+            notificationEl.style.padding = '10px';
+            notificationEl.style.margin = '10px 0';
+            notificationEl.innerHTML = `
+                <h3>🔔 ${data.title}</h3>
+                <p><strong>Message:</strong> ${data.message}</p>
+                <p><strong>Type:</strong> ${data.type}</p>
+                <p><strong>Created:</strong> ${new Date(data.createdAt).toLocaleString()}</p>
+            `;
+            notificationsDiv.appendChild(notificationEl);
+        });
+        
+        socket.on('unread-count', (data) => {
+            console.log('Unread count:', data);
+            statusDiv.innerHTML = `✅ Connected | 📊 Unread: ${data.count}`;
+        });
+        
+        socket.on('error', (error) => {
+            console.error('Socket error:', error);
+            statusDiv.innerHTML = `❌ Error: ${error.message}`;
+            statusDiv.style.color = 'red';
+        });
+    </script>
+</body>
+</html>

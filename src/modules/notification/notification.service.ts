@@ -45,6 +45,11 @@ export class NotificationService {
     async createNotification(
         dto: CreateNotificationDto,
     ): Promise<NotificationResponseDto | null> {
+        // Ensure doctorId is provided
+        if (!dto.doctorId) {
+            throw new Error('doctorId is required');
+        }
+
         // Check if notification should be sent based on settings
         const shouldSend = await this.shouldSendNotification(dto.doctorId, dto.type);
 

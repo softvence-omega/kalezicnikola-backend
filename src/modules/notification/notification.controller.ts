@@ -9,12 +9,15 @@ import {
     Body,
     UseGuards,
     UnauthorizedException,
+    Post,
 } from '@nestjs/common';
 import { NotificationService } from './notification.service';
 import { GetNotificationsQueryDto } from './dto/get-notifications-query.dto';
 import { MarkMultipleAsReadDto } from './dto/mark-multiple-as-read.dto';
+import { CreateNotificationDto } from './dto/create-notification.dto';
 import { DoctorGuard } from 'src/common/guard/doctor.guard';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { NotificationGateway } from './notification.gateway';
 
 @Controller('notifications')
 @UseGuards(DoctorGuard)
@@ -22,6 +25,7 @@ export class NotificationController {
     constructor(
         private readonly notificationService: NotificationService,
         private readonly prisma: PrismaService,
+        private readonly notificationGateway: NotificationGateway,
     ) { }
 
     /**
@@ -47,6 +51,36 @@ export class NotificationController {
         }
 
         return session.doctorId;
+    }
+
+    /**
+     * POST /api/v1/notifications
+     * Create a new notification (for testing purposes)
+     */
+    @Post()
+    async createNotification(
+        @Headers('authorization') authorization: string,
+        @Body() dto: CreateNotificationDto,
+    ) {
+        const doctorId = await this.extractDoctorId(authorization);
+        
+        // Create a new object with the correct doctorId
+        const notificationData = {
+            ...dto,
+            doctorId: doctorId, // Override with authenticated doctor's ID for security
+        };
+        
+        const notification = await this.notificationService.createNotification(notificationData);
+        
+        // Emit the notification via WebSocket
+        await this.notificationGateway.emitNotificationToDoctor(doctorId, notification);
+
+        return {
+            statusCode: 201,
+            success: true,
+            message: 'Notification created successfully',
+            data: notification,
+        };
     }
 
     /**

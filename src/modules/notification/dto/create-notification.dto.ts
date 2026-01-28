@@ -2,9 +2,9 @@ import { IsEnum, IsNotEmpty, IsOptional, IsString, IsObject } from 'class-valida
 import { DoctorNotificationType } from 'generated/prisma';
 
 export class CreateNotificationDto {
-    @IsNotEmpty()
+    @IsOptional()
     @IsString()
-    doctorId: string;
+    doctorId?: string;
 
     @IsNotEmpty()
     @IsEnum(DoctorNotificationType)
