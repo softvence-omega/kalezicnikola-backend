@@ -57,11 +57,11 @@ export class NotificationGateway
                 client.handshake.headers.authorization?.split(' ')[1] ||
                 client.handshake.query?.token;
 
-            // console.log(`🔑 Extracted token: ${token ? token.substring(0, 20) + '...' : 'NULL'}`);
-            // console.log(`🔑 Token sources: auth=${!!client.handshake.auth?.token}, headers=${!!client.handshake.headers.authorization}, query=${!!client.handshake.query?.token}`);
+            console.log(`🔑 Extracted token: ${token ? token.substring(0, 20) + '...' : 'NULL'}`);
+            console.log(`🔑 Token sources: auth=${!!client.handshake.auth?.token}, headers=${!!client.handshake.headers.authorization}, query=${!!client.handshake.query?.token}`);
 
             if (!token) {
-                // console.log('❌ Connection attempt failed: No token provided');
+                console.log('❌ Connection attempt failed: No token provided');
                 throw new UnauthorizedException('No token provided');
             }
 
@@ -74,7 +74,7 @@ export class NotificationGateway
             console.log(`🔍 Session lookup result:`, session ? 'FOUND' : 'NOT FOUND');
 
             if (!session) {
-                // console.log(`❌ No session found for token: ${token.substring(0, 20)}...`);
+                console.log(`❌ No session found for token: ${token.substring(0, 20)}...`);
                 throw new UnauthorizedException('Invalid session');
             }
 
@@ -94,7 +94,7 @@ export class NotificationGateway
             await client.join(roomName);
             client.data.doctorId = doctorId;
 
-            // console.log(`✅ Doctor ${doctorId} connected to notifications (socket: ${client.id}, room: ${roomName})`);
+            console.log(`✅ Doctor ${doctorId} connected to notifications (socket: ${client.id}, room: ${roomName})`);
 
             // Send pending unread notifications
             const unreadNotifications = await this.notificationService.getUnreadNotifications(doctorId);
