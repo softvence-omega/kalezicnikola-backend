@@ -58,7 +58,7 @@ model Doctor {
   doctorNotificationSettings DoctorNotificationSettings?
   doctorRegionalSettings     DoctorRegionalSettings?
   doctorSecuritySettings     DoctorSecuritySettings?
-  notifications              DoctorNotification[]
+  doctorNotifications         DoctorNotification[]
   weeklySchedules            DoctorWeeklySchedule[]
   events                     Event[]                     @relation("DoctorEvents")
   labs                       Lab[]                       @relation("DoctorLabs")

@@ -1,13 +1,21 @@
+enum DoctorNotificationType {
+  APPOINTMENT_REMINDER
+  PATIENT_UPDATE
+  CALL_LOG
+  TASK_DEADLINE
+}
+
 model DoctorNotification {
-  id        String                   @id @default(uuid())
-  doctorId  String
-  type      DoctorNotificationType
-  title     String
-  message   String
-  metadata  Json?
-  isRead    Boolean                  @default(false)
-  createdAt DateTime                 @default(now())
-  doctor    Doctor                   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  id          String                @id @default(cuid())
+  doctorId    String
+  type        DoctorNotificationType
+  title       String
+  message     String
+  metadata    Json?
+  isRead      Boolean               @default(false)
+  createdAt   DateTime              @default(now())
+
+  doctor      Doctor                @relation(fields: [doctorId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([doctorId])
   @@index([isRead])
