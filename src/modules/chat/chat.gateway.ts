@@ -31,9 +31,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private connectedUsers = new Map<string, string>(); // userId -> socketId
 
-  constructor(private chatService: ChatService) {}
+  constructor(private chatService: ChatService) { }
 
   async handleConnection(client: AuthenticatedSocket) {
+    console.log(`💬 Chat connection attempt on namespace ${client.nsp.name}: ${client.id}`);
     try {
       // Extract userId from handshake query or auth token
       const userId = client.handshake.query.userId as string;
@@ -69,7 +70,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (client.userId) {
       // Broadcast user offline status
       this.server.emit('user_offline', { userId: client.userId, userRole: client.userRole });
-      
+
       this.connectedUsers.delete(client.userId);
       // console.log(`User ${client.userId} disconnected from chat`);
     }
@@ -85,7 +86,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         console.error('❌ User not authenticated');
         return { success: false, error: 'User not authenticated' };
       }
-      
+
       // console.log('📨 Sending message from userId:', client.userId, 'Role:', client.userRole);
       // console.log('📨 Message data:', JSON.stringify(data, null, 2));
 
@@ -129,21 +130,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // ONE-CONVERSATION-PER-DOCTOR MODEL:
       // - If DOCTOR sends: broadcast to ALL admins
       // - If ADMIN sends: send to the specific doctor
-      
+
       if (client.userRole === 'DOCTOR') {
         // Doctor sending message - broadcast to ALL admins
         // console.log('👨‍⚕️ Doctor sending message - broadcasting to all admins');
-        
+
         // Get all admin user IDs
         const allAdmins = await this.chatService.getAllAdminUserIds();
         // console.log(`📋 Found ${allAdmins.length} admins:`, allAdmins);
-        
+
         // Send to each admin's room
         for (const adminUserId of allAdmins) {
           // console.log('📬 Sending to admin userId:', adminUserId);
           this.server.to(`user:${adminUserId}`).emit('new_message', messagePayload);
         }
-        
+
         // console.log(`✅ Message sent to ${allAdmins.length} admins`);
       } else if (client.userRole === 'ADMIN' && conversation.userId) {
         // Admin sending to Doctor
@@ -174,9 +175,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (!client.userId) {
         return { success: false, error: 'User not authenticated' };
       }
-      
+
       client.join(`conversation:${data.conversationId}`);
-      
+
       // Mark messages as read
       await this.chatService.markMessagesAsRead(
         data.conversationId,
@@ -224,7 +225,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (!client.userId) {
         return { success: false, error: 'User not authenticated' };
       }
-      
+
       await this.chatService.markMessagesAsRead(
         data.conversationId,
         client.userId,

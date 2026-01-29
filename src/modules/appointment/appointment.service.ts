@@ -13,6 +13,7 @@ import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { GetAllAppointmentsDto } from './dto/get-all-appointments.dto';
 import { GetSlotAvailabilityDto } from './dto/get-slot-availability.dto';
 import { AppointmentStatus, BufferTime, WeekDay } from 'generated/prisma';
+import { NotificationHelperService } from '../notification/notification-helper.service';
 
 @Injectable()
 export class AppointmentService {
@@ -20,6 +21,7 @@ export class AppointmentService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
+    private notificationHelper: NotificationHelperService,
   ) { }
 
   // ----------------- CREATE APPOINTMENT -------------------
@@ -65,6 +67,17 @@ export class AppointmentService {
           bloodGroup: dto.bloodGroup,
         },
       });
+
+      // Trigger Patient Notification
+      try {
+        await this.notificationHelper.notifyPatientUpdate(doctorId, {
+          patientId: patient.id,
+          patientName: `${patient.firstName} ${patient.lastName}`,
+          action: 'added',
+        });
+      } catch (error) {
+        console.error('Failed to send patient notification:', error);
+      }
     }
 
     // 3. Time Calculations
@@ -244,6 +257,17 @@ export class AppointmentService {
         appointmentType: true,
       },
     });
+
+    // 7. Trigger Notification
+    try {
+      await this.notificationHelper.notifyAppointmentReminder(doctorId, {
+        appointmentId: appointment.id.toString(),
+        patientName: `${patient.firstName} ${patient.lastName}`,
+        appointmentTime: new Date(dto.appointmentDate),
+      });
+    } catch (error) {
+      console.error('Failed to send appointment notification:', error);
+    }
 
     return { appointment };
   }

@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { deleteFileFromUploads } from 'src/utils/file-delete.util';
+import { NotificationHelperService } from '../notification/notification-helper.service';
 
 @Injectable()
 export class PatientService {
@@ -17,7 +18,8 @@ export class PatientService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
-  ) {}
+    private notificationHelper: NotificationHelperService,
+  ) { }
 
   // ----------------- ADD PATIENT -------------------
   async addPatient(accessToken: string, dto: CreatePatientDto) {
@@ -117,6 +119,17 @@ export class PatientService {
         updatedAt: true,
       },
     });
+
+    // Trigger Notification
+    try {
+      await this.notificationHelper.notifyPatientUpdate(doctorId, {
+        patientId: patient.id,
+        patientName: `${patient.firstName} ${patient.lastName}`,
+        action: 'added',
+      });
+    } catch (error) {
+      console.error('Failed to send patient notification:', error);
+    }
 
     return {
       patient,
