@@ -2170,28 +2170,58 @@ export class AiAgentService {
       }
     }
 
-    // 2. Resolve Patient
+    // 2. Resolve Patient with strict validation
     let resolvedPatientId = patient_id;
+    let patientFound = false;
+    let patientMatchMethod = '';
+    
     if (!resolvedPatientId) {
       let patient;
+      
+      // Priority 1: Insurance ID (exact match only)
       if (insuranceId) {
         patient = await this.prisma.patient.findUnique({ where: { insuranceId } });
+        if (patient) {
+          patientMatchMethod = 'insurance_id';
+          patientFound = true;
+        }
       }
+      
+      // Priority 2: Phone number (exact match only)
       if (!patient && phoneNumber) {
         patient = await this.prisma.patient.findFirst({ where: { phone: phoneNumber } });
+        if (patient) {
+          patientMatchMethod = 'phone_number';
+          patientFound = true;
+        }
       }
-      // Fallback: Name-based lookup if ID/Phone fail
-      if (!patient && patient_info?.firstName && patient_info?.lastName) {
+      
+      // Priority 3: Name-based lookup (only if no ID provided at all)
+      if (!patient && !insuranceId && !phoneNumber && patient_info?.firstName && patient_info?.lastName) {
         patient = await this.prisma.patient.findFirst({
           where: {
             firstName: { contains: patient_info.firstName, mode: 'insensitive' },
             lastName: { contains: patient_info.lastName, mode: 'insensitive' },
           }
         });
+        if (patient) {
+          patientMatchMethod = 'name';
+          patientFound = true;
+        }
       }
 
-      if (!patient) return { error: "I couldn't find your patient record. Could you please provide your insurance ID, phone number, or full name?" };
+      if (!patient) {
+        // If insurance ID was provided but not found, be specific
+        if (insuranceId) {
+          return { error: "I couldn't find any patient record with that insurance ID. Please check your insurance ID and try again." };
+        }
+        return { error: "I couldn't find your patient record. Could you please provide your insurance ID, phone number, or full name?" };
+      }
+      
       resolvedPatientId = patient.id;
+      
+      // Log how we found the patient for debugging
+      console.log(`[resolveTargetAppointment] Patient found using: ${patientMatchMethod}, ID: ${resolvedPatientId}`);
     }
 
     // 3. Fetch all SCHEDULED or RESCHEDULED appointments for this patient and doctor
@@ -2212,7 +2242,9 @@ export class AiAgentService {
       return { appointment: appointments[0] };
     }
 
-    // 4. Handle multiple appointments with context
+    // 4. Handle multiple appointments with strict validation
+    console.log(`[resolveTargetAppointment] Found ${appointments.length} appointments for patient ${resolvedPatientId}`);
+    
     // Support month/range matching (e.g., "in March", "this month")
     const searchDateStr = payload.intent?.toLowerCase().includes('reschedule')
       ? appointment_date
@@ -2245,13 +2277,27 @@ export class AiAgentService {
       if (filtered.length === 1) {
         return { appointment: filtered[0] };
       }
-      if (filtered.length > 1) {
-        return { multipleOptions: filtered };
-      }
     }
 
-    // 5. If still multiple, return them as options
-    return { multipleOptions: appointments };
+    // If multiple appointments remain, present them clearly for user selection
+    const options = appointments
+      .map((a, idx) => {
+        const date = a.appointmentDate ? new Date(a.appointmentDate).toLocaleDateString('en-US', { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        }) : 'unknown date';
+        const time = a.startTime || 'unknown time';
+        const type = 'appointment'; // Simplified since appointmentType relation not available
+        return `${idx + 1}. ${type} on ${date} at ${time}`;
+      })
+      .join('\n');
+
+    return {
+      multipleOptions: appointments,
+      error: `I found multiple appointments for you:\n${options}\n\nPlease tell me which specific appointment you'd like to reschedule by mentioning the date (e.g., "the one on February 15th") or the appointment type and date (e.g., "the blood test on February 15th").`
+    };  
   }
 
   // =============== GET PATIENT HISTORY ===============
@@ -2673,17 +2719,15 @@ export class AiAgentService {
 
     if (targetResolution.error) {
       return {
-        reply_text: targetResolution.error,
+        reply_text: targetResolution.error || "I couldn't resolve your appointment. Please provide more details.",
         action: 'ask_identity',
       };
     }
 
     if (targetResolution.multipleOptions) {
-      const options = targetResolution.multipleOptions
-        .map((a, idx) => `${idx + 1}. ${a.appointmentDate ? new Date(a.appointmentDate).toDateString() : 'unknown date'} at ${a.startTime || 'unknown time'}`)
-        .join('\n');
+      // The error message now contains the formatted options
       return {
-        reply_text: `I see you have multiple appointments scheduled:\n${options}\nWhich one would you like to reschedule? You can just say the date.`,
+        reply_text: targetResolution.error || "I found multiple appointments. Please specify which one you'd like to reschedule.",
         action: 'ask_identity',
       };
     }
