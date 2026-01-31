@@ -35,6 +35,48 @@ export class AiAgentService {
       this.config.get<string>('ELEVENLABS_WEBHOOK_API_KEY') || '';
   }
 
+  // =============== HELPER METHODS ===============
+  
+  private calculateStringSimilarity(str1: string, str2: string): number {
+    // Simple similarity calculation based on common prefix/suffix and character matching
+    const longer = str1.length > str2.length ? str1 : str2;
+    const shorter = str1.length > str2.length ? str2 : str1;
+    
+    if (longer.length === 0) return 1.0;
+    
+    // Calculate Levenshtein distance (simplified)
+    const distance = this.levenshteinDistance(longer, shorter);
+    return (longer.length - distance) / longer.length;
+  }
+  
+  private levenshteinDistance(str1: string, str2: string): number {
+    const matrix: number[][] = [];
+    
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i];
+    }
+    
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j;
+    }
+    
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+    
+    return matrix[str2.length][str1.length];
+  }
+
   // =============== MAIN WEBHOOK PROCESSOR ===============
   async processWebhook(
     payload: WebhookPayloadDto,
@@ -1065,7 +1107,42 @@ export class AiAgentService {
     }
 
     // Use extracted phone if not provided in DTO
-    let phoneNumber = dto.phone_number || patientInfo.phone;
+    // For demo calls, set phone to null if no real phone number found
+    let phoneNumber: string | null = dto.phone_number || patientInfo.phone || null;
+    
+    // Check if this is a demo call and phone number is actually an insurance ID
+    if (phoneNumber && phoneNumber.length >= 9 && /^\d+$/.test(phoneNumber)) {
+      // If phone number looks like an insurance ID (9-10 digits) and we have an insurance ID too,
+      // check if it's a full match or partial match (missing digits)
+      if (insuranceId) {
+        const isFullMatch = phoneNumber === insuranceId;
+        
+        // Enhanced partial match detection:
+        // 1. Check if one contains the other
+        // 2. Check if they have high similarity (missing/extra digits)
+        let isPartialMatch = insuranceId.includes(phoneNumber) || phoneNumber.includes(insuranceId);
+        
+        // Additional check: if they're both numeric and have high similarity
+        if (!isPartialMatch && phoneNumber.length >= 9 && insuranceId.length >= 9) {
+          const shorter = phoneNumber.length < insuranceId.length ? phoneNumber : insuranceId;
+          const longer = phoneNumber.length < insuranceId.length ? insuranceId : phoneNumber;
+          
+          // Check if shorter is a substring of longer after removing potential noise
+          if (longer.includes(shorter)) {
+            isPartialMatch = true;
+          } else {
+            // Check for high similarity (allowing for 1-2 digit differences)
+            const similarity = this.calculateStringSimilarity(phoneNumber, insuranceId);
+            isPartialMatch = similarity >= 0.8; // 80% similarity threshold
+          }
+        }
+        
+        if (isFullMatch || isPartialMatch) {
+          phoneNumber = null;
+          console.log(`Demo call detected: phone number set to null (${isFullMatch ? 'full' : 'partial'} match with insurance ID)`);
+        }
+      }
+    }
 
     // STEP 1: Try to find or create patient
     if (!patientId) {
@@ -1195,7 +1272,7 @@ export class AiAgentService {
         doctorId: dto.doctor_id,
         patientId: patientId,
         callSid: callSid,
-        phoneNumber: phoneNumber,
+        phoneNumber: phoneNumber, // Will be null for demo calls
         duration: callDuration || dto.duration,
         audioUrl: dto.audio_url,
         transcription: this.formatTranscriptionWithLabels(this.wordsToDigits(dto.transcription)),
@@ -1429,6 +1506,39 @@ export class AiAgentService {
 
     if (existing) {
       // If we have an existing record, update it with real ID, audioUrl, duration, and phone
+      // Apply demo call detection logic here too
+      let finalPhoneNumber = callerPhoneNumber || existing.phoneNumber;
+      
+      // Check if this is a demo call and phone number is actually an insurance ID
+      if (finalPhoneNumber && finalPhoneNumber.length >= 9 && /^\d+$/.test(finalPhoneNumber)) {
+        const existingInsuranceId = existing.insuranceId || extractedInfo.insuranceId;
+        // If phone number looks like an insurance ID (9-10 digits) and we have an insurance ID too,
+        // check if it's a full match or partial match (missing digits)
+        if (existingInsuranceId) {
+          const isFullMatch = finalPhoneNumber === existingInsuranceId;
+          
+          // Enhanced partial match detection
+          let isPartialMatch = existingInsuranceId.includes(finalPhoneNumber) || finalPhoneNumber.includes(existingInsuranceId);
+          
+          if (!isPartialMatch && finalPhoneNumber.length >= 9 && existingInsuranceId.length >= 9) {
+            const shorter = finalPhoneNumber.length < existingInsuranceId.length ? finalPhoneNumber : existingInsuranceId;
+            const longer = finalPhoneNumber.length < existingInsuranceId.length ? existingInsuranceId : finalPhoneNumber;
+            
+            if (longer.includes(shorter)) {
+              isPartialMatch = true;
+            } else {
+              const similarity = this.calculateStringSimilarity(finalPhoneNumber, existingInsuranceId);
+              isPartialMatch = similarity >= 0.8;
+            }
+          }
+          
+          if (isFullMatch || isPartialMatch) {
+            finalPhoneNumber = null;
+            console.log(`Demo call detected in webhook update: phone number set to null (${isFullMatch ? 'full' : 'partial'} match with insurance ID)`);
+          }
+        }
+      }
+      
       const updatedRecord = await this.prisma.callTranscription.update({
         where: { id: existing.id },
         data: {
@@ -1437,7 +1547,7 @@ export class AiAgentService {
           callSid: incomingCallSid, // UPDATE to the real ID so next time it matches!
           agentId: realData.agent_id || dto.agent_id || existing.agentId,
           // Update phone number if we found it and existing record doesn't have one
-          phoneNumber: callerPhoneNumber || existing.phoneNumber,
+          phoneNumber: finalPhoneNumber,
           // Only update transcript if missing
           transcription: existing.transcription ? undefined : this.formatTranscriptionWithLabels(this.wordsToDigits(transcriptionText)),
           // ALWAYS update summary with ElevenLabs summary when available (overwrite existing)
@@ -1517,9 +1627,41 @@ export class AiAgentService {
 
     // Find patient for the fallback record
     let patientId: string | null = null;
-    if (callerPhoneNumber) {
+    
+    // Apply demo call detection to caller phone number
+    let finalCallerPhoneNumber = callerPhoneNumber;
+    if (finalCallerPhoneNumber && finalCallerPhoneNumber.length >= 9 && /^\d+$/.test(finalCallerPhoneNumber)) {
+      const extractedInsuranceId = extractedInfo.insuranceId;
+      // If phone number looks like an insurance ID (9-10 digits) and we have an insurance ID too,
+      // check if it's a full match or partial match (missing digits)
+      if (extractedInsuranceId) {
+        const isFullMatch = finalCallerPhoneNumber === extractedInsuranceId;
+        
+        // Enhanced partial match detection
+        let isPartialMatch = extractedInsuranceId.includes(finalCallerPhoneNumber) || finalCallerPhoneNumber.includes(extractedInsuranceId);
+        
+        if (!isPartialMatch && finalCallerPhoneNumber.length >= 9 && extractedInsuranceId.length >= 9) {
+          const shorter = finalCallerPhoneNumber.length < extractedInsuranceId.length ? finalCallerPhoneNumber : extractedInsuranceId;
+          const longer = finalCallerPhoneNumber.length < extractedInsuranceId.length ? extractedInsuranceId : finalCallerPhoneNumber;
+          
+          if (longer.includes(shorter)) {
+            isPartialMatch = true;
+          } else {
+            const similarity = this.calculateStringSimilarity(finalCallerPhoneNumber, extractedInsuranceId);
+            isPartialMatch = similarity >= 0.8;
+          }
+        }
+        
+        if (isFullMatch || isPartialMatch) {
+          finalCallerPhoneNumber = null;
+          console.log(`Demo call detected in fallback creation: phone number set to null (${isFullMatch ? 'full' : 'partial'} match with insurance ID)`);
+        }
+      }
+    }
+    
+    if (finalCallerPhoneNumber) {
       const patient = await this.prisma.patient.findFirst({
-        where: { phone: callerPhoneNumber },
+        where: { phone: finalCallerPhoneNumber },
       });
       if (patient) {
         patientId = patient.id;
@@ -1533,7 +1675,7 @@ export class AiAgentService {
         patientId,
         callSid: incomingCallSid,
         agentId: realData.agent_id || dto.agent_id,
-        phoneNumber: callerPhoneNumber,
+        phoneNumber: finalCallerPhoneNumber, // Use demo call detection result
         duration: tempDto.duration,
         audioUrl: audioUrl,
         transcription: this.formatTranscriptionWithLabels(this.wordsToDigits(tempDto.transcription)),
@@ -2176,14 +2318,121 @@ export class AiAgentService {
 
     const resolvedTypeId = await this.resolveAppointmentType(payload.doctor_id, typeContext) || undefined;
 
-    // Normalize date extraction
+    // Normalize date extraction and handle "as soon as possible"
     let appointmentDate = payload.appointment_date || payload.requested_date;
-    if (!appointmentDate && payload.requested_time && payload.requested_time.includes('-')) {
-      appointmentDate = payload.requested_time;
+    let startTime = payload.start_time || payload.requested_time;
+    
+    // Check for "as soon as possible" requests
+    const isAsSoonAsPossible = 
+      (appointmentDate && appointmentDate.toLowerCase().includes('as soon as possible')) ||
+      (startTime && startTime.toLowerCase().includes('as soon as possible')) ||
+      (payload.transcription && payload.transcription.toLowerCase().includes('as soon as possible'));
+
+    console.log(`[DEBUG] handleBookingIntent: isAsSoonAsPossible=${isAsSoonAsPossible}`);
+    console.log(`[DEBUG] appointmentDate=${appointmentDate}, startTime=${startTime}`);
+    console.log(`[DEBUG] transcription contains 'as soon as possible': ${payload.transcription && payload.transcription.toLowerCase().includes('as soon as possible')}`);
+
+    if (isAsSoonAsPossible) {
+      console.log('[DEBUG] Entering "as soon as possible" booking logic');
+      // Find the earliest available slot
+      try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Start from today
+        
+        // Search for next 7 days for availability
+        for (let i = 0; i < 7; i++) {
+          const checkDate = new Date(today);
+          checkDate.setDate(checkDate.getDate() + i);
+          
+          const availability = await this.getAvailableSlots({
+            doctor_id: payload.doctor_id,
+            date: checkDate.toISOString().split('T')[0],
+            appointment_type_id: resolvedTypeId,
+          });
+
+          if (availability.summary.available > 0) {
+            // Found earliest slot - show it and ask for confirmation
+            const earliestSlot = availability.availableSlots[0];
+            const bookingDate = checkDate.toISOString().split('T')[0];
+            
+            // Show a few more options if available
+            const additionalSlots = availability.availableSlots.slice(1, 3);
+            const additionalText = additionalSlots.length > 0 
+              ? ` Other available times on ${bookingDate}: ${additionalSlots.map(s => s.startTime).join(', ')}.`
+              : '';
+
+            return {
+              reply_text: `I found the earliest available appointment for ${bookingDate} at ${earliestSlot.startTime}.${additionalText} Would you like me to book this ${bookingDate} at ${earliestSlot.startTime} slot for you?`,
+              suggested_slots: availability.availableSlots.slice(0, 5).map((s: any) => ({
+                date: bookingDate,
+                time: s.startTime,
+              })),
+              action: 'confirm_earliest_slot',
+              proposed_slot: {
+                date: bookingDate,
+                time: earliestSlot.startTime,
+              },
+            };
+          }
+        }
+
+        // No availability found in next 7 days
+        return {
+          reply_text: "I apologize, but we don't have availability in the next week. Would you like me to check further out, or connect you with our assistant?",
+          action: 'no_availability',
+          fallback_number: this.fallbackNumber,
+        };
+      } catch (error) {
+        console.error('Error finding earliest availability:', error);
+        return {
+          reply_text: "I apologize, but I'm having trouble finding availability. Could you please provide a specific date you'd like to book?",
+          action: 'ask_date',
+        };
+      }
     }
 
-    const startTime = payload.start_time || payload.requested_time;
+    // Handle date extraction from time field if needed
+    if (!appointmentDate && startTime && startTime.includes('-')) {
+      appointmentDate = startTime;
+    }
+
     const updatedPayload = { ...payload, appointment_type_id: resolvedTypeId || payload.appointment_type_id, appointment_date: appointmentDate, start_time: startTime };
+
+    // Handle confirmation for earliest slot (when user says yes to proposed slot)
+    if (payload.action === 'confirm_earliest_slot' && payload.proposed_slot) {
+      try {
+        const booking = await this.createBooking({
+          doctor_id: payload.doctor_id,
+          patient_id: payload.patient_id,
+          patient_info: payload.patient_info,
+          start_time: payload.proposed_slot.time,
+          appointment_date: payload.proposed_slot.date,
+          appointment_type_id: resolvedTypeId || payload.appointment_type_id,
+          caller_phone_number: payload.phone_number,
+        });
+
+        return {
+          reply_text: booking.is_new_patient
+            ? `Great! I've registered you and booked your appointment for ${payload.proposed_slot.date} at ${payload.proposed_slot.time}. You'll receive a confirmation shortly.`
+            : `Perfect! Your appointment is confirmed for ${payload.proposed_slot.date} at ${payload.proposed_slot.time}. See you then!`,
+          action: 'booking_confirmed',
+          booking_id: booking.booking_id,
+          is_new_patient: booking.is_new_patient,
+          success: true,
+          data: booking.appointment,
+        };
+      } catch (error) {
+        const errorMessage =
+          error instanceof BadRequestException
+            ? error.message
+            : "I'm sorry, that slot is no longer available. Let me find you another time.";
+
+        return {
+          reply_text: errorMessage,
+          action: 'slot_unavailable',
+        };
+      }
+    }
 
     // If start_time and appointment_date are provided, book directly
     if (startTime && appointmentDate && !startTime.includes('-')) {
@@ -2280,6 +2529,65 @@ export class AiAgentService {
     if (!requestedDate && payload.requested_time && payload.requested_time.includes('-')) {
       requestedDate = payload.requested_time;
     }
+    
+    // Check for "as soon as possible" requests
+    const isAsSoonAsPossible = 
+      (requestedDate && requestedDate.toLowerCase().includes('as soon as possible')) ||
+      (payload.requested_time && payload.requested_time.toLowerCase().includes('as soon as possible')) ||
+      (payload.transcription && payload.transcription.toLowerCase().includes('as soon as possible')) ||
+      (payload.appointment_date && payload.appointment_date.toLowerCase().includes('as soon as possible'));
+
+    if (isAsSoonAsPossible) {
+      // Find the earliest available slot across next 7 days
+      try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Start from today
+        
+        for (let i = 0; i < 7; i++) {
+          const checkDate = new Date(today);
+          checkDate.setDate(checkDate.getDate() + i);
+          
+          const availability = await this.getAvailableSlots({
+            doctor_id: payload.doctor_id,
+            date: checkDate.toISOString().split('T')[0],
+            appointment_type_id: resolvedTypeId,
+          });
+
+          if (availability.summary.available > 0) {
+            const displaySlots = availability.availableSlots.slice(0, 6);
+            const slotList = displaySlots
+              .map((s: any) => `${s.startTime}`)
+              .join(', ');
+
+            const moreText = availability.summary.available > 6
+              ? `. We have many more slots available throughout the day until ${availability.availableSlots[availability.availableSlots.length - 1].startTime}.`
+              : '.';
+
+            return {
+              reply_text: `The earliest availability is on ${checkDate.toISOString().split('T')[0]}. We have ${availability.summary.available} slots available. The earliest times are: ${slotList}${moreText} Would you like me to book the earliest slot at ${availability.availableSlots[0].startTime}?`,
+              suggested_slots: availability.availableSlots.slice(0, 20).map((s: any) => ({
+                date: checkDate.toISOString().split('T')[0],
+                time: s.startTime,
+              })),
+              action: 'show_slots',
+            };
+          }
+        }
+
+        return {
+          reply_text: "I apologize, but we don't have availability in the next week. Would you like me to check further out, or connect you with our assistant?",
+          action: 'no_availability',
+          fallback_number: this.fallbackNumber,
+        };
+      } catch (error) {
+        console.error('Error finding earliest availability:', error);
+        return {
+          reply_text: "I apologize, but I'm having trouble checking availability. Could you please provide a specific date you'd like to check?",
+          action: 'ask_date',
+        };
+      }
+    }
+    
     if (!requestedDate) {
       requestedDate = new Date().toISOString().split('T')[0];
     }
@@ -2534,6 +2842,28 @@ export class AiAgentService {
     payload: WebhookPayloadDto,
   ): Promise<WebhookResponseDto> {
     const query = payload.query || payload.transcription || '';
+
+    // Check for "as soon as possible" in inquiry intent - redirect to booking logic
+    const isAsSoonAsPossible = 
+      (query && query.toLowerCase().includes('as soon as possible')) ||
+      (payload.appointment_date && payload.appointment_date.toLowerCase().includes('as soon as possible')) ||
+      (payload.requested_date && payload.requested_date.toLowerCase().includes('as soon as possible')) ||
+      (payload.requested_time && payload.requested_time.toLowerCase().includes('as soon as possible'));
+
+    // Check if this is a booking request with "as soon as possible"
+    const isBookingRequest = 
+      (query && (query.toLowerCase().includes('book') || query.toLowerCase().includes('schedule') || query.toLowerCase().includes('appointment'))) ||
+      (payload.intent && (payload.intent.toLowerCase().includes('book') || payload.intent.toLowerCase().includes('schedule')));
+
+    if (isAsSoonAsPossible && isBookingRequest) {
+      console.log('Booking request with "as soon as possible" detected in inquiry intent, redirecting to booking');
+      // Redirect to booking intent handler
+      return this.handleBookingIntent(payload);
+    } else if (isAsSoonAsPossible) {
+      console.log('As soon as possible detected in inquiry intent, redirecting to availability check');
+      // Redirect to availability intent handler
+      return this.handleAvailabilityIntent(payload);
+    }
 
     // Special handling for "what types of appointments"
     if (query.toLowerCase().includes('type') && (query.toLowerCase().includes('available') || query.toLowerCase().includes('offer'))) {
