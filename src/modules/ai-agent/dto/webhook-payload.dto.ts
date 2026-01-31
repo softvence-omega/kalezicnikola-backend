@@ -73,4 +73,14 @@ export class WebhookPayloadDto {
 
   @IsOptional()
   agent_busy?: boolean | string;
+
+  @IsString()
+  @IsOptional()
+  action?: string;
+
+  @IsOptional()
+  proposed_slot?: {
+    date: string;
+    time: string;
+  };
 }

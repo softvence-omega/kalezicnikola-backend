@@ -10,5 +10,9 @@ export class WebhookResponseDto {
   is_new_patient?: boolean; 
   success?: boolean;
   data?: any;
-  fallback_number?: string; 
+  fallback_number?: string;
+  proposed_slot?: {
+    date: string;
+    time: string;
+  };
 }
