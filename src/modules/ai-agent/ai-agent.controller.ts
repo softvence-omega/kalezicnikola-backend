@@ -192,4 +192,13 @@ export class AiAgentController {
     const doctorId = req.doctor.id;
     return this.aiAgentService.updateBufferSetting(doctorId, bufferMinutes);
   }
+
+  @Get('settings/buffer')
+  @UseGuards(DoctorGuard)
+  async getBufferTime(
+    @Req() req: any,
+  ) {
+    const doctorId = req.doctor.id;
+    return this.aiAgentService.getBufferSetting(doctorId);
+  }
 }

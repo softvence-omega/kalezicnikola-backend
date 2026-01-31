@@ -2352,6 +2352,39 @@ export class AiAgentService {
     });
   }
 
+  async getBufferSetting(doctorId: string) {
+    // Get the doctor's regional settings
+    const settings = await this.prisma.doctorRegionalSettings.findUnique({
+      where: { doctorId },
+    });
+
+    if (!settings || !settings.bufferTimeBetween) {
+      // Return default if no settings exist
+      return {
+        buffer_minutes: 10, // Default 10 minutes
+        buffer_setting: 'Minutes_10',
+        is_default: true
+      };
+    }
+
+    // Map BufferTime enum back to minutes
+    const bufferMap: Record<string, number> = {
+      'Minutes_5': 5,
+      'Minutes_10': 10,
+      'Minutes_15': 15,
+      'Minutes_20': 20,
+      'Minutes_30': 30,
+    };
+
+    const bufferMinutes = bufferMap[settings.bufferTimeBetween] || 10;
+
+    return {
+      buffer_minutes: bufferMinutes,
+      buffer_setting: settings.bufferTimeBetween,
+      is_default: false
+    };
+  }
+
   // =============== INTENT HANDLERS ===============
   private async handleBookingIntent(
     payload: WebhookPayloadDto,
