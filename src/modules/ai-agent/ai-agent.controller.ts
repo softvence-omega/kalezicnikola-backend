@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { DoctorGuard } from 'src/common/guard/doctor.guard';
 import { AdminOrDoctorGuard } from 'src/common/guard/admin-or-doctor.guard';
+import { AdminGuard } from 'src/common/guard/admin.guard';
 import { Response } from 'express';
 import { AiAgentService } from './ai-agent.service';
 import { WebhookAuthGuard } from './guards/webhook-auth.guard';
@@ -27,7 +28,14 @@ import { AgentCreateTaskDto } from './dto/agent-create-task.dto';
 
 @Controller('ai-agent')
 export class AiAgentController {
-  constructor(private aiAgentService: AiAgentService) {}
+  constructor(private aiAgentService: AiAgentService) { }
+
+  // =============== ADMIN ROUTES ===============
+  @Get('recent-interaction')
+  @UseGuards(AdminGuard)
+  async getAllRecentInteractions(@Query() query: any) {
+    return this.aiAgentService.getAllRecentInteractions(query);
+  }
 
   // =============== POST-CALL WEBHOOK ===============
   @Post('webhook/post-call')
@@ -191,5 +199,14 @@ export class AiAgentController {
   ) {
     const doctorId = req.doctor.id;
     return this.aiAgentService.updateBufferSetting(doctorId, bufferMinutes);
+  }
+
+  @Get('settings/buffer')
+  @UseGuards(DoctorGuard)
+  async getBufferTime(
+    @Req() req: any,
+  ) {
+    const doctorId = req.doctor.id;
+    return this.aiAgentService.getBufferSetting(doctorId);
   }
 }

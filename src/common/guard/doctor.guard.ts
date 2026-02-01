@@ -13,7 +13,7 @@ export class DoctorGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    console.log('👨‍⚕️ DoctorGuard executing for path:', request.path);
+    // console.log('👨‍⚕️ DoctorGuard executing for path:', request.path);
     const token = request.headers.authorization?.split(" ")[1];
 
     if (!token) {

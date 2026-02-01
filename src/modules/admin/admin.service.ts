@@ -1,10 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { deleteFileFromUploads } from 'src/utils/file-delete.util';
 import { GetDoctorsDto } from './dto/get-doctors.dto';
 import { GetDoctorSubscriptionsDto } from './dto/get-doctor-subscriptions.dto';
 import { GetDashboardStatsDto } from './dto/get-dashboard-stats.dto';
 import { GetRevenueGraphDto } from './dto/get-revenue-graph.dto';
 import { GetUsersDto } from './dto/get-users.dto';
+import { UpdateAdminProfileDto } from './dto/update-admin-profile.dto';
 
 @Injectable()
 export class AdminService {
@@ -962,6 +964,150 @@ export class AdminService {
       },
       totalRevenue,
       data
+    };
+  }
+
+  async getMyProfile(adminId: string) {
+    // Validate adminId parameter
+    if (!adminId) {
+      throw new BadRequestException('Admin ID is required');
+    }
+
+    const admin = await this.prisma.admin.findUnique({
+      where: { id: adminId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        photo: true,
+        phone: true,
+        dob: true,
+        address: true,
+        gender: true,
+        emailVerifiedAt: true,
+        twoFactorEnabled: true,
+        lastLoginAt: true,
+        createdAt: true,
+        updatedAt: true,
+        failedLoginAttempts: true,
+        lastPasswordChangeAt: true,
+        user: {
+          select: {
+            id: true,
+            role: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        }
+      },
+    });
+
+    if (!admin) {
+      return {
+        statusCode: 404,
+        success: false,
+        message: 'Admin not found',
+      };
+    }
+
+    return {
+      statusCode: 200,
+      success: true,
+      message: 'Profile retrieved successfully',
+      data: {
+        ...admin,
+        isEmailVerified: !!admin.emailVerifiedAt,
+
+      }
+    };
+  }
+
+  async updateMyProfile(adminId: string, dto: any, file?: Express.Multer.File) {
+    console.log(`[AdminService] Updating profile for admin: ${adminId}`);
+    console.log(`[AdminService] Received data:`, dto);
+    console.log(`[AdminService] File uploaded:`, file ? file.filename : 'No file');
+
+    const admin = await this.prisma.admin.findUnique({
+      where: { id: adminId },
+    });
+
+    if (!admin) {
+      return {
+        statusCode: 404,
+        success: false,
+        message: 'Admin not found',
+      };
+    }
+
+    console.log(`[AdminService] Found admin:`, admin.email);
+
+    // Check if email is being changed and if it's already in use
+    if (dto.email && dto.email !== admin.email) {
+      const existingEmail = await this.prisma.admin.findUnique({
+        where: { email: dto.email },
+      });
+
+      if (existingEmail) {
+        return {
+          statusCode: 400,
+          success: false,
+          message: 'Email already in use',
+        };
+      }
+    }
+
+    // Build update data object, only including defined fields
+    const updateData: any = {};
+
+    if (dto.firstName !== undefined) updateData.firstName = dto.firstName;
+    if (dto.lastName !== undefined) updateData.lastName = dto.lastName;
+    if (dto.email !== undefined) updateData.email = dto.email;
+    if (dto.phone !== undefined) updateData.phone = dto.phone;
+    if (dto.dob !== undefined) updateData.dob = dto.dob ? new Date(dto.dob) : null;
+    if (dto.address !== undefined) updateData.address = dto.address;
+    if (dto.gender !== undefined) updateData.gender = dto.gender;
+    if (dto.photo !== undefined) updateData.photo = dto.photo;
+
+    console.log(`[AdminService] Update data:`, updateData);
+
+    const updatedAdmin = await this.prisma.admin.update({
+      where: { id: adminId },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        photo: true,
+        phone: true,
+        dob: true,
+        address: true,
+        gender: true,
+        emailVerifiedAt: true,
+        twoFactorEnabled: true,
+        lastLoginAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    // Handle photo deletion - delete old photo if new one is successfully saved
+    if (dto.photo !== undefined) {
+      // Delete old photo if it exists and is different from the new one
+      if (admin.photo && admin.photo !== updatedAdmin.photo) {
+        console.log(`[AdminService] Deleting old photo: ${admin.photo}`);
+        await deleteFileFromUploads(admin.photo);
+      }
+    }
+
+    console.log(`[AdminService] Profile updated successfully for:`, updatedAdmin.email);
+
+    return {
+      statusCode: 200,
+      success: true,
+      message: 'Profile updated successfully',
+      data: updatedAdmin,
     };
   }
 }

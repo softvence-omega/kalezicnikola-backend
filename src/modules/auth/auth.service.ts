@@ -773,11 +773,10 @@ export class AuthService {
     // 2FA enabled check (default true)
     if (user.twoFactorEnabled === false) return false;
 
-    // Trigger: First login of the day
+    // Trigger: First login ever
     if (!user.lastLoginAt) return true;
+
     const lastLogin = new Date(user.lastLoginAt);
-    const today = new Date();
-    if (lastLogin.toDateString() !== today.toDateString()) return true;
 
     // Trigger: Long inactivity (>30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);

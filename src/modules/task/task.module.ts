@@ -1,13 +1,14 @@
 import { Module } from '@nestjs/common';
+import { NotificationModule } from '../notification/notification.module';
 import { JwtModule } from '@nestjs/jwt';
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 
 @Module({
-  imports: [PrismaModule, JwtModule],
+  imports: [PrismaModule, JwtModule, NotificationModule],
   controllers: [TaskController],
   providers: [TaskService],
   exports: [TaskService],
 })
-export class TaskModule {}
+export class TaskModule { }

@@ -28,7 +28,7 @@ export class AdminGuard implements CanActivate {
       throw new ForbiddenException('Admin access required');
     }
 
-    request.admin = session.admin;
+    request.user = session.admin;
     return true;
   }
 }

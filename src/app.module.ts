@@ -19,6 +19,7 @@ import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { AdminModule } from './modules/admin/admin.module';
 import { EventModule } from './modules/event/event.module';
+import { NotificationModule } from './modules/notification/notification.module';
 
 @Module({
   imports: [
@@ -42,8 +43,9 @@ import { EventModule } from './modules/event/event.module';
     ChatModule,
     AdminModule,
     EventModule,
+    NotificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }

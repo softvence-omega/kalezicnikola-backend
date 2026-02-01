@@ -5,6 +5,10 @@ model Admin {
   firstName            String?
   lastName             String?
   photo                String?
+  phone                String?
+  dob                  DateTime?
+  address              String?
+  gender               Gender?
   emailVerifiedAt      DateTime?
   twoFactorSecret      String?
   twoFactorEnabled     Boolean?        @default(true)
@@ -58,6 +62,7 @@ model Doctor {
   doctorNotificationSettings DoctorNotificationSettings?
   doctorRegionalSettings     DoctorRegionalSettings?
   doctorSecuritySettings     DoctorSecuritySettings?
+  doctorNotifications         DoctorNotification[]
   weeklySchedules            DoctorWeeklySchedule[]
   events                     Event[]                     @relation("DoctorEvents")
   labs                       Lab[]                       @relation("DoctorLabs")
