@@ -209,4 +209,58 @@ export class AiAgentController {
     const doctorId = req.doctor.id;
     return this.aiAgentService.getBufferSetting(doctorId);
   }
+
+  // =============== AGENT MANAGEMENT ===============
+  @Get('doctor/:doctorId')
+  @UseGuards(AdminOrDoctorGuard)
+  async getDoctorAgent(
+    @Param('doctorId') doctorId: string,
+    @Req() req: any,
+  ) {
+    // Doctors can only access their own agent, admins can access any
+    if (req.role === 'doctor' && req.user.id !== doctorId) {
+      throw new BadRequestException('You can only access your own agent');
+    }
+    return this.aiAgentService.getDoctorAgent(doctorId);
+  }
+
+  @Patch('doctor/:doctorId')
+  @UseGuards(AdminOrDoctorGuard)
+  async updateDoctorAgent(
+    @Param('doctorId') doctorId: string,
+    @Body() updates: any,
+    @Req() req: any,
+  ) {
+    // Doctors can only update their own agent, admins can update any
+    if (req.role === 'doctor' && req.user.id !== doctorId) {
+      throw new BadRequestException('You can only update your own agent');
+    }
+    return this.aiAgentService.updateDoctorAgent(doctorId, updates);
+  }
+
+  @Post('doctor/:doctorId/delete')
+  @UseGuards(AdminOrDoctorGuard)
+  async deleteDoctorAgent(
+    @Param('doctorId') doctorId: string,
+    @Req() req: any,
+  ) {
+    // Doctors can only delete their own agent, admins can delete any
+    if (req.role === 'doctor' && req.user.id !== doctorId) {
+      throw new BadRequestException('You can only delete your own agent');
+    }
+    return this.aiAgentService.deleteDoctorAgent(doctorId);
+  }
+
+  @Post('doctor/:doctorId/recreate')
+  @UseGuards(AdminOrDoctorGuard)
+  async recreateDoctorAgent(
+    @Param('doctorId') doctorId: string,
+    @Req() req: any,
+  ) {
+    // Doctors can only recreate their own agent, admins can recreate any
+    if (req.role === 'doctor' && req.user.id !== doctorId) {
+      throw new BadRequestException('You can only recreate your own agent');
+    }
+    return this.aiAgentService.recreateDoctorAgent(doctorId);
+  }
 }

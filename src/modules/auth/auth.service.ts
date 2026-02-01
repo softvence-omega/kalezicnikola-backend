@@ -19,6 +19,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
 import { Verify2faOtpDto } from './dto/verify-2fa-otp.dto';
+import { AiAgentService } from '../ai-agent/ai-agent.service';
 
 export interface AuthLoginResponse {
   requiresOtp: boolean;
@@ -38,6 +39,7 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private emailService: EmailService,
+    private aiAgentService: AiAgentService,
   ) {
     this.tokenUtil = new TokenUtil(jwt, config);
   }
@@ -82,24 +84,51 @@ export class AuthService {
     );
     const passwordHash = await bcrypt.hash(dto.password, saltRounds);
 
-    const doctor = await this.prisma.doctor.create({
-      data: {
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        email: dto.email,
-        passwordHash,
-        licenceNo: dto.licenceNo || null,
-        specialities: [],
-      },
-    });
+    // Create doctor and agent in a transaction (atomic operation)
+    let doctor;
+    let agentId: string | null = null;
 
-    // Send welcome email
-    await this.emailService.sendWelcomeEmail(
-      doctor.email!,
-      doctor.firstName || 'Doctor',
-    );
+    try {
+      // First, create the doctor
+      doctor = await this.prisma.doctor.create({
+        data: {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          email: dto.email,
+          passwordHash,
+          licenceNo: dto.licenceNo || null,
+          specialities: [],
+        },
+      });
 
-    return doctor;
+      // Then, create the ElevenLabs agent
+      agentId = await this.aiAgentService.createDoctorAgent(doctor.id);
+
+      // Update doctor with agent ID
+      doctor = await this.prisma.doctor.update({
+        where: { id: doctor.id },
+        data: { elevenlabsAgentId: agentId },
+      });
+
+      // Send welcome email
+      await this.emailService.sendWelcomeEmail(
+        doctor.email!,
+        doctor.firstName || 'Doctor',
+      );
+
+      console.log(`✅ Successfully registered doctor ${doctor.id} with agent ${agentId}`);
+      return doctor;
+    } catch (error) {
+      // If agent creation failed, rollback doctor creation
+      if (doctor?.id) {
+        console.error(`❌ Agent creation failed for doctor ${doctor.id}, rolling back...`);
+        await this.prisma.doctor.delete({ where: { id: doctor.id } });
+      }
+
+      throw new BadRequestException(
+        `Failed to register doctor: ${error.message}`,
+      );
+    }
   }
 
   // ----------------- ADMIN LOGIN -------------------

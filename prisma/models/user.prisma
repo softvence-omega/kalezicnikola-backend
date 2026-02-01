@@ -50,6 +50,7 @@ model Doctor {
   deletedAt                  DateTime?
   failedLoginAttempts        Int                         @default(0)
   lastPasswordChangeAt       DateTime?
+  elevenlabsAgentId          String?
   conversations              AdminConversation?
   appointmentTypes           AppointmentType[]
   appointments               Appointment[]               @relation("DoctorAppointments")
