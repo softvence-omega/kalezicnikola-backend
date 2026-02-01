@@ -36,30 +36,30 @@ export class AiAgentService {
   }
 
   // =============== HELPER METHODS ===============
-  
+
   private calculateStringSimilarity(str1: string, str2: string): number {
     // Simple similarity calculation based on common prefix/suffix and character matching
     const longer = str1.length > str2.length ? str1 : str2;
     const shorter = str1.length > str2.length ? str2 : str1;
-    
+
     if (longer.length === 0) return 1.0;
-    
+
     // Calculate Levenshtein distance (simplified)
     const distance = this.levenshteinDistance(longer, shorter);
     return (longer.length - distance) / longer.length;
   }
-  
+
   private levenshteinDistance(str1: string, str2: string): number {
     const matrix: number[][] = [];
-    
+
     for (let i = 0; i <= str2.length; i++) {
       matrix[i] = [i];
     }
-    
+
     for (let j = 0; j <= str1.length; j++) {
       matrix[0][j] = j;
     }
-    
+
     for (let i = 1; i <= str2.length; i++) {
       for (let j = 1; j <= str1.length; j++) {
         if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
@@ -73,7 +73,7 @@ export class AiAgentService {
         }
       }
     }
-    
+
     return matrix[str2.length][str1.length];
   }
 
@@ -1109,24 +1109,24 @@ export class AiAgentService {
     // Use extracted phone if not provided in DTO
     // For demo calls, set phone to null if no real phone number found
     let phoneNumber: string | null = dto.phone_number || patientInfo.phone || null;
-    
+
     // Check if this is a demo call and phone number is actually an insurance ID
     if (phoneNumber && phoneNumber.length >= 9 && /^\d+$/.test(phoneNumber)) {
       // If phone number looks like an insurance ID (9-10 digits) and we have an insurance ID too,
       // check if it's a full match or partial match (missing digits)
       if (insuranceId) {
         const isFullMatch = phoneNumber === insuranceId;
-        
+
         // Enhanced partial match detection:
         // 1. Check if one contains the other
         // 2. Check if they have high similarity (missing/extra digits)
         let isPartialMatch = insuranceId.includes(phoneNumber) || phoneNumber.includes(insuranceId);
-        
+
         // Additional check: if they're both numeric and have high similarity
         if (!isPartialMatch && phoneNumber.length >= 9 && insuranceId.length >= 9) {
           const shorter = phoneNumber.length < insuranceId.length ? phoneNumber : insuranceId;
           const longer = phoneNumber.length < insuranceId.length ? insuranceId : phoneNumber;
-          
+
           // Check if shorter is a substring of longer after removing potential noise
           if (longer.includes(shorter)) {
             isPartialMatch = true;
@@ -1136,7 +1136,7 @@ export class AiAgentService {
             isPartialMatch = similarity >= 0.8; // 80% similarity threshold
           }
         }
-        
+
         if (isFullMatch || isPartialMatch) {
           phoneNumber = null;
           console.log(`Demo call detected: phone number set to null (${isFullMatch ? 'full' : 'partial'} match with insurance ID)`);
@@ -1508,7 +1508,7 @@ export class AiAgentService {
       // If we have an existing record, update it with real ID, audioUrl, duration, and phone
       // Apply demo call detection logic here too
       let finalPhoneNumber = callerPhoneNumber || existing.phoneNumber;
-      
+
       // Check if this is a demo call and phone number is actually an insurance ID
       if (finalPhoneNumber && finalPhoneNumber.length >= 9 && /^\d+$/.test(finalPhoneNumber)) {
         const existingInsuranceId = existing.insuranceId || extractedInfo.insuranceId;
@@ -1516,14 +1516,14 @@ export class AiAgentService {
         // check if it's a full match or partial match (missing digits)
         if (existingInsuranceId) {
           const isFullMatch = finalPhoneNumber === existingInsuranceId;
-          
+
           // Enhanced partial match detection
           let isPartialMatch = existingInsuranceId.includes(finalPhoneNumber) || finalPhoneNumber.includes(existingInsuranceId);
-          
+
           if (!isPartialMatch && finalPhoneNumber.length >= 9 && existingInsuranceId.length >= 9) {
             const shorter = finalPhoneNumber.length < existingInsuranceId.length ? finalPhoneNumber : existingInsuranceId;
             const longer = finalPhoneNumber.length < existingInsuranceId.length ? existingInsuranceId : finalPhoneNumber;
-            
+
             if (longer.includes(shorter)) {
               isPartialMatch = true;
             } else {
@@ -1531,14 +1531,14 @@ export class AiAgentService {
               isPartialMatch = similarity >= 0.8;
             }
           }
-          
+
           if (isFullMatch || isPartialMatch) {
             finalPhoneNumber = null;
             console.log(`Demo call detected in webhook update: phone number set to null (${isFullMatch ? 'full' : 'partial'} match with insurance ID)`);
           }
         }
       }
-      
+
       const updatedRecord = await this.prisma.callTranscription.update({
         where: { id: existing.id },
         data: {
@@ -1627,7 +1627,7 @@ export class AiAgentService {
 
     // Find patient for the fallback record
     let patientId: string | null = null;
-    
+
     // Apply demo call detection to caller phone number
     let finalCallerPhoneNumber = callerPhoneNumber;
     if (finalCallerPhoneNumber && finalCallerPhoneNumber.length >= 9 && /^\d+$/.test(finalCallerPhoneNumber)) {
@@ -1636,14 +1636,14 @@ export class AiAgentService {
       // check if it's a full match or partial match (missing digits)
       if (extractedInsuranceId) {
         const isFullMatch = finalCallerPhoneNumber === extractedInsuranceId;
-        
+
         // Enhanced partial match detection
         let isPartialMatch = extractedInsuranceId.includes(finalCallerPhoneNumber) || finalCallerPhoneNumber.includes(extractedInsuranceId);
-        
+
         if (!isPartialMatch && finalCallerPhoneNumber.length >= 9 && extractedInsuranceId.length >= 9) {
           const shorter = finalCallerPhoneNumber.length < extractedInsuranceId.length ? finalCallerPhoneNumber : extractedInsuranceId;
           const longer = finalCallerPhoneNumber.length < extractedInsuranceId.length ? extractedInsuranceId : finalCallerPhoneNumber;
-          
+
           if (longer.includes(shorter)) {
             isPartialMatch = true;
           } else {
@@ -1651,14 +1651,14 @@ export class AiAgentService {
             isPartialMatch = similarity >= 0.8;
           }
         }
-        
+
         if (isFullMatch || isPartialMatch) {
           finalCallerPhoneNumber = null;
           console.log(`Demo call detected in fallback creation: phone number set to null (${isFullMatch ? 'full' : 'partial'} match with insurance ID)`);
         }
       }
     }
-    
+
     if (finalCallerPhoneNumber) {
       const patient = await this.prisma.patient.findFirst({
         where: { phone: finalCallerPhoneNumber },
@@ -2174,10 +2174,10 @@ export class AiAgentService {
     let resolvedPatientId = patient_id;
     let patientFound = false;
     let patientMatchMethod = '';
-    
+
     if (!resolvedPatientId) {
       let patient;
-      
+
       // Priority 1: Insurance ID (exact match only)
       if (insuranceId) {
         patient = await this.prisma.patient.findUnique({ where: { insuranceId } });
@@ -2186,7 +2186,7 @@ export class AiAgentService {
           patientFound = true;
         }
       }
-      
+
       // Priority 2: Phone number (exact match only)
       if (!patient && phoneNumber) {
         patient = await this.prisma.patient.findFirst({ where: { phone: phoneNumber } });
@@ -2195,7 +2195,7 @@ export class AiAgentService {
           patientFound = true;
         }
       }
-      
+
       // Priority 3: Name-based lookup (only if no ID provided at all)
       if (!patient && !insuranceId && !phoneNumber && patient_info?.firstName && patient_info?.lastName) {
         patient = await this.prisma.patient.findFirst({
@@ -2217,9 +2217,9 @@ export class AiAgentService {
         }
         return { error: "I couldn't find your patient record. Could you please provide your insurance ID, phone number, or full name?" };
       }
-      
+
       resolvedPatientId = patient.id;
-      
+
       // Log how we found the patient for debugging
       console.log(`[resolveTargetAppointment] Patient found using: ${patientMatchMethod}, ID: ${resolvedPatientId}`);
     }
@@ -2244,7 +2244,7 @@ export class AiAgentService {
 
     // 4. Handle multiple appointments with strict validation
     console.log(`[resolveTargetAppointment] Found ${appointments.length} appointments for patient ${resolvedPatientId}`);
-    
+
     // Support month/range matching (e.g., "in March", "this month")
     const searchDateStr = payload.intent?.toLowerCase().includes('reschedule')
       ? appointment_date
@@ -2282,11 +2282,11 @@ export class AiAgentService {
     // If multiple appointments remain, present them clearly for user selection
     const options = appointments
       .map((a, idx) => {
-        const date = a.appointmentDate ? new Date(a.appointmentDate).toLocaleDateString('en-US', { 
-          weekday: 'long', 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric' 
+        const date = a.appointmentDate ? new Date(a.appointmentDate).toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
         }) : 'unknown date';
         const time = a.startTime || 'unknown time';
         const type = 'appointment'; // Simplified since appointmentType relation not available
@@ -2297,10 +2297,86 @@ export class AiAgentService {
     return {
       multipleOptions: appointments,
       error: `I found multiple appointments for you:\n${options}\n\nPlease tell me which specific appointment you'd like to reschedule by mentioning the date (e.g., "the one on February 15th") or the appointment type and date (e.g., "the blood test on February 15th").`
-    };  
+    };
   }
 
-  // =============== GET PATIENT HISTORY ===============
+  // ==================== CALL HISTORY ====================
+
+  // ----------------- GET ALL RECENT INTERACTIONS (ADMIN) -------------------
+  async getAllRecentInteractions(query: any) {
+    const {
+      page = 1,
+      limit = 20,
+      patientId,
+      intent,
+      startDate,
+      endDate,
+      moduleId,
+    } = query;
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (patientId) where.patientId = patientId;
+    if (intent) where.intent = intent;
+
+    // Allow filtering by doctorId if needed, otherwise fetch all
+    if (moduleId) where.doctorId = moduleId;
+
+    // Add date filtering (optional)
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        // Set to end of day to include the entire end date
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999);
+        where.createdAt.lte = endDateTime;
+      }
+    }
+
+    const [calls, total] = await Promise.all([
+      this.prisma.callTranscription.findMany({
+        where,
+        skip,
+        take: +limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          patient: {
+            select: {
+              firstName: true,
+              lastName: true,
+              phone: true,
+              insuranceId: true,
+            },
+          },
+          doctor: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
+          },
+          appointment: {
+            select: { id: true, appointmentDate: true, status: true },
+          },
+        },
+      }),
+      this.prisma.callTranscription.count({ where }),
+    ]);
+
+    return {
+      data: calls,
+      pagination: {
+        total,
+        page: +page,
+        limit: +limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // ----------------- GET CALL HISTORY -------------------
   async getPatientHistory(patientId: string) {
     const history = await this.prisma.callTranscription.findMany({
       where: { patientId },
@@ -2400,9 +2476,9 @@ export class AiAgentService {
     // Normalize date extraction and handle "as soon as possible"
     let appointmentDate = payload.appointment_date || payload.requested_date;
     let startTime = payload.start_time || payload.requested_time;
-    
+
     // Check for "as soon as possible" requests
-    const isAsSoonAsPossible = 
+    const isAsSoonAsPossible =
       (appointmentDate && appointmentDate.toLowerCase().includes('as soon as possible')) ||
       (startTime && startTime.toLowerCase().includes('as soon as possible')) ||
       (payload.transcription && payload.transcription.toLowerCase().includes('as soon as possible'));
@@ -2417,12 +2493,12 @@ export class AiAgentService {
       try {
         const today = new Date();
         today.setHours(0, 0, 0, 0); // Start from today
-        
+
         // Search for next 7 days for availability
         for (let i = 0; i < 7; i++) {
           const checkDate = new Date(today);
           checkDate.setDate(checkDate.getDate() + i);
-          
+
           const availability = await this.getAvailableSlots({
             doctor_id: payload.doctor_id,
             date: checkDate.toISOString().split('T')[0],
@@ -2433,10 +2509,10 @@ export class AiAgentService {
             // Found earliest slot - show it and ask for confirmation
             const earliestSlot = availability.availableSlots[0];
             const bookingDate = checkDate.toISOString().split('T')[0];
-            
+
             // Show a few more options if available
             const additionalSlots = availability.availableSlots.slice(1, 3);
-            const additionalText = additionalSlots.length > 0 
+            const additionalText = additionalSlots.length > 0
               ? ` Other available times on ${bookingDate}: ${additionalSlots.map(s => s.startTime).join(', ')}.`
               : '';
 
@@ -2608,9 +2684,9 @@ export class AiAgentService {
     if (!requestedDate && payload.requested_time && payload.requested_time.includes('-')) {
       requestedDate = payload.requested_time;
     }
-    
+
     // Check for "as soon as possible" requests
-    const isAsSoonAsPossible = 
+    const isAsSoonAsPossible =
       (requestedDate && requestedDate.toLowerCase().includes('as soon as possible')) ||
       (payload.requested_time && payload.requested_time.toLowerCase().includes('as soon as possible')) ||
       (payload.transcription && payload.transcription.toLowerCase().includes('as soon as possible')) ||
@@ -2621,11 +2697,11 @@ export class AiAgentService {
       try {
         const today = new Date();
         today.setHours(0, 0, 0, 0); // Start from today
-        
+
         for (let i = 0; i < 7; i++) {
           const checkDate = new Date(today);
           checkDate.setDate(checkDate.getDate() + i);
-          
+
           const availability = await this.getAvailableSlots({
             doctor_id: payload.doctor_id,
             date: checkDate.toISOString().split('T')[0],
@@ -2666,7 +2742,7 @@ export class AiAgentService {
         };
       }
     }
-    
+
     if (!requestedDate) {
       requestedDate = new Date().toISOString().split('T')[0];
     }
@@ -2921,14 +2997,14 @@ export class AiAgentService {
     const query = payload.query || payload.transcription || '';
 
     // Check for "as soon as possible" in inquiry intent - redirect to booking logic
-    const isAsSoonAsPossible = 
+    const isAsSoonAsPossible =
       (query && query.toLowerCase().includes('as soon as possible')) ||
       (payload.appointment_date && payload.appointment_date.toLowerCase().includes('as soon as possible')) ||
       (payload.requested_date && payload.requested_date.toLowerCase().includes('as soon as possible')) ||
       (payload.requested_time && payload.requested_time.toLowerCase().includes('as soon as possible'));
 
     // Check if this is a booking request with "as soon as possible"
-    const isBookingRequest = 
+    const isBookingRequest =
       (query && (query.toLowerCase().includes('book') || query.toLowerCase().includes('schedule') || query.toLowerCase().includes('appointment'))) ||
       (payload.intent && (payload.intent.toLowerCase().includes('book') || payload.intent.toLowerCase().includes('schedule')));
 
