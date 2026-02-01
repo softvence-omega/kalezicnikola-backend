@@ -19,7 +19,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
 import { Verify2faOtpDto } from './dto/verify-2fa-otp.dto';
-import { AiAgentService } from '../ai-agent/ai-agent.service';
+import { ElevenLabsService } from '../ai-agent/eleven-labs.service';
 
 export interface AuthLoginResponse {
   requiresOtp: boolean;
@@ -39,7 +39,7 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private emailService: EmailService,
-    private aiAgentService: AiAgentService,
+    private elevenLabsService: ElevenLabsService,
   ) {
     this.tokenUtil = new TokenUtil(jwt, config);
   }
@@ -102,7 +102,7 @@ export class AuthService {
       });
 
       // Then, create the ElevenLabs agent
-      agentId = await this.aiAgentService.createDoctorAgent(doctor.id);
+      agentId = await this.elevenLabsService.createDoctorAgent(doctor.id);
 
       // Update doctor with agent ID
       doctor = await this.prisma.doctor.update({
