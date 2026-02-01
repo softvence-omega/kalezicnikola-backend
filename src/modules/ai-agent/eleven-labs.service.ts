@@ -222,102 +222,162 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
     }
 
     /**
-     * Build tool configurations for the agent
+     * Build JSON schema for a tool parameter
      */
-    private buildAgentTools(doctorId: string) {
-        const backendUrl = this.config.get<string>('BACKEND_URL') || 'https://backend.docline.ai';
-        const websocketUrl = backendUrl.replace('http://', 'https://'); // Ensure HTTPS for ElevenLabs
+    private buildToolParameter(description: string, isSystemProvided = false, dynamicVariable?: string) {
+        if (isSystemProvided) {
+            return {
+                type: 'string',
+                description: description,
+                is_system_provided: true,
+                dynamic_variable: dynamicVariable,
+            };
+        }
+        return {
+            type: 'string',
+            description: description,
+        };
+    }
 
-        return [
+    /**
+     * Create the tools for a doctor and return their IDs
+     */
+    private async createToolsForDoctor(doctorId: string): Promise<string[]> {
+        const baseUrl = this.getElevenLabsBaseUrl();
+        const backendUrl = this.config.get<string>('BACKEND_URL') || 'https://backend.docline.ai';
+        const websocketUrl = backendUrl.replace('http://', 'https://');
+
+        const toolConfigs = [
             {
-                type: 'webhook',
-                name: 'AiAgentWebhook',
+                name: `AiAgentWebhook_${doctorId}`,
                 description: 'Main webhook for handling appointment bookings, availability checks, rescheduling, cancellations, and general inquiries about the practice.',
-                url: `${websocketUrl}/api/v1/ai-agent/webhook`,
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': this.elevenLabsApiKey,
-                },
-                body: {
-                    doctor_id: doctorId,
-                    intent: '{{intent}}',
-                    patient_info: '{{patient_info}}',
-                    requested_time: '{{requested_time}}',
-                    requested_date: '{{requested_date}}',
-                    appointment_type_id: '{{appointment_type_id}}',
-                    appointment_date: '{{appointment_date}}',
-                    start_time: '{{start_time}}',
-                    booking_id: '{{booking_id}}',
-                    phone_number: '{{phone_number}}',
-                    query: '{{query}}',
-                },
-            },
-            {
-                type: 'webhook',
-                name: 'SaveCallTranscription',
-                description: 'MANDATORY tool to save call transcription at the end of EVERY conversation. Must be called before ending the call.',
-                url: `${websocketUrl}/api/v1/ai-agent/transcription/save`,
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': this.elevenLabsApiKey,
-                },
-                body: {
-                    doctor_id: doctorId,
-                    caller_name: '{{caller_name}}',
-                    phone_number: '{{phone_number}}',
-                    transcription: '{{transcription}}',
-                    summary: '{{summary}}',
-                    intent: '{{intent}}',
-                    sentiment: '{{sentiment}}',
-                    appointment_id: '{{appointment_id}}',
-                    patient_id: '{{patient_id}}',
-                    duration: '{{duration}}',
-                    insurance_id: '{{insurance_id}}',
-                    call_started_at: '{{call_started_at}}',
-                    call_ended_at: '{{call_ended_at}}',
-                    call_status: '{{call_status}}',
-                    reason_for_calling: '{{reason_for_calling}}',
+                api_schema: {
+                    url: `${websocketUrl}/api/v1/ai-agent/webhook`,
+                    method: 'POST',
+                    request_headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': this.elevenLabsApiKey,
+                    },
+                    request_body_schema: {
+                        type: 'object',
+                        properties: {
+                            doctor_id: this.buildToolParameter('The unique ID of the doctor', true, 'doctor_id'),
+                            intent: this.buildToolParameter('One of: book_appointment, check_availability, inquiry, reschedule, cancel'),
+                            patient_info: this.buildToolParameter('Patient name and details'),
+                            requested_time: this.buildToolParameter('Requested time for appointment'),
+                            requested_date: this.buildToolParameter('Requested date for appointment (YYYY-MM-DD)'),
+                            appointment_type_id: this.buildToolParameter('The type of appointment being booked'),
+                            appointment_date: this.buildToolParameter('Confirmed appointment date'),
+                            start_time: this.buildToolParameter('Confirmed start time'),
+                            booking_id: this.buildToolParameter('Booking ID for rescheduling or cancellation'),
+                            phone_number: this.buildToolParameter('Patient phone number'),
+                            query: this.buildToolParameter('The search query for practice information'),
+                        },
+                        required: ['doctor_id', 'intent'],
+                    },
                 },
             },
             {
-                type: 'webhook',
-                name: 'CreateTask',
-                description: 'Create tasks for the doctor such as medicine orders, callback requests, or other patient requests that require doctor action.',
-                url: `${websocketUrl}/api/v1/ai-agent/task/create`,
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': this.elevenLabsApiKey,
-                },
-                body: {
-                    doctor_id: doctorId,
-                    title: '{{title}}',
-                    description: '{{description}}',
-                    phone_number: '{{phone_number}}',
-                    insurance_id: '{{insurance_id}}',
-                    priority: '{{priority}}',
-                    time: '{{time}}',
-                    due_date: '{{due_date}}',
+                name: `SaveCallTranscription_${doctorId}`,
+                description: 'MANDATORY tool to save call transcription at the end of EVERY conversation.',
+                api_schema: {
+                    url: `${websocketUrl}/api/v1/ai-agent/transcription/save`,
+                    method: 'POST',
+                    request_headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': this.elevenLabsApiKey,
+                    },
+                    request_body_schema: {
+                        type: 'object',
+                        properties: {
+                            doctor_id: this.buildToolParameter('The unique ID of the doctor', true, 'doctor_id'),
+                            caller_name: this.buildToolParameter('Name of the patient'),
+                            phone_number: this.buildToolParameter('Caller phone number'),
+                            transcription: this.buildToolParameter('Full call transcription'),
+                            summary: this.buildToolParameter('Call summary'),
+                            intent: this.buildToolParameter('Call intent'),
+                            sentiment: this.buildToolParameter('Call sentiment'),
+                            appointment_id: this.buildToolParameter('Associated booking ID if any'),
+                            patient_id: this.buildToolParameter('Patient ID if found'),
+                            duration: this.buildToolParameter('Call duration in seconds'),
+                            insurance_id: this.buildToolParameter('Patient insurance ID'),
+                        },
+                        required: ['doctor_id', 'transcription', 'summary'],
+                    },
                 },
             },
             {
-                type: 'webhook',
-                name: 'QueryKnowledgeBase',
-                description: 'Query the doctor\'s knowledge base for information about the practice, services, office hours, parking, and other general information.',
-                url: `${websocketUrl}/api/v1/ai-agent/kb/query`,
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': this.elevenLabsApiKey,
+                name: `CreateTask_${doctorId}`,
+                description: 'Create tasks for the doctor such as medicine orders or callback requests.',
+                api_schema: {
+                    url: `${websocketUrl}/api/v1/ai-agent/task/create`,
+                    method: 'POST',
+                    request_headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': this.elevenLabsApiKey,
+                    },
+                    request_body_schema: {
+                        type: 'object',
+                        properties: {
+                            doctor_id: this.buildToolParameter('The unique ID of the doctor', true, 'doctor_id'),
+                            title: this.buildToolParameter('Task title'),
+                            description: this.buildToolParameter('Task details'),
+                            phone_number: this.buildToolParameter('Patient phone number'),
+                            insurance_id: this.buildToolParameter('Patient insurance ID'),
+                            priority: this.buildToolParameter('One of: LOW, NORMAL, HIGH'),
+                            time: this.buildToolParameter('Preferred time for task'),
+                            due_date: this.buildToolParameter('Due date (YYYY-MM-DD)'),
+                        },
+                        required: ['doctor_id', 'title', 'description', 'priority', 'due_date'],
+                    },
                 },
-                body: {
-                    doctor_id: doctorId,
-                    query: '{{query}}',
+            },
+            {
+                name: `QueryKnowledgeBase_${doctorId}`,
+                description: 'Query the doctor\'s knowledge base for practice information.',
+                api_schema: {
+                    url: `${websocketUrl}/api/v1/ai-agent/kb/query`,
+                    method: 'POST',
+                    request_headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': this.elevenLabsApiKey,
+                    },
+                    request_body_schema: {
+                        type: 'object',
+                        properties: {
+                            doctor_id: this.buildToolParameter('The unique ID of the doctor', true, 'doctor_id'),
+                            query: this.buildToolParameter('The inquiry about the practice'),
+                        },
+                        required: ['doctor_id', 'query'],
+                    },
                 },
             },
         ];
+
+        const toolIds: string[] = [];
+
+        for (const config of toolConfigs) {
+            try {
+                const response = await axios.post(
+                    `${baseUrl}/v1/convai/tools/create`,
+                    { tool_config: { type: 'webhook', ...config } },
+                    {
+                        headers: {
+                            'xi-api-key': this.elevenLabsApiKey,
+                            'Content-Type': 'application/json',
+                        },
+                    },
+                );
+                if (response.data.id) {
+                    toolIds.push(response.data.id);
+                    console.log(`✅ Created tool ${config.name}: ${response.data.id}`);
+                }
+            } catch (error) {
+                console.error(`Error creating tool ${config.name}:`, error.response?.data || error.message);
+            }
+        }
+
+        return toolIds;
     }
 
     /**
@@ -337,16 +397,22 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
         const backendUrl = this.config.get<string>('BACKEND_URL') || 'https://backend.docline.ai';
         const websocketUrl = backendUrl.replace('http://', 'https://');
 
+        // 1. Create tools separately
+        const toolIds = await this.createToolsForDoctor(doctorId);
+
         const agentConfig = {
-            name: doctorName, // Use doctor's name as agent name
+            name: doctorName,
             conversation_config: {
                 agent: {
                     prompt: {
                         prompt: this.buildSystemPrompt(doctor),
+                        tool_ids: toolIds, // Link created tools
                     },
                     first_message: 'Hello! Thank you for calling. How can I help you today?',
                     language: 'en',
-                    tools: this.buildAgentTools(doctorId),
+                    dynamic_variables: {
+                        doctor_id: doctorId, // Provide the dynamic variable value
+                    },
                 },
                 tts: {
                     // Using default voice settings
@@ -373,6 +439,16 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
             if (!agentId) throw new BadRequestException('Failed to create agent: No agent_id returned');
 
             console.log(`✅ Created ElevenLabs agent for ${doctorName}: ${agentId}`);
+
+            // Update doctor in DB with agent ID AND set isAgentActive to true
+            await this.prisma.doctor.update({
+                where: { id: doctorId },
+                data: {
+                    elevenlabsAgentId: agentId,
+                    isAgentActive: true,
+                },
+            });
+
             return agentId;
         } catch (error) {
             console.error('Error creating ElevenLabs agent:', error.response?.data || error.message);
@@ -388,7 +464,10 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
     async getDoctorAgent(doctorId: string) {
         const doctor = await this.prisma.doctor.findUnique({
             where: { id: doctorId },
-            select: { elevenlabsAgentId: true },
+            select: {
+                elevenlabsAgentId: true,
+                isAgentActive: true,
+            },
         });
 
         if (!doctor?.elevenlabsAgentId) throw new NotFoundException('No agent found for this doctor');
@@ -399,7 +478,11 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
                 `${baseUrl}/v1/convai/agents/${doctor.elevenlabsAgentId}`,
                 { headers: { 'xi-api-key': this.elevenLabsApiKey } },
             );
-            return { success: true, agent: response.data };
+            return {
+                success: true,
+                agent: response.data,
+                isAgentActive: doctor.isAgentActive,
+            };
         } catch (error) {
             throw new NotFoundException(`Failed to fetch agent: ${error.response?.data?.detail || error.message}`);
         }
@@ -435,6 +518,38 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
     }
 
     /**
+     * Delete tools associated with a specific doctor
+     */
+    private async deleteToolsForDoctor(doctorId: string) {
+        const baseUrl = this.getElevenLabsBaseUrl();
+        try {
+            // Find tools starting with the doctor's name prefix
+            const response = await axios.get(
+                `${baseUrl}/v1/convai/tools?search=_${doctorId}`, // Search suffix _doctorId
+                { headers: { 'xi-api-key': this.elevenLabsApiKey } },
+            );
+
+            const tools = response.data.tools || [];
+            // Filter more strictly to be safe (ensure it ends with _doctorId or contains it correctly)
+            const doctorTools = tools.filter((t: any) => t.tool_config?.name?.includes(doctorId));
+
+            for (const tool of doctorTools) {
+                try {
+                    await axios.delete(
+                        `${baseUrl}/v1/convai/tools/${tool.id}`,
+                        { headers: { 'xi-api-key': this.elevenLabsApiKey } },
+                    );
+                    console.log(`✅ Deleted tool ${tool.tool_config.name}`);
+                } catch (e) {
+                    console.error(`Failed to delete tool ${tool.id}:`, e.message);
+                }
+            }
+        } catch (error) {
+            console.error('Error listing tools for deletion:', error.response?.data || error.message);
+        }
+    }
+
+    /**
      * Delete agent from ElevenLabs
      */
     async deleteDoctorAgent(doctorId: string) {
@@ -443,24 +558,30 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
             select: { elevenlabsAgentId: true },
         });
 
-        if (!doctor?.elevenlabsAgentId) throw new NotFoundException('No agent found for this doctor');
-
         const baseUrl = this.getElevenLabsBaseUrl();
-        try {
-            await axios.delete(
-                `${baseUrl}/v1/convai/agents/${doctor.elevenlabsAgentId}`,
-                { headers: { 'xi-api-key': this.elevenLabsApiKey } },
-            );
 
-            await this.prisma.doctor.update({
-                where: { id: doctorId },
-                data: { elevenlabsAgentId: null },
-            });
+        // 1. Delete the tools
+        await this.deleteToolsForDoctor(doctorId);
 
-            return { success: true, message: 'Agent deleted successfully' };
-        } catch (error) {
-            throw new BadRequestException(`Failed to delete agent: ${error.response?.data?.detail || error.message}`);
+        // 2. Delete the agent if it exists
+        if (doctor?.elevenlabsAgentId) {
+            try {
+                await axios.delete(
+                    `${baseUrl}/v1/convai/agents/${doctor.elevenlabsAgentId}`,
+                    { headers: { 'xi-api-key': this.elevenLabsApiKey } },
+                );
+            } catch (error) {
+                console.error(`Failed to delete agent ${doctor.elevenlabsAgentId}:`, error.response?.data || error.message);
+            }
         }
+
+        // 3. Always clear the DB field
+        await this.prisma.doctor.update({
+            where: { id: doctorId },
+            data: { elevenlabsAgentId: null },
+        });
+
+        return { success: true, message: 'Agent and associated tools deleted successfully' };
     }
 
     /**
@@ -470,19 +591,69 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
         try {
             await this.deleteDoctorAgent(doctorId);
         } catch (error) {
-            await this.prisma.doctor.update({
-                where: { id: doctorId },
-                data: { elevenlabsAgentId: null },
-            });
+            console.log(`Note: Deletion failed or agent didn't exist during recreate for ${doctorId}`);
         }
 
         const agentId = await this.createDoctorAgent(doctorId);
-        await this.prisma.doctor.update({
+        // Note: createDoctorAgent already updates the DB (including isAgentActive: true)
+        return { success: true, agent_id: agentId, message: 'Agent recreated successfully' };
+    }
+
+    /**
+     * Toggle the activeness of a doctor's agent
+     */
+    async toggleAgentActiveness(
+        doctorId: string,
+        isActive: boolean,
+        changer?: { id: string; role: 'admin' | 'doctor' | 'system' }
+    ) {
+        const doctor = await this.prisma.doctor.findUnique({
             where: { id: doctorId },
-            data: { elevenlabsAgentId: agentId },
+            select: {
+                elevenlabsAgentId: true,
+                isAgentActive: true,
+            },
         });
 
-        return { success: true, agent_id: agentId, message: 'Agent recreated successfully' };
+        if (!doctor) throw new NotFoundException('Doctor not found');
+
+        if (!doctor.elevenlabsAgentId && isActive) {
+            // If we are trying to activate but no agent exists, create it
+            return this.createDoctorAgent(doctorId);
+        }
+
+        // Only update if the status is actually changing
+        if (doctor.isAgentActive !== isActive) {
+            await this.prisma.doctor.update({
+                where: { id: doctorId },
+                data: { isAgentActive: isActive },
+            });
+
+            // Audit logging
+            await this.prisma.auditLog.create({
+                data: {
+                    doctorId: doctorId,
+                    table: 'doctors',
+                    rowId: doctorId,
+                    action: isActive ? 'AGENT_ACTIVATED' : 'AGENT_DEACTIVATED',
+                    oldValues: { isAgentActive: doctor.isAgentActive },
+                    newValues: { isAgentActive: isActive },
+                    adminId: changer?.role === 'admin' ? changer.id : null,
+                    // If the doctor themselves changed it, or it was system-triggered (subscription)
+                    occurredAt: new Date(),
+                },
+            });
+
+            const status = isActive ? 'activated' : 'deactivated';
+            const context = changer ? ` by ${changer.role} (${changer.id})` : '';
+            console.log(`👤 Agent for doctor ${doctorId} has been ${status}${context}`);
+        }
+
+        return {
+            success: true,
+            isAgentActive: isActive,
+            message: `Agent ${isActive ? 'activated' : 'deactivated'} successfully`
+        };
     }
 
     /**

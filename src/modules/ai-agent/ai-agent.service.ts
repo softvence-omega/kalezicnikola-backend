@@ -34,6 +34,27 @@ export class AiAgentService {
     this.fallbackNumber = this.config.get<string>('FALLBACK_PHONE_NUMBER') || '';
   }
 
+  /**
+   * Ensure the doctor's agent is active. Throws ForbiddenException if not.
+   */
+  private async ensureAgentActive(doctorId: string) {
+    const doctor = await this.prisma.doctor.findUnique({
+      where: { id: doctorId },
+      select: { isAgentActive: true, firstName: true, lastName: true },
+    });
+
+    if (!doctor) {
+      throw new NotFoundException('Doctor not found');
+    }
+
+    if (!doctor.isAgentActive) {
+      const name = `Dr. ${doctor.firstName || ''} ${doctor.lastName || ''}`.trim() || 'this practice';
+      throw new BadRequestException(
+        `The AI assistant for ${name} is currently inactive. Please contact the practice administrator.`,
+      );
+    }
+  }
+
   // =============== HELPER METHODS ===============
 
   private calculateStringSimilarity(str1: string, str2: string): number {
@@ -82,6 +103,11 @@ export class AiAgentService {
   ): Promise<WebhookResponseDto> {
     const { intent, doctor_id, agent_busy } = payload;
 
+    // Check if agent is active
+    if (doctor_id) {
+      await this.ensureAgentActive(doctor_id);
+    }
+
     // If agent is busy, provide fallback number
     if (agent_busy) {
       return {
@@ -115,6 +141,9 @@ export class AiAgentService {
 
   // =============== KNOWLEDGE BASE QUERY ===============
   async queryKnowledgeBase(dto: KbQueryDto) {
+    if (dto.doctor_id) {
+      await this.ensureAgentActive(dto.doctor_id);
+    }
     const kbEntries = await this.prisma.doctorKnowledgeBase.findMany({
       where: {
         doctorId: dto.doctor_id,
@@ -181,6 +210,10 @@ export class AiAgentService {
 
   async getAvailableSlots(dto: SlotQueryDto & { step?: number }) {
     const { doctor_id, date, appointment_type_id, step: customStep } = dto;
+
+    if (doctor_id) {
+      await this.ensureAgentActive(doctor_id);
+    }
 
     const doctor = await this.prisma.doctor.findUnique({
       where: { id: doctor_id },
@@ -385,6 +418,10 @@ export class AiAgentService {
   // =============== CREATE BOOKING ===============
   async createBooking(dto: any) {
     const { doctor_id, patient_id, appointment_type_id, start_time, appointment_date, patient_info } = dto;
+
+    if (doctor_id) {
+      await this.ensureAgentActive(doctor_id);
+    }
 
     const apptDate = new Date(appointment_date);
     const now = new Date();
@@ -707,6 +744,10 @@ export class AiAgentService {
     const appointment = await this.prisma.appointment.findUnique({ where: { id: bookingId } });
     if (!appointment) throw new NotFoundException('Booking not found');
 
+    if (appointment.doctorId) {
+      await this.ensureAgentActive(appointment.doctorId);
+    }
+
     const updateData: any = {};
     if (dto.new_date) updateData.appointmentDate = new Date(dto.new_date);
     if (dto.new_start_time) updateData.startTime = dto.new_start_time;
@@ -956,6 +997,10 @@ export class AiAgentService {
 
     if (!appointment) {
       throw new NotFoundException('Booking not found');
+    }
+
+    if (appointment.doctorId) {
+      await this.ensureAgentActive(appointment.doctorId);
     }
 
     if (appointment.status === 'CANCELLED') {
@@ -3028,6 +3073,9 @@ export class AiAgentService {
 
   // =============== CREATE AGENT TASK ===============
   async createAgentTask(dto: AgentCreateTaskDto) {
+    if (dto.doctor_id) {
+      await this.ensureAgentActive(dto.doctor_id);
+    }
     const {
       doctor_id,
       title,

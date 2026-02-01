@@ -51,6 +51,7 @@ model Doctor {
   failedLoginAttempts        Int                         @default(0)
   lastPasswordChangeAt       DateTime?
   elevenlabsAgentId          String?
+  isAgentActive              Boolean                     @default(false)
   conversations              AdminConversation?
   appointmentTypes           AppointmentType[]
   appointments               Appointment[]               @relation("DoctorAppointments")

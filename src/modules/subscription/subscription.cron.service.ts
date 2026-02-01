@@ -1,12 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { ElevenLabsService } from '../ai-agent/eleven-labs.service';
 
 @Injectable()
 export class SubscriptionCronService {
   private readonly logger = new Logger(SubscriptionCronService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private elevenLabsService: ElevenLabsService,
+  ) { }
 
   // Run every day at midnight to check for expired cancelled subscriptions
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
@@ -39,6 +43,16 @@ export class SubscriptionCronService {
           where: { id: subscription.id },
           data: { isActive: false },
         });
+
+        // Deactivate ElevenLabs agent when subscription expires
+        if (subscription.userId) {
+          try {
+            await this.elevenLabsService.toggleAgentActiveness(subscription.userId, false, { id: 'cron-job', role: 'system' });
+            this.logger.log(`👤 Deactivated ElevenLabs agent for user ${subscription.userId} due to expiration`);
+          } catch (e) {
+            this.logger.error(`❌ Failed to deactivate ElevenLabs agent for user ${subscription.userId}: ${e.message}`);
+          }
+        }
 
         this.logger.log(
           `🚫 Deactivated subscription ${subscription.id} for user ${subscription.userId} (expired on ${subscription.currentPeriodEnd?.toLocaleDateString()})`,

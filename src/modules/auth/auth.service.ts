@@ -19,7 +19,6 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
 import { Verify2faOtpDto } from './dto/verify-2fa-otp.dto';
-import { ElevenLabsService } from '../ai-agent/eleven-labs.service';
 
 export interface AuthLoginResponse {
   requiresOtp: boolean;
@@ -39,7 +38,6 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private emailService: EmailService,
-    private elevenLabsService: ElevenLabsService,
   ) {
     this.tokenUtil = new TokenUtil(jwt, config);
   }
@@ -84,13 +82,9 @@ export class AuthService {
     );
     const passwordHash = await bcrypt.hash(dto.password, saltRounds);
 
-    // Create doctor and agent in a transaction (atomic operation)
-    let doctor;
-    let agentId: string | null = null;
-
+    // Create doctor
     try {
-      // First, create the doctor
-      doctor = await this.prisma.doctor.create({
+      const doctor = await this.prisma.doctor.create({
         data: {
           firstName: dto.firstName,
           lastName: dto.lastName,
@@ -101,30 +95,15 @@ export class AuthService {
         },
       });
 
-      // Then, create the ElevenLabs agent
-      agentId = await this.elevenLabsService.createDoctorAgent(doctor.id);
-
-      // Update doctor with agent ID
-      doctor = await this.prisma.doctor.update({
-        where: { id: doctor.id },
-        data: { elevenlabsAgentId: agentId },
-      });
-
       // Send welcome email
       await this.emailService.sendWelcomeEmail(
         doctor.email!,
         doctor.firstName || 'Doctor',
       );
 
-      console.log(`✅ Successfully registered doctor ${doctor.id} with agent ${agentId}`);
+      console.log(`✅ Successfully registered doctor ${doctor.id}`);
       return doctor;
     } catch (error) {
-      // If agent creation failed, rollback doctor creation
-      if (doctor?.id) {
-        console.error(`❌ Agent creation failed for doctor ${doctor.id}, rolling back...`);
-        await this.prisma.doctor.delete({ where: { id: doctor.id } });
-      }
-
       throw new BadRequestException(
         `Failed to register doctor: ${error.message}`,
       );

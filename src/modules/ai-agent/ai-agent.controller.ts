@@ -243,16 +243,32 @@ export class AiAgentController {
   }
 
   @Post('doctor/:doctorId/delete')
-  @UseGuards(AdminOrDoctorGuard)
+  @UseGuards(AdminGuard)
   async deleteDoctorAgent(
     @Param('doctorId') doctorId: string,
+  ) {
+    return this.elevenLabsService.deleteDoctorAgent(doctorId);
+  }
+
+  @Patch('doctor/:doctorId/activation')
+  @UseGuards(AdminOrDoctorGuard)
+  async toggleAgentActivation(
+    @Param('doctorId') doctorId: string,
+    @Body('isActive') isActive: boolean | string,
     @Req() req: any,
   ) {
-    // Doctors can only delete their own agent, admins can delete any
+    const activeState = String(isActive) === 'true';
+    // Doctors can only toggle their own agent, admins can toggle any
     if (req.role === 'doctor' && req.user.id !== doctorId) {
-      throw new BadRequestException('You can only delete your own agent');
+      throw new BadRequestException('You can only manage your own agent status');
     }
-    return this.elevenLabsService.deleteDoctorAgent(doctorId);
+
+    const changer = {
+      id: req.user.id,
+      role: req.role as 'admin' | 'doctor',
+    };
+
+    return this.elevenLabsService.toggleAgentActiveness(doctorId, activeState, changer);
   }
 
   @Post('doctor/:doctorId/recreate')

@@ -17,6 +17,7 @@ import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 import { UpdatePlanDetailsDto } from './dto/update-plan-details.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { ElevenLabsService } from '../ai-agent/eleven-labs.service';
 
 @Injectable()
 export class SubscriptionService implements OnModuleInit {
@@ -25,6 +26,7 @@ export class SubscriptionService implements OnModuleInit {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    private elevenLabsService: ElevenLabsService,
   ) {
     this.stripe = new Stripe(
       this.configService.get<string>('STRIPE_SECRET_KEY')!,
@@ -466,7 +468,7 @@ export class SubscriptionService implements OnModuleInit {
           `✅ ${isLifetime ? 'Lifetime' : '7-Day'} trial plan assigned to existing user: ${user.email} by admin: ${adminId || 'system'}`,
         );
 
-        return {
+        const response = {
           success: true,
           message: `${isLifetime ? 'Lifetime' : '7-Day'} trial plan assigned successfully`,
           subscription: {
@@ -481,6 +483,16 @@ export class SubscriptionService implements OnModuleInit {
               : `Trial ends on ${currentPeriodEnd.toLocaleDateString()}`,
           },
         };
+
+        // Trigger ElevenLabs agent creation/re-creation
+        try {
+          await this.elevenLabsService.recreateDoctorAgent(userId);
+          console.log(`🤖 ElevenLabs agent activated for user ${userId} on Trial`);
+        } catch (e) {
+          console.error(`❌ Failed to activate ElevenLabs agent for user ${userId}: ${e.message}`);
+        }
+
+        return response;
       } else {
         // Create new subscription with trial plan
         const newSubscription = await this.prisma.subscription.create({
@@ -505,7 +517,7 @@ export class SubscriptionService implements OnModuleInit {
           `✅ ${isLifetime ? 'Lifetime' : '7-Day'} trial plan assigned to new user: ${user.email} by admin: ${adminId || 'system'}`,
         );
 
-        return {
+        const response = {
           success: true,
           message: `${isLifetime ? 'Lifetime' : '7-Day'} trial plan assigned successfully`,
           subscription: {
@@ -520,6 +532,16 @@ export class SubscriptionService implements OnModuleInit {
               : `Trial ends on ${currentPeriodEnd.toLocaleDateString()}`,
           },
         };
+
+        // Trigger ElevenLabs agent creation
+        try {
+          await this.elevenLabsService.createDoctorAgent(userId);
+          console.log(`🤖 ElevenLabs agent activated for user ${userId} on Trial`);
+        } catch (e) {
+          console.error(`❌ Failed to activate ElevenLabs agent for user ${userId}: ${e.message}`);
+        }
+
+        return response;
       }
     } catch (error) {
       if (
@@ -1449,13 +1471,23 @@ export class SubscriptionService implements OnModuleInit {
         });
       }
 
-      return {
+      const response = {
         success: true,
         subscription: {
           ...subscription,
           plan: planDetails,
         },
       };
+
+      // Trigger ElevenLabs agent creation/re-creation
+      try {
+        await this.elevenLabsService.recreateDoctorAgent(userId);
+        console.log(`🤖 ElevenLabs agent activated for user ${userId} on paid plan`);
+      } catch (e) {
+        console.error(`❌ Failed to activate ElevenLabs agent for user ${userId}: ${e.message}`);
+      }
+
+      return response;
     } catch (error) {
       throw new BadRequestException(error.message);
     }
@@ -1742,6 +1774,14 @@ export class SubscriptionService implements OnModuleInit {
               cancelledAt: new Date(),
             },
           });
+
+          // Deactivate ElevenLabs agent when subscription is deleted (expired or immediate cancellation)
+          try {
+            await this.elevenLabsService.toggleAgentActiveness(userId, false, { id: 'stripe-webhook', role: 'system' });
+            console.log(`👤 Webhook: Deactivated ElevenLabs agent for user ${userId} due to subscription deletion`);
+          } catch (e) {
+            console.error(`❌ Webhook: Failed to deactivate ElevenLabs agent for user ${userId}: ${e.message}`);
+          }
         } else {
           await this.prisma.subscription.update({
             where: { userId },

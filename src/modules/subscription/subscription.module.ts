@@ -6,11 +6,12 @@ import { SubscriptionService } from './subscription.service';
 import { SubscriptionController } from './subscription.controller';
 import { StripeWebhookController } from './stripe-webhook.controller';
 import { SubscriptionCronService } from './subscription.cron.service';
+import { AiAgentModule } from '../ai-agent/ai-agent.module';
 
 @Module({
-  imports: [ConfigModule, JwtModule, PrismaModule],
+  imports: [ConfigModule, JwtModule, PrismaModule, AiAgentModule],
   controllers: [SubscriptionController, StripeWebhookController],
   providers: [SubscriptionService, SubscriptionCronService],
   exports: [SubscriptionService],
 })
-export class SubscriptionModule {}
+export class SubscriptionModule { }
