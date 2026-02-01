@@ -5,6 +5,10 @@ model Admin {
   firstName            String?
   lastName             String?
   photo                String?
+  phone                String?
+  dob                  DateTime?
+  address              String?
+  gender               Gender?
   emailVerifiedAt      DateTime?
   twoFactorSecret      String?
   twoFactorEnabled     Boolean?        @default(true)
