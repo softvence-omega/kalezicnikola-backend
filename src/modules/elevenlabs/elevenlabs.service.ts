@@ -15,10 +15,10 @@ export class ElevenLabsService {
   ) {
     this.apiKey = this.config.get<string>('ELEVENLABS_WEBHOOK_API_KEY') || '';
     this.webhookBaseUrl = this.config.get<string>('BASE_BACKEND_URL') || 'https://backend.docline.ai/api/v1';
-    
+
     // Always use EU region for data residency
     const region = this.config.get<string>('ELEVENLABS_API_REGION') || 'eu';
-    
+
     // Check if API key has EU residency suffix and use appropriate endpoint
     if (this.apiKey.includes('_residency_eu')) {
       // For EU residency keys, use the EU-specific endpoint
@@ -28,7 +28,7 @@ export class ElevenLabsService {
       // Standard global endpoint
       this.baseUrl = 'https://api.elevenlabs.io/v1';
     }
-    
+
     this.logger.log(`ElevenLabsService initialized with EU region: ${region}`);
     this.logger.log(`API Base URL: ${this.baseUrl}`);
     this.logger.log(`API Key type: Data Residency EU (${this.apiKey.includes('_residency_eu') ? 'confirmed' : 'unknown'})`);
@@ -55,42 +55,43 @@ export class ElevenLabsService {
     this.logger.log(`Creating ElevenLabs agent for doctor: ${doctor.id}`);
 
     try {
-      // 1. Create the agent
-      const agent = await this.createAgent(doctor);
-      
-      // 2. Create tools for the agent
-      await this.createToolsForAgent(agent.agent_id, doctor.id);
+      // 1. Create tools first to get their IDs
+      const toolIds = await this.createToolsForDoctor(doctor.id);
 
-      // 3. Save agent_id to doctor record
+      // 2. Create the agent with the tool IDs
+      const agent = await this.createAgent(doctor, toolIds);
+
+      // Update doctor with agent ID
       await this.prisma.doctor.update({
         where: { id: doctor.id },
-        data: { elevenlabsAgentId: agent.agent_id }
+        data: { elevenlabsAgentId: agent.agent_id },
       });
 
       this.logger.log(`Successfully created agent ${agent.agent_id} for doctor ${doctor.id}`);
       return agent;
-
     } catch (error) {
       this.logger.error(`Failed to create agent for doctor ${doctor.id}:`, error);
       throw error;
     }
   }
 
-  private async createAgent(doctor: any) {
+  private async createAgent(doctor: any, toolIds?: string[]) {
     // Debug: Check API key
     if (!this.apiKey) {
       throw new Error('ELEVENLABS_API_KEY is not configured');
     }
-    
+
     this.logger.log(`Creating agent with API key: ${this.apiKey.substring(0, 10)}...`);
 
     // Use the correct ElevenLabs Conversational AI API endpoint
     const requestBody = {
       conversation_config: {
         agent: {
+          name: `Dr. ${doctor.firstName} ${doctor.lastName} AI Assistant`, // Add agent name
           first_message: `Hello! Thank you for calling Dr. ${doctor.lastName}'s office. How can I help you today?`,
           prompt: {
-            prompt_text: this.generateSystemPrompt(doctor)
+            prompt_text: this.generateSystemPrompt(doctor),
+            tool_ids: toolIds || [] // Link the tools to the agent
           },
           language: 'en',
           voice: {
@@ -125,13 +126,32 @@ export class ElevenLabsService {
     return { agent_id: result.agent_id };
   }
 
-  private async createToolsForAgent(agentId: string, doctorId: string) {
-    this.logger.log(`Creating tools for agent: ${agentId}`);
+  private async createToolsForDoctor(doctorId: string): Promise<string[]> {
+    this.logger.log(`Creating tools for doctor: ${doctorId}`);
 
+    const requiredToolNames = [
+      'Global_AiAgentWebhook',
+      'Global_SaveCallTranscription',
+      'Global_CreateTask',
+      'Global_QueryKnowledgeBase'
+    ];
+
+    // 1. Fetch all existing tools
+    const existingTools = await this.getExistingTools();
+
+    // 2. Map existing tools by name for easy lookup
+    const toolMap = new Map<string, string>();
+    for (const tool of existingTools) {
+      toolMap.set(tool.name, tool.id);
+    }
+
+    const toolIds: string[] = [];
+
+    // 3. Define the tool configurations
     const tools = [
       {
         type: 'webhook',
-        name: 'AiAgentWebhook',
+        name: 'Global_AiAgentWebhook',
         description: 'Handle various AI agent operations like booking, rescheduling, checking availability, and answering inquiries',
         api_schema: {
           url: `${this.webhookBaseUrl}/ai-agent/webhook`,
@@ -170,7 +190,7 @@ export class ElevenLabsService {
       },
       {
         type: 'webhook',
-        name: 'SaveCallTranscription',
+        name: 'Global_SaveCallTranscription',
         description: 'Save call transcription and summary after the call ends',
         api_schema: {
           url: `${this.webhookBaseUrl}/ai-agent/transcription/save`,
@@ -204,7 +224,7 @@ export class ElevenLabsService {
       },
       {
         type: 'webhook',
-        name: 'CreateTask',
+        name: 'Global_CreateTask',
         description: 'Create tasks for the doctor (medicine orders, callbacks, etc.)',
         api_schema: {
           url: `${this.webhookBaseUrl}/ai-agent/task/create`,
@@ -231,7 +251,7 @@ export class ElevenLabsService {
       },
       {
         type: 'webhook',
-        name: 'QueryKnowledgeBase',
+        name: 'Global_QueryKnowledgeBase',
         description: 'Query the knowledge base for information about the doctor, practice, or services',
         api_schema: {
           url: `${this.webhookBaseUrl}/ai-agent/kb/query`,
@@ -252,14 +272,41 @@ export class ElevenLabsService {
       }
     ];
 
-    // Create each tool using the correct ElevenLabs API format
+    // 4. For each required tool, use existing or create new
     for (const tool of tools) {
-      await this.createTool(tool);
+      if (toolMap.has(tool.name)) {
+        const toolId = toolMap.get(tool.name)!;
+        this.logger.log(`Using existing tool: ${tool.name} (${toolId})`);
+        toolIds.push(toolId);
+      } else {
+        const createdTool = await this.createTool(tool);
+        this.logger.log(`Created tool: ${tool.name} (${createdTool.id})`);
+        toolIds.push(createdTool.id);
+      }
     }
 
-    // Set up post-call webhook (optional - commenting out due to 404 error)
-    // await this.setupPostCallWebhook(agentId, doctorId);
-    this.logger.log('Skipping post-call webhook setup (optional feature)');
+    this.logger.log(`Assigned ${toolIds.length} global tools to the agent`);
+    return toolIds;
+  }
+
+  private async getExistingTools(): Promise<Array<{ id: string; name: string }>> {
+    try {
+      const response = await fetch(`${this.baseUrl}/convai/tools`, {
+        method: 'GET',
+        headers: {
+          'xi-api-key': this.apiKey,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.tools || [];
+      }
+      return [];
+    } catch (error) {
+      this.logger.error('Failed to fetch existing tools:', error);
+      return [];
+    }
   }
 
   private async createTool(tool: any) {
@@ -297,7 +344,7 @@ export class ElevenLabsService {
 
   private async setupPostCallWebhook(agentId: string, doctorId: string) {
     const webhookUrl = `${this.webhookBaseUrl}/ai-agent/webhook/post-call?doctor_id=${doctorId}`;
-    
+
     const response = await fetch(`${this.baseUrl}/convai/agents/${agentId}/webhooks`, {
       method: 'POST',
       headers: {
@@ -333,7 +380,7 @@ LANGUAGE HANDLING (VERY IMPORTANT):
 - NEVER send German text as input to any webhook or tool.
 
 CRITICAL RULES:
-1. For ALL questions about the practice, use the AiAgentWebhook tool with intent "inquiry"
+1. For ALL questions about the practice, use the Global_AiAgentWebhook tool with intent "inquiry"
 2. NEVER answer from your own knowledge - always call the webhook for practice information
 3. The webhook contains the doctor's current, up-to-date information
 4. Do NOT hardcode any doctor names, specialties, or practice details
@@ -341,10 +388,10 @@ CRITICAL RULES:
 Your capabilities:
 - Schedule appointments (intent: "book_appointment")
 - Check availability (intent: "check_availability")
-- Answer questions about the practice (intent: "inquiry") - MUST use webhook
+- Answer questions about the practice (intent: "inquiry") - MUST use Global_AiAgentWebhook
 - Reschedule appointments (intent: "reschedule")
 - Cancel appointments (intent: "cancel")
-- Create tasks for the doctor (tool: "CreateTask") - for medicine orders, callbacks, etc.
+- Create tasks for the doctor (tool: "Global_CreateTask") - for medicine orders, callbacks, etc.
 
 IMPORTANT: Always use doctor_id: "${doctor.id}" in all webhook calls.
 
@@ -354,14 +401,14 @@ CONVERSATION FLOW FOR BOOKING:
 3. Ask for the reason for their visit to determine appointment type
 4. Ask for their insurance ID (REQUIRED for new patients)
 5. Ask what date they'd like to book
-6. Call webhook to check availability
+6. Call Global_AiAgentWebhook to check availability
 7. Present available slots
 8. Confirm their choice
-9. Call webhook to create the booking
+9. Call Global_AiAgentWebhook to create the booking
 10. Provide confirmation with booking ID
 
 MANDATORY END-OF-CALL PROCEDURE:
-Before ending ANY conversation, you MUST call the SaveCallTranscription tool with:
+Before ending ANY conversation, you MUST call the Global_SaveCallTranscription tool with:
 - doctor_id: "${doctor.id}"
 - Complete conversation transcript
 - Detailed 2-4 sentence summary
@@ -370,9 +417,14 @@ Before ending ANY conversation, you MUST call the SaveCallTranscription tool wit
 TONE AND STYLE:
 - Be warm, professional, and empathetic
 - Use the patient's name once you know it
-- Confirm important details (dates, times, insurance id)
-- If you can't help, offer to transfer to a human assistant
-- Always end with a friendly goodbye AFTER saving the transcription`;
+- Speak clearly and simply
+- Show empathy for their medical concerns
+
+KNOWLEDGE BASE:
+- For any questions about practice information, services, or policies, use Global_QueryKnowledgeBase
+- Always verify information through the knowledge base rather than assuming
+
+REMEMBER: You are representing Dr. ${doctor.firstName} ${doctor.lastName}'s practice. Be professional, caring, and accurate at all times.`;
   }
 
   async deleteAgent(agentId: string) {

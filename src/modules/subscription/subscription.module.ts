@@ -6,10 +6,10 @@ import { SubscriptionService } from './subscription.service';
 import { SubscriptionController } from './subscription.controller';
 import { StripeWebhookController } from './stripe-webhook.controller';
 import { SubscriptionCronService } from './subscription.cron.service';
-import { AiAgentModule } from '../ai-agent/ai-agent.module';
+import { ElevenLabsModule } from '../elevenlabs/elevenlabs.module';
 
 @Module({
-  imports: [ConfigModule, JwtModule, PrismaModule, AiAgentModule],
+  imports: [ConfigModule, JwtModule, PrismaModule, ElevenLabsModule],
   controllers: [SubscriptionController, StripeWebhookController],
   providers: [SubscriptionService, SubscriptionCronService],
   exports: [SubscriptionService],

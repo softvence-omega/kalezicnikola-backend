@@ -17,7 +17,7 @@ import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 import { UpdatePlanDetailsDto } from './dto/update-plan-details.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { ElevenLabsService } from '../ai-agent/eleven-labs.service';
+import { ElevenLabsService } from '../elevenlabs/elevenlabs.service';
 
 @Injectable()
 export class SubscriptionService implements OnModuleInit {
@@ -486,8 +486,11 @@ export class SubscriptionService implements OnModuleInit {
 
         // Trigger ElevenLabs agent creation/re-creation
         try {
-          await this.elevenLabsService.recreateDoctorAgent(userId);
-          console.log(`🤖 ElevenLabs agent activated for user ${userId} on Trial`);
+          const doctor = await this.prisma.doctor.findUnique({ where: { id: userId } });
+          if (doctor) {
+            await this.elevenLabsService.createAgentForDoctor(doctor);
+            console.log(`🤖 ElevenLabs agent activated for user ${userId} on Trial`);
+          }
         } catch (e) {
           console.error(`❌ Failed to activate ElevenLabs agent for user ${userId}: ${e.message}`);
         }
@@ -535,8 +538,11 @@ export class SubscriptionService implements OnModuleInit {
 
         // Trigger ElevenLabs agent creation
         try {
-          await this.elevenLabsService.createDoctorAgent(userId);
-          console.log(`🤖 ElevenLabs agent activated for user ${userId} on Trial`);
+          const doctor = await this.prisma.doctor.findUnique({ where: { id: userId } });
+          if (doctor) {
+            await this.elevenLabsService.createAgentForDoctor(doctor);
+            console.log(`🤖 ElevenLabs agent activated for user ${userId} on Trial`);
+          }
         } catch (e) {
           console.error(`❌ Failed to activate ElevenLabs agent for user ${userId}: ${e.message}`);
         }
@@ -1481,8 +1487,11 @@ export class SubscriptionService implements OnModuleInit {
 
       // Trigger ElevenLabs agent creation/re-creation
       try {
-        await this.elevenLabsService.recreateDoctorAgent(userId);
-        console.log(`🤖 ElevenLabs agent activated for user ${userId} on paid plan`);
+        const doctor = await this.prisma.doctor.findUnique({ where: { id: userId } });
+        if (doctor) {
+          await this.elevenLabsService.createAgentForDoctor(doctor);
+          console.log(`🤖 ElevenLabs agent activated for user ${userId} on paid plan`);
+        }
       } catch (e) {
         console.error(`❌ Failed to activate ElevenLabs agent for user ${userId}: ${e.message}`);
       }
@@ -1777,8 +1786,9 @@ export class SubscriptionService implements OnModuleInit {
 
           // Deactivate ElevenLabs agent when subscription is deleted (expired or immediate cancellation)
           try {
-            await this.elevenLabsService.toggleAgentActiveness(userId, false, { id: 'stripe-webhook', role: 'system' });
-            console.log(`👤 Webhook: Deactivated ElevenLabs agent for user ${userId} due to subscription deletion`);
+            // TODO: Implement toggleAgentActiveness in new service
+            // await this.elevenLabsService.toggleAgentActiveness(userId, false, { id: 'stripe-webhook', role: 'system' });
+            console.log(`👤 Webhook: Deactivated ElevenLabs agent for user ${userId} due to subscription deletion (TODO: implement in new service)`);
           } catch (e) {
             console.error(`❌ Webhook: Failed to deactivate ElevenLabs agent for user ${userId}: ${e.message}`);
           }

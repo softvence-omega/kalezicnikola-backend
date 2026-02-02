@@ -240,17 +240,28 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
     }
 
     /**
-     * Create the tools for a doctor and return their IDs
+     * Get or create the 4 global tools used by all agents
      */
-    private async createToolsForDoctor(doctorId: string): Promise<string[]> {
+    private async getOrCreateGlobalTools(): Promise<string[]> {
         const baseUrl = this.getElevenLabsBaseUrl();
         const backendUrl = this.config.get<string>('BACKEND_URL') || 'https://backend.docline.ai';
         const websocketUrl = backendUrl.replace('http://', 'https://');
 
-        const toolConfigs = [
+        // 1. Fetch all existing tools to check if global ones already exist
+        let existingTools: any[] = [];
+        try {
+            const response = await axios.get(`${baseUrl}/v1/convai/tools`, {
+                headers: { 'xi-api-key': this.elevenLabsApiKey }
+            });
+            existingTools = response.data.tools || [];
+        } catch (error) {
+            console.error('Error fetching tools:', error.message);
+        }
+
+        const globalToolConfigs = [
             {
-                name: `AiAgentWebhook_${doctorId}`,
-                description: 'Main webhook for handling appointment bookings, availability checks, rescheduling, cancellations, and general inquiries about the practice.',
+                name: 'Global_AiAgentWebhook',
+                description: 'Main webhook for handling appointment bookings, availability checks, rescheduling, cancellations, and general inquiries.',
                 api_schema: {
                     url: `${websocketUrl}/api/v1/ai-agent/webhook`,
                     method: 'POST',
@@ -278,7 +289,7 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
                 },
             },
             {
-                name: `SaveCallTranscription_${doctorId}`,
+                name: 'Global_SaveCallTranscription',
                 description: 'MANDATORY tool to save call transcription at the end of EVERY conversation.',
                 api_schema: {
                     url: `${websocketUrl}/api/v1/ai-agent/transcription/save`,
@@ -307,7 +318,7 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
                 },
             },
             {
-                name: `CreateTask_${doctorId}`,
+                name: 'Global_CreateTask',
                 description: 'Create tasks for the doctor such as medicine orders or callback requests.',
                 api_schema: {
                     url: `${websocketUrl}/api/v1/ai-agent/task/create`,
@@ -333,7 +344,7 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
                 },
             },
             {
-                name: `QueryKnowledgeBase_${doctorId}`,
+                name: 'Global_QueryKnowledgeBase',
                 description: 'Query the doctor\'s knowledge base for practice information.',
                 api_schema: {
                     url: `${websocketUrl}/api/v1/ai-agent/kb/query`,
@@ -356,7 +367,15 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
 
         const toolIds: string[] = [];
 
-        for (const config of toolConfigs) {
+        for (const config of globalToolConfigs) {
+            // Check if tool already exists (by name)
+            const existing = existingTools.find(t => t.name === config.name || t.tool_config?.name === config.name);
+            if (existing) {
+                toolIds.push(existing.id);
+                console.log(`✅ Using existing global tool ${config.name}: ${existing.id}`);
+                continue;
+            }
+
             try {
                 const response = await axios.post(
                     `${baseUrl}/v1/convai/tools/create`,
@@ -370,10 +389,10 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
                 );
                 if (response.data.id) {
                     toolIds.push(response.data.id);
-                    console.log(`✅ Created tool ${config.name}: ${response.data.id}`);
+                    console.log(`✅ Created global tool ${config.name}: ${response.data.id}`);
                 }
             } catch (error) {
-                console.error(`Error creating tool ${config.name}:`, error.response?.data || error.message);
+                console.error(`Error creating global tool ${config.name}:`, error.response?.data || error.message);
             }
         }
 
@@ -392,13 +411,14 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
             throw new BadRequestException('Doctor not found');
         }
 
-        const doctorName = `Doctor ${doctor.firstName || ''} ${doctor.lastName || ''}`.trim() || 'Doctor';
+        // Fix agent name: remove "Doctor " prefix if it was causing "Agent agent" issues
+        const doctorName = `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim() || 'Medical Assistant';
         const baseUrl = this.getElevenLabsBaseUrl();
         const backendUrl = this.config.get<string>('BACKEND_URL') || 'https://backend.docline.ai';
         const websocketUrl = backendUrl.replace('http://', 'https://');
 
-        // 1. Create tools separately
-        const toolIds = await this.createToolsForDoctor(doctorId);
+        // 1. Get or create global tools (dynamically assigned)
+        const toolIds = await this.getOrCreateGlobalTools();
 
         const agentConfig = {
             name: doctorName,
@@ -406,8 +426,8 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
                 agent: {
                     prompt: {
                         prompt: this.buildSystemPrompt(doctor),
-                        tool_ids: toolIds, // Link created tools
                     },
+                    tool_ids: toolIds, // Link created tools
                     first_message: 'Hello! Thank you for calling. How can I help you today?',
                     language: 'en',
                     dynamic_variables: {
@@ -523,15 +543,18 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
     private async deleteToolsForDoctor(doctorId: string) {
         const baseUrl = this.getElevenLabsBaseUrl();
         try {
-            // Find tools starting with the doctor's name prefix
+            // Find tools starting with the doctor's name prefix (old per-doctor tools)
             const response = await axios.get(
                 `${baseUrl}/v1/convai/tools?search=_${doctorId}`, // Search suffix _doctorId
                 { headers: { 'xi-api-key': this.elevenLabsApiKey } },
             );
 
             const tools = response.data.tools || [];
-            // Filter more strictly to be safe (ensure it ends with _doctorId or contains it correctly)
-            const doctorTools = tools.filter((t: any) => t.tool_config?.name?.includes(doctorId));
+            // Filter more strictly to be safe: MUST include doctorId AND MUST NOT start with Global_
+            const doctorTools = tools.filter((t: any) => {
+                const name = t.name || t.tool_config?.name || '';
+                return name.includes(doctorId) && !name.startsWith('Global_');
+            });
 
             for (const tool of doctorTools) {
                 try {
@@ -539,7 +562,7 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
                         `${baseUrl}/v1/convai/tools/${tool.id}`,
                         { headers: { 'xi-api-key': this.elevenLabsApiKey } },
                     );
-                    console.log(`✅ Deleted tool ${tool.tool_config.name}`);
+                    console.log(`✅ Deleted tool ${tool.tool_config.name || tool.name}`);
                 } catch (e) {
                     console.error(`Failed to delete tool ${tool.id}:`, e.message);
                 }
@@ -612,6 +635,9 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
             select: {
                 elevenlabsAgentId: true,
                 isAgentActive: true,
+                firstName: true,
+                lastName: true,
+                id: true,
             },
         });
 
@@ -628,6 +654,26 @@ DO NOT include booking IDs or confirmation numbers in the summary.`;
                 where: { id: doctorId },
                 data: { isAgentActive: isActive },
             });
+
+            // If activating, sync the agent with latest prompt and tools
+            if (isActive && doctor.elevenlabsAgentId) {
+                try {
+                    const toolIds = await this.getOrCreateGlobalTools();
+                    await this.updateDoctorAgent(doctorId, {
+                        conversation_config: {
+                            agent: {
+                                prompt: {
+                                    prompt: this.buildSystemPrompt(doctor),
+                                },
+                                tool_ids: toolIds,
+                            },
+                        },
+                    });
+                    console.log(`✅ Synced agent configuration for doctor ${doctorId} on activation`);
+                } catch (error) {
+                    console.error(`Failed to sync agent during activation for ${doctorId}:`, error.message);
+                }
+            }
 
             // Audit logging
             await this.prisma.auditLog.create({
