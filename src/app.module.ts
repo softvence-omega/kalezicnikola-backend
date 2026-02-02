@@ -14,6 +14,7 @@ import { SubscriptionModule } from './modules/subscription/subscription.module';
 import { PrescriptionModule } from './modules/prescription/prescription.module';
 import { LabModule } from './modules/lab/lab.module';
 import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
+import { ElevenLabsModule } from './modules/elevenlabs/elevenlabs.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
@@ -40,6 +41,7 @@ import { NotificationModule } from './modules/notification/notification.module';
     PrescriptionModule,
     LabModule,
     AiAgentModule,
+    ElevenLabsModule,
     ChatModule,
     AdminModule,
     EventModule,
