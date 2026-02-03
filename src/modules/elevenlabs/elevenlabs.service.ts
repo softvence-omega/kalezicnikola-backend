@@ -85,12 +85,12 @@ export class ElevenLabsService {
 
     // Use the correct ElevenLabs Conversational AI API endpoint
     const requestBody = {
+      name: `Dr. ${doctor.firstName} ${doctor.lastName} AI Assistant`, // Move name to top level
       conversation_config: {
         agent: {
-          name: `Dr. ${doctor.firstName} ${doctor.lastName} AI Assistant`, // Add agent name
           first_message: `Hello! Thank you for calling Dr. ${doctor.lastName}'s office. How can I help you today?`,
           prompt: {
-            prompt_text: this.generateSystemPrompt(doctor),
+            prompt: this.generateSystemPrompt(doctor), // Rename prompt_text to prompt
             tool_ids: toolIds || [] // Link the tools to the agent
           },
           language: 'en',
