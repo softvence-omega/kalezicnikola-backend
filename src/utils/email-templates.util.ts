@@ -170,7 +170,9 @@ export class EmailTemplatesUtil {
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">Docline</div>
+            <div class="logo">
+                <img src="${this.config.get('BACKEND_URL')}/docline-logo.jpg" alt="Docline" style="max-width: 150px; height: auto;">
+            </div>
             <div class="tagline">Your Trusted Healthcare Partner</div>
         </div>
         
@@ -302,7 +304,9 @@ export class EmailTemplatesUtil {
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">Docline</div>
+            <div class="logo">
+                <img src="${this.config.get('BACKEND_URL')}/docline-logo.jpg" alt="Docline" style="max-width: 150px; height: auto;">
+            </div>
         </div>
         
         <div class="content">

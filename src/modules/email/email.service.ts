@@ -71,7 +71,7 @@ export class EmailService {
   }
 
   private createTwoFactorOtpTemplate(otp: string, name?: string): string {
-    const logoUrl = `${this.config.get('CLIENT_URL')}/docline-logo.jpg`;
+    const logoUrl = `${this.config.get('BACKEND_URL')}/docline-logo.jpg`;
     return `
       <!DOCTYPE html>
       <html>
