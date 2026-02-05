@@ -15,6 +15,7 @@ import { ElevenLabsPostCallDto } from './dto/elevenlabs-post-call.dto';
 import { AgentCreateTaskDto } from './dto/agent-create-task.dto';
 import { BufferTime, WeekDay } from 'generated/prisma';
 import { NotificationHelperService } from '../notification/notification-helper.service';
+import { ElevenLabsService } from './eleven-labs.service';
 
 import axios from 'axios';
 
@@ -22,17 +23,36 @@ import axios from 'axios';
 export class AiAgentService {
   private readonly twilioNumber: string;
   private readonly fallbackNumber: string;
-  private readonly elevenLabsApiKey: string;
 
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
     private notificationHelper: NotificationHelperService,
+    private elevenLabsService: ElevenLabsService,
   ) {
-    this.twilioNumber = '+15095091987'; // Twilio number from client
-    this.fallbackNumber = '+8801742460399'; // Physical assistant number
-    this.elevenLabsApiKey =
-      this.config.get<string>('ELEVENLABS_WEBHOOK_API_KEY') || '';
+    this.twilioNumber = this.config.get<string>('TWILIO_PHONE_NUMBER') || '';
+    this.fallbackNumber = this.config.get<string>('FALLBACK_PHONE_NUMBER') || '';
+  }
+
+  /**
+   * Ensure the doctor's agent is active. Throws ForbiddenException if not.
+   */
+  private async ensureAgentActive(doctorId: string) {
+    const doctor = await this.prisma.doctor.findUnique({
+      where: { id: doctorId },
+      select: { isAgentActive: true, firstName: true, lastName: true },
+    });
+
+    if (!doctor) {
+      throw new NotFoundException('Doctor not found');
+    }
+
+    if (!doctor.isAgentActive) {
+      const name = `Dr. ${doctor.firstName || ''} ${doctor.lastName || ''}`.trim() || 'this practice';
+      throw new BadRequestException(
+        `The AI assistant for ${name} is currently inactive. Please contact the practice administrator.`,
+      );
+    }
   }
 
   // =============== HELPER METHODS ===============
@@ -83,6 +103,11 @@ export class AiAgentService {
   ): Promise<WebhookResponseDto> {
     const { intent, doctor_id, agent_busy } = payload;
 
+    // Check if agent is active
+    if (doctor_id) {
+      await this.ensureAgentActive(doctor_id);
+    }
+
     // If agent is busy, provide fallback number
     if (agent_busy) {
       return {
@@ -116,6 +141,9 @@ export class AiAgentService {
 
   // =============== KNOWLEDGE BASE QUERY ===============
   async queryKnowledgeBase(dto: KbQueryDto) {
+    if (dto.doctor_id) {
+      await this.ensureAgentActive(dto.doctor_id);
+    }
     const kbEntries = await this.prisma.doctorKnowledgeBase.findMany({
       where: {
         doctorId: dto.doctor_id,
@@ -182,6 +210,10 @@ export class AiAgentService {
 
   async getAvailableSlots(dto: SlotQueryDto & { step?: number }) {
     const { doctor_id, date, appointment_type_id, step: customStep } = dto;
+
+    if (doctor_id) {
+      await this.ensureAgentActive(doctor_id);
+    }
 
     const doctor = await this.prisma.doctor.findUnique({
       where: { id: doctor_id },
@@ -386,6 +418,10 @@ export class AiAgentService {
   // =============== CREATE BOOKING ===============
   async createBooking(dto: any) {
     const { doctor_id, patient_id, appointment_type_id, start_time, appointment_date, patient_info } = dto;
+
+    if (doctor_id) {
+      await this.ensureAgentActive(doctor_id);
+    }
 
     const apptDate = new Date(appointment_date);
     const now = new Date();
@@ -708,6 +744,10 @@ export class AiAgentService {
     const appointment = await this.prisma.appointment.findUnique({ where: { id: bookingId } });
     if (!appointment) throw new NotFoundException('Booking not found');
 
+    if (appointment.doctorId) {
+      await this.ensureAgentActive(appointment.doctorId);
+    }
+
     const updateData: any = {};
     if (dto.new_date) updateData.appointmentDate = new Date(dto.new_date);
     if (dto.new_start_time) updateData.startTime = dto.new_start_time;
@@ -957,6 +997,10 @@ export class AiAgentService {
 
     if (!appointment) {
       throw new NotFoundException('Booking not found');
+    }
+
+    if (appointment.doctorId) {
+      await this.ensureAgentActive(appointment.doctorId);
     }
 
     if (appointment.status === 'CANCELLED') {
@@ -1714,28 +1758,7 @@ export class AiAgentService {
   }
 
   async getCallAudio(conversationId: string) {
-    // Detect EU residency key and use correct endpoint
-    const isEuKey = this.elevenLabsApiKey?.includes('_residency_eu');
-    const baseUrl = isEuKey
-      ? 'https://api.eu.residency.elevenlabs.io'
-      : 'https://api.elevenlabs.io';
-    const url = `${baseUrl}/v1/convai/conversations/${conversationId}/audio`;
-
-    try {
-      const response = await axios.get(url, {
-        headers: {
-          'xi-api-key': this.elevenLabsApiKey,
-        },
-        responseType: 'stream',
-      });
-      return response.data;
-    } catch (error) {
-      console.error(
-        'Error fetching audio from ElevenLabs:',
-        error.response?.data || error.message,
-      );
-      throw error;
-    }
+    return this.elevenLabsService.getCallAudio(conversationId);
   }
 
   // Helper method to extract patient info from conversation text
@@ -3050,6 +3073,9 @@ export class AiAgentService {
 
   // =============== CREATE AGENT TASK ===============
   async createAgentTask(dto: AgentCreateTaskDto) {
+    if (dto.doctor_id) {
+      await this.ensureAgentActive(dto.doctor_id);
+    }
     const {
       doctor_id,
       title,
@@ -3285,4 +3311,8 @@ export class AiAgentService {
       },
     };
   }
+
+  // =============== ELEVENLABS AGENT MANAGEMENT ===============
+
+
 }

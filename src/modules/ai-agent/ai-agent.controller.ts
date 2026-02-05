@@ -17,6 +17,7 @@ import { AdminOrDoctorGuard } from 'src/common/guard/admin-or-doctor.guard';
 import { AdminGuard } from 'src/common/guard/admin.guard';
 import { Response } from 'express';
 import { AiAgentService } from './ai-agent.service';
+import { ElevenLabsService } from './eleven-labs.service';
 import { WebhookAuthGuard } from './guards/webhook-auth.guard';
 import { WebhookPayloadDto } from './dto/webhook-payload.dto';
 import { KbQueryDto } from './dto/kb-query.dto';
@@ -28,7 +29,10 @@ import { AgentCreateTaskDto } from './dto/agent-create-task.dto';
 
 @Controller('ai-agent')
 export class AiAgentController {
-  constructor(private aiAgentService: AiAgentService) { }
+  constructor(
+    private aiAgentService: AiAgentService,
+    private elevenLabsService: ElevenLabsService,
+  ) { }
 
   // =============== ADMIN ROUTES ===============
   @Get('recent-interaction')

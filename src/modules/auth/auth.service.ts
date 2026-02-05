@@ -44,6 +44,13 @@ export class AuthService {
 
   // ----------------- ADMIN REGISTER -------------------
   async registerAdmin(dto: AdminRegistrationDto) {
+    // Validate terms acceptance
+    if (!dto.acceptedTerms) {
+      throw new BadRequestException(
+        'You must accept the terms and conditions to register',
+      );
+    }
+
     const existing =
       (await this.prisma.admin.findUnique({ where: { email: dto.email } })) ||
       (await this.prisma.doctor.findUnique({ where: { email: dto.email } }));
@@ -65,11 +72,25 @@ export class AuthService {
       },
     });
 
-    return admin;
+    // Generate and send OTP for verification
+    await this.generateAndSend2FA(admin, 'admin');
+
+    return {
+      email: admin.email,
+      message:
+        'Registration successful. OTP sent to your email for verification.',
+    };
   }
 
   // ----------------- DOCTOR REGISTER ------------------
   async registerDoctor(dto: DoctorRegistrationDto) {
+    // Validate terms acceptance
+    if (!dto.acceptedTerms) {
+      throw new BadRequestException(
+        'You must accept the terms and conditions to register',
+      );
+    }
+
     const existing =
       (await this.prisma.admin.findUnique({ where: { email: dto.email } })) ||
       (await this.prisma.doctor.findUnique({ where: { email: dto.email } }));
@@ -82,24 +103,40 @@ export class AuthService {
     );
     const passwordHash = await bcrypt.hash(dto.password, saltRounds);
 
-    const doctor = await this.prisma.doctor.create({
-      data: {
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        email: dto.email,
-        passwordHash,
-        licenceNo: dto.licenceNo || null,
-        specialities: [],
-      },
-    });
+    // Create doctor
+    try {
+      const doctor = await this.prisma.doctor.create({
+        data: {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          email: dto.email,
+          passwordHash,
+          licenceNo: dto.licenceNo || null,
+          specialities: [],
+        },
+      });
 
-    // Send welcome email
-    await this.emailService.sendWelcomeEmail(
-      doctor.email!,
-      doctor.firstName || 'Doctor',
-    );
+      // Send welcome email
+      await this.emailService.sendWelcomeEmail(
+        doctor.email!,
+        doctor.firstName || 'Doctor',
+      );
 
-    return doctor;
+      // Generate and send OTP for verification
+      await this.generateAndSend2FA(doctor, 'doctor');
+
+      console.log(`✅ Successfully registered doctor ${doctor.id}`);
+
+      return {
+        email: doctor.email,
+        message:
+          'Registration successful. OTP sent to your email for verification.',
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to register doctor: ${error.message}`,
+      );
+    }
   }
 
   // ----------------- ADMIN LOGIN -------------------
@@ -138,13 +175,12 @@ export class AuthService {
       };
     }
 
-
     // Reset failed login attempts on success
     await this.prisma.admin.update({
       where: { id: admin.id },
       data: {
         failedLoginAttempts: 0,
-        lastLoginAt: new Date()
+        lastLoginAt: new Date(),
       },
     });
 
@@ -216,13 +252,12 @@ export class AuthService {
       };
     }
 
-
     // Reset failed login attempts on success
     await this.prisma.doctor.update({
       where: { id: doctor.id },
       data: {
         failedLoginAttempts: 0,
-        lastLoginAt: new Date()
+        lastLoginAt: new Date(),
       },
     });
 
@@ -405,7 +440,6 @@ export class AuthService {
       throw new UnauthorizedException('Failed to decode token');
     }
   }
-
 
   // ----------------- VALIDATE SESSION -------------------
   async validateSession(accessToken: string): Promise<{
@@ -750,12 +784,18 @@ export class AuthService {
     if (role === 'admin') {
       await this.prisma.admin.update({
         where: { id: userId },
-        data: { passwordHash: newPasswordHash, lastPasswordChangeAt: new Date() },
+        data: {
+          passwordHash: newPasswordHash,
+          lastPasswordChangeAt: new Date(),
+        },
       });
     } else if (role === 'doctor') {
       await this.prisma.doctor.update({
         where: { id: userId },
-        data: { passwordHash: newPasswordHash, lastPasswordChangeAt: new Date() },
+        data: {
+          passwordHash: newPasswordHash,
+          lastPasswordChangeAt: new Date(),
+        },
       });
     }
 
@@ -769,7 +809,10 @@ export class AuthService {
 
   // ----------------- 2FA LOGIC -------------------
 
-  private async checkRequires2FA(user: any, role: 'admin' | 'doctor'): Promise<boolean> {
+  private async checkRequires2FA(
+    user: any,
+    role: 'admin' | 'doctor',
+  ): Promise<boolean> {
     // 2FA enabled check (default true)
     if (user.twoFactorEnabled === false) return false;
 
@@ -810,7 +853,11 @@ export class AuthService {
     });
 
     // Send OTP via email
-    await this.emailService.sendTwoFactorOtpEmail(user.email, otp, user.firstName);
+    await this.emailService.sendTwoFactorOtpEmail(
+      user.email,
+      otp,
+      user.firstName,
+    );
 
     return otp;
   }

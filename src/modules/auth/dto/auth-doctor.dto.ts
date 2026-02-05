@@ -1,4 +1,11 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength, IsOptional } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsString,
+  MinLength,
+  IsOptional,
+  IsBoolean,
+} from 'class-validator';
 
 export class DoctorRegistrationDto {
   @IsNotEmpty()
@@ -21,4 +28,8 @@ export class DoctorRegistrationDto {
   @IsOptional()
   @IsString()
   licenceNo?: string;
+
+  @IsNotEmpty()
+  @IsBoolean()
+  acceptedTerms: boolean;
 }

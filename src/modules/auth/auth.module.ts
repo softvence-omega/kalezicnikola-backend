@@ -12,6 +12,12 @@ import { EmailModule } from '../email/email.module';
   controllers: [AuthController],
   providers: [AuthService, SessionCleanupService],
   exports: [AuthService],
-  imports: [ConfigModule, JwtModule.register({}), PrismaModule, ScheduleModule.forRoot(), EmailModule],
+  imports: [
+    ConfigModule,
+    JwtModule.register({}),
+    PrismaModule,
+    ScheduleModule.forRoot(),
+    EmailModule,
+  ],
 })
-export class AuthModule {}
+export class AuthModule { }
