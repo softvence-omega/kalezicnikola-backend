@@ -24,10 +24,16 @@ import { NotificationModule } from './modules/notification/notification.module';
 
 @Module({
   imports: [
-    ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..'),
-      serveRoot: '/',
-    }),
+    ServeStaticModule.forRoot(
+      {
+        rootPath: join(__dirname, '..'),
+        serveRoot: '/',
+      },
+      {
+        rootPath: join(__dirname),
+        serveRoot: '/',
+      },
+    ),
     ConfigurationModule,
     PrismaModule,
     AuthModule,
@@ -50,4 +56,4 @@ import { NotificationModule } from './modules/notification/notification.module';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
+export class AppModule {}
