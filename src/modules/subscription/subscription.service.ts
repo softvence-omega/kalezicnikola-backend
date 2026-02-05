@@ -225,17 +225,7 @@ export class SubscriptionService implements OnModuleInit {
       let skipped = 0;
 
       for (const plan of defaultPlans) {
-        await this.prisma.subscriptionPlan.upsert({
-          where: {
-            planType_billingCycle: {
-              planType: plan.planType,
-              billingCycle: plan.billingCycle,
-            },
-          },
-          update: plan,
-          create: plan,
-        });
-
+        // Check if plan already exists
         const existingPlan = await this.prisma.subscriptionPlan.findUnique({
           where: {
             planType_billingCycle: {
@@ -245,15 +235,20 @@ export class SubscriptionService implements OnModuleInit {
           },
         });
 
-        if (existingPlan && existingPlan.createdAt.getTime() === existingPlan.updatedAt.getTime()) {
+        if (existingPlan) {
+          // Plan already exists, skip creation
+          skipped++;
+          console.log(
+            `⏭️  Skipped plan: ${plan.planType} (${plan.billingCycle})`,
+          );
+        } else {
+          // Create new plan
+          await this.prisma.subscriptionPlan.create({
+            data: plan,
+          });
           created++;
           console.log(
             `✅ Created plan: ${plan.planType} (${plan.billingCycle})`,
-          );
-        } else {
-          skipped++;
-          console.log(
-            `🆙 Updated plan: ${plan.planType} (${plan.billingCycle})`,
           );
         }
       }
@@ -408,7 +403,10 @@ export class SubscriptionService implements OnModuleInit {
         where: {
           planType_billingCycle: {
             planType: 'TRIAL',
-            billingCycle: !dto.trialType || dto.trialType === 'LIFETIME' ? 'LIFETIME' : 'SEVEN_DAYS',
+            billingCycle:
+              !dto.trialType || dto.trialType === 'LIFETIME'
+                ? 'LIFETIME'
+                : 'SEVEN_DAYS',
           },
         },
       });
@@ -486,13 +484,19 @@ export class SubscriptionService implements OnModuleInit {
 
         // Trigger ElevenLabs agent creation/re-creation
         try {
-          const doctor = await this.prisma.doctor.findUnique({ where: { id: userId } });
+          const doctor = await this.prisma.doctor.findUnique({
+            where: { id: userId },
+          });
           if (doctor) {
             await this.elevenLabsService.createAgentForDoctor(doctor);
-            console.log(`🤖 ElevenLabs agent activated for user ${userId} on Trial`);
+            console.log(
+              `🤖 ElevenLabs agent activated for user ${userId} on Trial`,
+            );
           }
         } catch (e) {
-          console.error(`❌ Failed to activate ElevenLabs agent for user ${userId}: ${e.message}`);
+          console.error(
+            `❌ Failed to activate ElevenLabs agent for user ${userId}: ${e.message}`,
+          );
         }
 
         return response;
@@ -538,13 +542,19 @@ export class SubscriptionService implements OnModuleInit {
 
         // Trigger ElevenLabs agent creation
         try {
-          const doctor = await this.prisma.doctor.findUnique({ where: { id: userId } });
+          const doctor = await this.prisma.doctor.findUnique({
+            where: { id: userId },
+          });
           if (doctor) {
             await this.elevenLabsService.createAgentForDoctor(doctor);
-            console.log(`🤖 ElevenLabs agent activated for user ${userId} on Trial`);
+            console.log(
+              `🤖 ElevenLabs agent activated for user ${userId} on Trial`,
+            );
           }
         } catch (e) {
-          console.error(`❌ Failed to activate ElevenLabs agent for user ${userId}: ${e.message}`);
+          console.error(
+            `❌ Failed to activate ElevenLabs agent for user ${userId}: ${e.message}`,
+          );
         }
 
         return response;
@@ -1154,10 +1164,13 @@ export class SubscriptionService implements OnModuleInit {
           const allInvoices: any[] = [];
 
           // Using a higher limit per page and auto-paging
-          for await (const invoice of this.stripe.invoices.list({ limit: 100 })) {
+          for await (const invoice of this.stripe.invoices.list({
+            limit: 100,
+          })) {
             allInvoices.push({
               date: new Date(invoice.created * 1000),
-              name: invoice.customer_name || invoice.customer_email || 'Customer',
+              name:
+                invoice.customer_name || invoice.customer_email || 'Customer',
               email: invoice.customer_email || 'N/A',
               transactionId: invoice.number || invoice.id,
               stripeInvoiceId: invoice.id,
@@ -1435,8 +1448,6 @@ export class SubscriptionService implements OnModuleInit {
         subscriptionStatus = 'ACTIVE';
       }
 
-
-
       // Check if user already has a subscription
       const existingSubscription = await this.prisma.subscription.findUnique({
         where: { userId },
@@ -1487,13 +1498,19 @@ export class SubscriptionService implements OnModuleInit {
 
       // Trigger ElevenLabs agent creation/re-creation
       try {
-        const doctor = await this.prisma.doctor.findUnique({ where: { id: userId } });
+        const doctor = await this.prisma.doctor.findUnique({
+          where: { id: userId },
+        });
         if (doctor) {
           await this.elevenLabsService.createAgentForDoctor(doctor);
-          console.log(`🤖 ElevenLabs agent activated for user ${userId} on paid plan`);
+          console.log(
+            `🤖 ElevenLabs agent activated for user ${userId} on paid plan`,
+          );
         }
       } catch (e) {
-        console.error(`❌ Failed to activate ElevenLabs agent for user ${userId}: ${e.message}`);
+        console.error(
+          `❌ Failed to activate ElevenLabs agent for user ${userId}: ${e.message}`,
+        );
       }
 
       return response;
@@ -1788,9 +1805,13 @@ export class SubscriptionService implements OnModuleInit {
           try {
             // TODO: Implement toggleAgentActiveness in new service
             // await this.elevenLabsService.toggleAgentActiveness(userId, false, { id: 'stripe-webhook', role: 'system' });
-            console.log(`👤 Webhook: Deactivated ElevenLabs agent for user ${userId} due to subscription deletion (TODO: implement in new service)`);
+            console.log(
+              `👤 Webhook: Deactivated ElevenLabs agent for user ${userId} due to subscription deletion (TODO: implement in new service)`,
+            );
           } catch (e) {
-            console.error(`❌ Webhook: Failed to deactivate ElevenLabs agent for user ${userId}: ${e.message}`);
+            console.error(
+              `❌ Webhook: Failed to deactivate ElevenLabs agent for user ${userId}: ${e.message}`,
+            );
           }
         } else {
           await this.prisma.subscription.update({
