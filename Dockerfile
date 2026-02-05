@@ -14,6 +14,7 @@ RUN npm ci
 COPY . .
 
 RUN npx prisma generate
+
 # Build the project
 RUN npm run build
 
@@ -29,8 +30,6 @@ COPY --from=builder /app/prisma ./prisma
 
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-
-RUN npx prisma generate
 
 # Expose Nest default port
 EXPOSE 5000
