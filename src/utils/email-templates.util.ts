@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class EmailTemplatesUtil {
+  constructor(private config: ConfigService) {}
+
   getOTPEmailTemplate(otp: string, userName: string = 'User'): string {
     return `
 <!DOCTYPE html>
@@ -321,6 +324,7 @@ export class EmailTemplatesUtil {
   }
 
   getWelcomeEmailTemplate(userName: string = 'Doctor'): string {
+    const logoUrl = `${this.config.get('BACKEND_URL')}/docline-logo.jpg`;
     return `
 <!DOCTYPE html>
 <html lang="en">
@@ -356,10 +360,12 @@ export class EmailTemplatesUtil {
         }
 
         .logo {
-            font-size: 28px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            color: #000000;
+            text-align: center;
+        }
+
+        .logo img {
+            max-width: 200px;
+            height: auto;
         }
 
         .tagline {
@@ -433,7 +439,7 @@ export class EmailTemplatesUtil {
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">DOCLINE</div>
+            <div class="logo"><img src="${logoUrl}" alt="Docline Logo" /></div>
         </div>
 
         <div class="content">

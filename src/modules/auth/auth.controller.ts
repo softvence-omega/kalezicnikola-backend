@@ -26,7 +26,7 @@ import { Verify2faOtpDto } from './dto/verify-2fa-otp.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) { }
+  constructor(private authService: AuthService) {}
 
   // ----------------- ADMIN REGISTER -------------------
   @Post('admin/register')
@@ -35,8 +35,8 @@ export class AuthController {
 
     return {
       statusCode: HttpStatus.CREATED,
-      message: 'Admin registered successfully',
-      data: result,
+      message: result.message,
+      data: { email: result.email },
     };
   }
 
@@ -47,8 +47,8 @@ export class AuthController {
 
     return {
       statusCode: HttpStatus.CREATED,
-      message: 'Doctor registered successfully',
-      data: result,
+      message: result.message,
+      data: { email: result.email },
     };
   }
 

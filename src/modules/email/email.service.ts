@@ -21,6 +21,7 @@ export class EmailService {
   }
 
   private createOtpEmailTemplate(otp: string, name?: string): string {
+    const logoUrl = `${this.config.get('BACKEND_URL')}/docline-logo.jpg`;
     return `
       <!DOCTYPE html>
       <html>
@@ -29,7 +30,8 @@ export class EmailService {
         <style>
           body { margin: 0; padding: 0; background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; color: #111111; line-height: 1.6; }
           .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
-          .logo { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 40px; text-transform: uppercase; color: #000000; }
+          .logo { margin-bottom: 40px; text-align: center; }
+          .logo img { max-width: 200px; height: auto; }
           .content { background: #ffffff; border: 1px solid #e5e5e5; padding: 40px; border-radius: 4px; }
           .title { font-size: 20px; font-weight: 700; margin-bottom: 24px; color: #000000; }
           .greeting { font-size: 16px; margin-bottom: 16px; }
@@ -43,7 +45,7 @@ export class EmailService {
       </head>
       <body>
         <div class="container">
-          <div class="logo">DOCLINE</div>
+          <div class="logo"><img src="${logoUrl}" alt="Docline Logo" /></div>
           <div class="content">
             <h1 class="title">Password Reset</h1>
             <p class="greeting">Hello ${name || 'there'},</p>
@@ -60,7 +62,7 @@ export class EmailService {
             </div>
           </div>
           <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} Docline Healthcare Systems. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} Docline. All rights reserved.</p>
           </div>
         </div>
       </body>
@@ -69,6 +71,7 @@ export class EmailService {
   }
 
   private createTwoFactorOtpTemplate(otp: string, name?: string): string {
+    const logoUrl = `${this.config.get('CLIENT_URL')}/docline-logo.jpg`;
     return `
       <!DOCTYPE html>
       <html>
@@ -77,7 +80,8 @@ export class EmailService {
         <style>
           body { margin: 0; padding: 0; background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; color: #111111; line-height: 1.6; }
           .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
-          .logo { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 40px; text-transform: uppercase; color: #000000; }
+          .logo { margin-bottom: 40px; text-align: center; }
+          .logo img { max-width: 200px; height: auto; }
           .content { background: #ffffff; border: 1px solid #e5e5e5; padding: 40px; border-radius: 4px; }
           .title { font-size: 20px; font-weight: 700; margin-bottom: 24px; color: #000000; }
           .greeting { font-size: 16px; margin-bottom: 16px; }
@@ -91,7 +95,7 @@ export class EmailService {
       </head>
       <body>
         <div class="container">
-          <div class="logo">DOCLINE</div>
+          <div class="logo"><img src="${logoUrl}" alt="Docline Logo" /></div>
           <div class="content">
             <h1 class="title">Security Verification</h1>
             <p class="greeting">Hello ${name || 'there'},</p>
@@ -108,7 +112,7 @@ export class EmailService {
             </div>
           </div>
           <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} Docline Healthcare Systems. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} Docline. All rights reserved.</p>
           </div>
         </div>
       </body>
