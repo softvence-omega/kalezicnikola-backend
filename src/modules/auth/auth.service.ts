@@ -91,11 +91,34 @@ export class AuthService {
       );
     }
 
-    const existing =
-      (await this.prisma.admin.findUnique({ where: { email: dto.email } })) ||
-      (await this.prisma.doctor.findUnique({ where: { email: dto.email } }));
+    const existingDoctor = await this.prisma.doctor.findUnique({
+      where: { email: dto.email },
+    });
+    const existingAdmin = await this.prisma.admin.findUnique({
+      where: { email: dto.email },
+    });
 
-    if (existing) throw new BadRequestException('Email already in use');
+    if (existingAdmin) {
+      throw new BadRequestException('Email already in use');
+    }
+
+    if (existingDoctor) {
+      // If doctor exists AND is verified, block registration
+      if (existingDoctor.emailVerifiedAt) {
+        throw new BadRequestException('Email already in use');
+      }
+
+      // If doctor exists but NOT verified, resend OTP and allow "re-registration" flow
+      // We can update the details if provided (optional), or just resend OTP
+      // For now, let's just resend OTP
+      await this.generateAndSend2FA(existingDoctor, 'doctor');
+
+      return {
+        email: existingDoctor.email,
+        message:
+          'Registration not verified yet. A new OTP has been sent to your email.',
+      };
+    }
 
     const saltRounds = parseInt(
       this.config.get<string>('bcrypt_salt_rounds') || '10',
@@ -113,6 +136,7 @@ export class AuthService {
           passwordHash,
           licenceNo: dto.licenceNo || null,
           specialities: [],
+          emailVerifiedAt: null, // Explicitly null
         },
       });
 
@@ -897,12 +921,22 @@ export class AuthService {
     if (role === 'admin') {
       await this.prisma.admin.update({
         where: { id: user.id },
-        data: { failedLoginAttempts: 0, lastLoginAt: new Date() },
+        data: {
+          failedLoginAttempts: 0,
+          lastLoginAt: new Date(),
+          // Verification: Mark as verified if not already
+          ...(user.emailVerifiedAt ? {} : { emailVerifiedAt: new Date() }),
+        },
       });
     } else {
       await this.prisma.doctor.update({
         where: { id: user.id },
-        data: { failedLoginAttempts: 0, lastLoginAt: new Date() },
+        data: {
+          failedLoginAttempts: 0,
+          lastLoginAt: new Date(),
+          // Verification: Mark as verified if not already
+          ...(user.emailVerifiedAt ? {} : { emailVerifiedAt: new Date() }),
+        },
       });
     }
 
