@@ -34,8 +34,9 @@ export class CreateAppointmentDto {
   })
   startTime: string;
 
+  @IsOptional()
   @IsString()
-  insuranceId: string;
+  insuranceId?: string;
 
   @IsOptional()
   @IsString()
