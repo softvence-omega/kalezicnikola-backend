@@ -47,13 +47,46 @@ export class AppointmentService {
     }
 
     // 2. Lookup/Create Patient
-    let patient = await this.prisma.patient.findUnique({
-      where: { insuranceId: dto.insuranceId },
-    });
+    let patient;
+    
+    if (dto.insuranceId) {
+      // Insurance ID provided - check for existing patient
+      patient = await this.prisma.patient.findUnique({
+        where: { insuranceId: dto.insuranceId },
+      });
 
-    if (!patient) {
+      if (!patient) {
+        if (!dto.firstName || !dto.lastName || !dto.phone || !dto.dob || !dto.gender || !dto.bloodGroup) {
+          throw new BadRequestException('New patient details required when insurance ID is provided but patient not found');
+        }
+        patient = await this.prisma.patient.create({
+          data: {
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            email: dto.email,
+            phone: dto.phone,
+            insuranceId: dto.insuranceId,
+            dob: new Date(dto.dob),
+            gender: dto.gender,
+            bloodGroup: dto.bloodGroup,
+          },
+        });
+
+        // Trigger Patient Notification
+        try {
+          await this.notificationHelper.notifyPatientUpdate(doctorId, {
+            patientId: patient.id,
+            patientName: `${patient.firstName} ${patient.lastName}`,
+            action: 'added',
+          });
+        } catch (error) {
+          console.error('Failed to send patient notification:', error);
+        }
+      }
+    } else {
+      // No insurance ID provided - require patient details to create new patient
       if (!dto.firstName || !dto.lastName || !dto.phone || !dto.dob || !dto.gender || !dto.bloodGroup) {
-        throw new BadRequestException('New patient details required');
+        throw new BadRequestException('Patient details required when insurance ID is not provided');
       }
       patient = await this.prisma.patient.create({
         data: {
@@ -61,7 +94,6 @@ export class AppointmentService {
           lastName: dto.lastName,
           email: dto.email,
           phone: dto.phone,
-          insuranceId: dto.insuranceId,
           dob: new Date(dto.dob),
           gender: dto.gender,
           bloodGroup: dto.bloodGroup,
