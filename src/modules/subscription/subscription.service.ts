@@ -236,10 +236,20 @@ export class SubscriptionService implements OnModuleInit {
         });
 
         if (existingPlan) {
-          // Plan already exists, skip creation
-          skipped++;
+          // Update existing plan to ensure configuration (like stripePriceId) is up to date
+          await this.prisma.subscriptionPlan.update({
+            where: { id: existingPlan.id },
+            data: {
+              name: plan.name,
+              price: plan.price,
+              stripePriceId: plan.stripePriceId,
+              minutes: plan.minutes,
+              features: plan.features,
+            },
+          });
+          skipped++; // still count as "existing" but updated
           console.log(
-            `⏭️  Skipped plan: ${plan.planType} (${plan.billingCycle})`,
+            `🔄 Updated plan: ${plan.planType} (${plan.billingCycle})`,
           );
         } else {
           // Create new plan
